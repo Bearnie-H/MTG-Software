@@ -196,7 +196,7 @@ function main() {
     OriginalBranch="$(git branch --show-current)"
 
     #   Check out the current snapshot branch
-    git checkout -v "snapshot"
+    git checkout "snapshot"
 
     #   Add all of the current files and contents of the repository
     git add -v -A
@@ -208,7 +208,7 @@ function main() {
     git push -v
 
     #   Checkout the original branch again
-    git checkout -v "$OriginalBranch"
+    git checkout "$OriginalBranch"
 
     return
 }
