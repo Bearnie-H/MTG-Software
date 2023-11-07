@@ -193,8 +193,6 @@ function assertDirectoryExists() {
 #   Main function, this is the entry point of the actual logic of the script, AFTER all of the input validation and top-level script pre-script set up has been completed.
 function main() {
 
-    OriginalBranch="$(git branch --show-current)"
-
     #   Check out the current snapshot branch
     if ! git checkout "snapshot"; then
         log $LOG_FATAL "Failed to checkout branch [ snapshot ]!"
@@ -213,11 +211,6 @@ function main() {
     #   Push the changes to the remote.
     if ! git push -v; then
         log $LOG_FATAL "Failed to push branch [ snapshot ] to [ origin ]!"
-    fi
-
-    #   Checkout the original branch again
-    if ! git checkout "$OriginalBranch"; then
-        log $LOG_FATAL "Failed to checkout starting branch [ $OriginalBranch ]!"
     fi
 
     return
