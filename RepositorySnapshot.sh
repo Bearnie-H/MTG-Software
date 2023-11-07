@@ -196,19 +196,29 @@ function main() {
     OriginalBranch="$(git branch --show-current)"
 
     #   Check out the current snapshot branch
-    git checkout "snapshot"
+    if ! git checkout "snapshot"; then
+        log $LOG_FATAL "Failed to checkout branch [ snapshot ]!"
+    fi
 
     #   Add all of the current files and contents of the repository
-    git add -v -A
+    if ! git add -v -A; then
+        log $LOG_FATAL "Failed to add all current files to current commit!"
+    fi
 
     #   Commit the changes, using a consistent commit snapshot message
-    git commit -v -m "Repository Snapshot captured by RepositorySnapshot.sh"
+    if ! git commit -v -m "Repository Snapshot captured by RepositorySnapshot.sh"; then
+        log $LOG_FATAL "Failed to commit changes to the [ snapshot ] branch!"
+    fi
 
     #   Push the changes to the remote.
-    git push -v
+    if ! git push -v; then
+        log $LOG_FATAL "Failed to push branch [ snapshot ] to [ origin ]!"
+    fi
 
     #   Checkout the original branch again
-    git checkout "$OriginalBranch"
+    if ! git checkout "$OriginalBranch"; then
+        log $LOG_FATAL "Failed to checkout starting branch [ $OriginalBranch ]!"
+    fi
 
     return
 }
