@@ -36,7 +36,7 @@ from MTG import Utils
 class Configuration():
     """
     Configuration
-    
+
     This class represents the full set of configuration options and settings for
     this tool. This also contains the necessary logic to validate the provided
     settings, and to generate a configuration dump-file clearly documenting the
@@ -44,11 +44,11 @@ class Configuration():
     given execution.
     """
 
-    ### +++++ Begin Magic Methods +++++ 
+    ### +++++ Begin Magic Methods +++++
     def __init__(self: Configuration, LogWriter: Logger.Logger = Logger.Discarder) -> None:
         """
         Constructor
-        
+
         This function constructs the program-global configuration object, used
         to hold all of the invokation-specific configuration options and
         settings.
@@ -57,7 +57,7 @@ class Configuration():
             The Logger instance to use to write log messages out to. If not
             provided, a default is used which simply ignores all write
             operations.
-        
+
         Return (None):
             None, on completion the Configuration object is initialized and
             ready for use.
@@ -74,7 +74,7 @@ class Configuration():
 
         return
     ### ----- End Magic Methods -----
-    
+
     ### +++++ Begin Public Methods +++++
     def ValidateSettings(self: Configuration) -> bool:
         """
@@ -110,18 +110,18 @@ class Configuration():
             self._LogWriter.Println(f"Command-line arguments validated successfully!")
         else:
             self._LogWriter.Errorln(f"Failed to validate provided command-line arguments!")
-        
+
         return Valid
-    
+
     def OutputDirectory(self: Configuration) -> str:
         """
         OutputDirectory
-        
+
         This function will return the absolute path to the output directory for
         the current invokation. This directory contains all of the generated
         artefacts from running this program, and is unique per execution of the
         program.
-        
+
         Return (str):
             The absolute path to the output directory to use for the current
             invokation of the program.
@@ -135,13 +135,13 @@ class Configuration():
             os.makedirs(self._OutputDirectory, mode=0o755, exist_ok=True)
 
         return self._OutputDirectory
-    
+
     def DumpConfiguration(self: Configuration, JSON: bool = False) -> str:
         """
         DumpConfiguration
-        
+
         This function...
-        
+
         Return (str):
             ...
         """
@@ -157,9 +157,9 @@ class Configuration():
     def _DumpConfiguration_String(self: Configuration) -> str:
         """
         _DumpConfiguration_String
-        
+
         This function...
-        
+
         Return (str):
             ...
         """
@@ -197,9 +197,9 @@ class Configuration():
     def _DumpConfiguration_JSON(self: Configuration) -> str:
         """
         _DumpConfiguration_JSON
-        
+
         This function...
-        
+
         Return (str):
             ...
         """
@@ -234,9 +234,9 @@ def main() -> int:
 def ProcessArguments() -> bool:
     """
     ProcessArguments
-    
+
     This function...
-    
+
     Return (bool):
         ...
     """
@@ -249,6 +249,7 @@ def ProcessArguments() -> bool:
 
     #   Add in the flags the program should accept.
     Flags.add_argument("--log-file", dest="LogFile", metavar="file-path", type=str, required=False, default="-", help="File path to the file to write all log messages of this program to.")
+    Flags.add_argument("--quiet",    dest="Quiet",   action="store_true",  required=False, default=False, help="Enable quiet mode, disabling logging of eveything except fatal errors.")
 
     Flags.add_argument("--dry-run",  dest="DryRun",   action="store_true", required=False, default=False, help="Enable dry-run mode, where no file-system alterations or heavy computations are performed.")
     Flags.add_argument("--validate", dest="Validate", action="store_true", required=False, default=False, help="Only validate the command-line arguments, do not proceed with the remainder of the program.")
@@ -261,7 +262,10 @@ def ProcessArguments() -> bool:
     #   program-local variables and settings within the global Configuration
     #   object as required.
     #   ...
-    LogWriter.SetOutputFilename(Arguments.LogFile)
+    if ( Arguments.Quiet ):
+        LogWriter.SetOutputFilename("/dev/null")
+    else:
+        LogWriter.SetOutputFilename(Arguments.LogFile)
 
     Config.EnableDryRun: bool         = Arguments.DryRun
     Config.ValidateArguments: bool    = Arguments.Validate

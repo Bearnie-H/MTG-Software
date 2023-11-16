@@ -244,20 +244,49 @@ class VideoReadWriter(Iterator):
             The video frame from the source video file at the requested Frame Index.
         """
 
-        Index = int(round(Index))
-        self.Seek(Index)
+        if isinstance(Index, slice):
+            start, stop, step = Index.start, Index.stop, Index.step
+            if start is None:
+                start = 0
+            if stop is None:
+                stop = len(self)
 
-        Success, self._CurrentSourceFrame = self._SourceVideo.read()
-        if ( not Success ):
-            raise RuntimeError(f"Failed to read frame [ {Index} ] from source video!")
+            return [self[ii] for ii in range(start, stop, step or 1)]
+        elif isinstance(Index, int):
+            Index = int(round(Index))
+            self.Seek(Index)
 
-        if ( self.PrintProgress ):
-            if ( not self._LogWriter.WritesToFile() ):
-                self._LogWriter.Write(f"Successfully read frame number [ {self.SourceFrameIndex + 1}/{self.EndFrameIndex} ].{' ' * 30}\r")
+            Success, self._CurrentSourceFrame = self._SourceVideo.read()
+            if ( not Success ):
+                raise RuntimeError(f"Failed to read frame [ {Index} ] from source video!")
 
-        self._CurrentSourceFrame = self._rotateFrame(self._CurrentSourceFrame)
+            if ( self.PrintProgress ):
+                if ( not self._LogWriter.WritesToFile() ):
+                    self._LogWriter.Write(f"Successfully read frame number [ {self.SourceFrameIndex + 1}/{self.EndFrameIndex} ].{' ' * 30}\r")
 
-        return self._CurrentSourceFrame
+            self._CurrentSourceFrame = self._rotateFrame(self._CurrentSourceFrame)
+
+            return self._CurrentSourceFrame
+        else:
+            raise TypeError(f"Invalid argument type for [ Index ].")
+
+    def __len__(self) -> int:
+        """
+        __len__
+
+        This function...
+
+        Return (int):
+            ...
+        """
+
+        if ( self.StartFrameIndex is not None ) and ( self.EndFrameIndex is not None):
+            return self.EndFrameIndex - self.StartFrameIndex
+
+        if ( self.SourceNumFrames is not None ):
+            return self.SourceNumFrames
+
+        return 0
 
     def __del__(self) -> None:
         """
@@ -271,7 +300,7 @@ class VideoReadWriter(Iterator):
             self._closeOutputVideo()
         except:
             pass
-        
+
         return
 
     ##  Private Class Methods
@@ -1044,16 +1073,16 @@ class VideoReadWriter(Iterator):
             List of Frames, which are themselves 3D lists of pixels.
         """
         return [self[round(i)] for i in FrameNumbers]
-    
+
     def SaveFrames(self, FrameIndices: List[int]) -> bool:
         """
         SaveFrames:
-        
+
         This function...
-        
+
         FrameIndices:
             ...
-        
+
         Return (bool):
             ...
         """
