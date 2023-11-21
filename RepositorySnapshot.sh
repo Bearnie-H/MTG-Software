@@ -210,7 +210,7 @@ function main() {
 
     #   Push the changes to the remote.
     if ! git push -v; then
-        log $LOG_FATAL "Failed to push branch [ snapshot ] to [ origin ]!"
+        log $LOG_ERROR "Failed to push branch [ snapshot ] to [ origin ]!"
     fi
 
     return
