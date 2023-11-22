@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import math
 import os
 import platform
 import sys
@@ -144,8 +145,12 @@ class Configuration():
             invokation of the program.
         """
 
+        if ( self.ImageStackFile is None ) or ( self.ImageStackFile == "" ):
+            raise RuntimeError(f"Output directory cannot be determined prior to knowing the image file to operate on!")
+
         if ( self._OutputDirectory is None ) or ( self._OutputDirectory == "" ):
-            self._OutputDirectory = os.path.join(os.path.abspath("./"), f"Analysis Results - {datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S')}")    #   FIXME
+            Filename: str = os.path.splitext(os.path.basename(self.ImageStackFile))[0]
+            self._OutputDirectory = os.path.join(os.path.abspath("./"), f"{Filename} Analysis Results - {datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S')}")    #   FIXME
 
         if ( not os.path.exists(self._OutputDirectory) ) and ( not self.EnableDryRun ):
             self._LogWriter.Println(f"Creating artefact output directory [ {self._OutputDirectory} ].")
@@ -198,6 +203,10 @@ class Configuration():
         """
 
         TimeFormat: str = "%Y-%m-%d, %H:%M:%S"
+        AnalysisFinished: datetime.datetime = datetime.datetime.now()
+        AnalysisDuration: datetime.timedelta = math.ceil((AnalysisFinished - self._StartTime).total_seconds())
+        Hours, rem = divmod(AnalysisDuration, 60*60)
+        Minutes, Seconds = divmod(rem, 60)
 
         return '\n'.join([
             f"",
@@ -212,6 +221,7 @@ class Configuration():
             f"---------- Analysis Timing Information ----------",
             f"Analysis Started At:              {self._StartTime.strftime(TimeFormat)}",
             f"Analysis Finished At:             {datetime.datetime.now().strftime(TimeFormat)}",
+            f"Analysis Duration:                {Hours:02d}:{Minutes:02d}:{Seconds:02d} (HH:MM:SS)",
             f"---------- Command-Line Arguments ----------",
             f"Image Stack File:                 {os.path.basename(self.ImageStackFile)}",
             f"Image Clearing Algorithm:         {self.ClearingAlgorithm.upper() if self.ClearingAlgorithm is not None else 'N/A'}",
