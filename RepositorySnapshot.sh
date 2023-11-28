@@ -216,7 +216,11 @@ function main() {
     fi
 
     #   Push the changes to the remote.
-    if ! git push -v; then
+    if ! git push -v --all origin; then
+        log $LOG_ERROR "Failed to push branch [ snapshot ] to [ origin ]!"
+    fi
+
+    if ! git push -v --all GitHub; then
         log $LOG_ERROR "Failed to push branch [ snapshot ] to [ origin ]!"
     fi
 
