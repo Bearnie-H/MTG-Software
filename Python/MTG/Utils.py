@@ -13,16 +13,13 @@ import os
 #   Import third-party libraries as required
 import cv2
 import numpy as np
-import matplotlib
 from matplotlib.figure import Figure
-from matplotlib.axes import Axes
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.image import AxesImage
 import matplotlib.pyplot as plt
 #   ...
 
 #   Import any local libraries or packages as required
-from .Logger import Logger
+from .Logger import Logger, Discarder
 #   ...
 
 #   Define any module-level globals
@@ -30,7 +27,7 @@ DefaultHoldTime: int = 3
 
 #   Provide a Logger, to allow writing log messages.
 #       By default, force it to write to /dev/null (or equivalent) so it does nothing.
-LogWriter: Logger = Logger(OutputStream=open(os.devnull, "w"))
+LogWriter: Logger = Discarder
 
 def Default_SIGINT_Handler(signal, frame) -> None:
     """
@@ -243,16 +240,19 @@ def GammaCorrection(Image: np.ndarray = None, Gamma: float = 1.0, Minimum: int =
     Limits = None
     if ( np.issubdtype(OriginalDtype, np.integer)):
         Limits = np.iinfo(OriginalDtype)
+        if ( Minimum is None ):
+            Minimum = Limits.min
+        if ( Maximum is None ):
+            Maximum = Limits.max
     elif ( np.issubdtype(OriginalDtype, np.floating)):
         Limits = np.finfo(OriginalDtype)
+        #
+        if ( Minimum is None ):
+            Minimum = 0.0
+        if ( Maximum is None ):
+            Maximum = 1.0
     else:
         raise TypeError(f"Numpy NDArray has non-integral and non-floating point dtype!")
-
-    if ( Minimum is None ):
-        Minimum = Limits.min
-
-    if ( Maximum is None ):
-        Maximum = Limits.max
 
     #   Perform the non-linear exponentiation operation
     #       allowing short-cutting for the no-op of exponentiation by 1.
@@ -263,7 +263,7 @@ def GammaCorrection(Image: np.ndarray = None, Gamma: float = 1.0, Minimum: int =
     #   Linearly re-scale the resulting image to the desired min/max range provided.
     Offset = np.min(Scaled) - Minimum
     if ( Offset != 0.0 ):
-        Scaled = Scaled - (np.min(Scaled) - Minimum)
+        Scaled -= Offset
 
     if ( np.max(Scaled) != 0 ):
         ScaleFactor = Maximum / np.max(Scaled)
@@ -290,7 +290,7 @@ def ConvertTo8Bit(Image: np.ndarray) -> np.ndarray:
     if ( Image is None ):
         raise ValueError(f"Image must not be None")
 
-    return GammaCorrection(Image=Image, Gamma=1, Minimum=0, Maximum=255).astype(np.uint8)
+    return GammaCorrection(Image=Image.copy(), Gamma=1, Minimum=0, Maximum=255).astype(np.uint8)
 
 def RotateFrame(Frame: np.ndarray = None, Theta: float = 0.0) -> np.ndarray:
     """
@@ -307,7 +307,8 @@ def RotateFrame(Frame: np.ndarray = None, Theta: float = 0.0) -> np.ndarray:
         by.
 
     Return (np.ndarray):
-        The new, rotated image.
+        The rotated image. This will be a modified version of the original image, should
+        any existing references still exist to it.
     """
 
     if ( Frame is None ):
@@ -316,11 +317,18 @@ def RotateFrame(Frame: np.ndarray = None, Theta: float = 0.0) -> np.ndarray:
     if ( Theta is None ) or ( Theta == 0.0 ):
         return Frame
 
+    #   Determine the pixel location of the centre of the frame.
     FrameHeight, FrameWidth = Frame.shape[0], Frame.shape[1]
     Centre = (FrameWidth / 2.0, FrameHeight / 2.0)
 
+    #   Compute the rotation matrix for a counter-clockwise rotation of 'Theta' degrees.
+    #   This same matirx can also apply a scaling, either expanding or contracting the image,
+    #   which for this operation is set to exactly unity.
     RotationMatrix = cv2.getRotationMatrix2D(Centre, Theta, scale=1.0)
 
+    #   Actually perform the rotation. For pixels which 'enter' the frame from
+    #   outside the border, simply replicate what was on the border rather than
+    #   trying to make up information for what the pixels 'should' be.
     return cv2.warpAffine(Frame, RotationMatrix, (FrameWidth, FrameHeight), borderMode=cv2.BORDER_REPLICATE)
 
 def PrepareFigure(FigureDPI: int = 96, FigureSizeIn: typing.Tuple[float, float] = (10.8, 7.2), FigureSizePx: typing.Tuple[int, int] = None, Interactive: bool = False) -> Figure:
@@ -341,7 +349,7 @@ def PrepareFigure(FigureDPI: int = 96, FigureSizeIn: typing.Tuple[float, float] 
         If not None, this overrides the value for FigureSizeIn
 
     Return (Figure):
-        The returned figure,
+        The returned Figure, ready to be used with any sort of matplotlib operations.
     """
 
     if ( FigureSizePx is not None ):

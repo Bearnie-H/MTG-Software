@@ -152,7 +152,7 @@ function argSet() {
 function fileExists() {
     local FilenameToCheck="$1"
 
-    if [ ! -f "$FilenameToCheck" ]; then
+    if [ ! -f "$(which $FilenameToCheck)" ]; then
         if [ $# -le 1 ]; then
             log $LOG_ATTENTION "File [ $FilenameToCheck ] does not exist."
         fi
@@ -192,6 +192,13 @@ function assertDirectoryExists() {
 
 #   Main function, this is the entry point of the actual logic of the script, AFTER all of the input validation and top-level script pre-script set up has been completed.
 function main() {
+
+    if fileExists RemoveWhitespace.sh ; then
+        log $LOG_NOTICE "Removing whitespace from all [ *.py ] files."
+        RemoveWhitespace.sh -d "$(dirname "$0")" -e "py"
+    else
+        log $LOG_ATTENTION "Failed to find [ RemoveWhitespace.sh ] script; not removing unnecessary whitespace from [ *.py ] files..."
+    fi
 
     #   Check out the current snapshot branch
     if ! git checkout "snapshot"; then

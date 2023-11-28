@@ -34,6 +34,9 @@ class Logger():
     #   The TextIO stream to write the log messages to.
     _OutputStream: TextIO
 
+    #   The filename, if any has been provided, to which the logger writes to.
+    _Filename: str
+
     #   A possible prefix to add to the beginning of any message.
     _MessagePrefix: str
 
@@ -83,6 +86,7 @@ class Logger():
             OutputStream = sys.stdout
 
         self._OutputStream = OutputStream
+        self._Filename = None
         self._MessagePrefix = Prefix
         self._TimeStamp = IncludeTime
         self._Columns = Columns
@@ -198,6 +202,31 @@ class Logger():
     def RawStream(self: Logger) -> TextIO:
         return self._OutputStream
 
+    def SetOutputStream(self: Logger, Stream: TextIO) -> Logger:
+        """
+        SetOutputStream
+
+        This function...
+
+        Stream:
+            ...
+
+        Return (Logger):
+            ...
+        """
+
+        if ( Stream is None ):
+            self.Warnln(f"No new \"Stream\" provided. Changing nothing...")
+            return self
+
+        if ( Stream.closed ):
+            self.Errorln(f"Provided \"Stream\" is already closed. Changing nothing...")
+            return self
+
+        self._Filename = None
+        self._OutputStream = Stream
+        return Stream
+
     def SetOutputFilename(self: Logger, Filename: str = None) -> Logger:
 
         if ( Filename is None ) or ( Filename == "" ):
@@ -206,9 +235,11 @@ class Logger():
 
         if ( Filename == "-" ):
             self.Println("Setting Logger output to stdout.")
+            self._Filename = None
             self._OutputStream = sys.stdout
             return
 
+        self._Filename = Filename
         LogDirectory: str = os.path.dirname(Filename)
         if ( LogDirectory is None ) or ( LogDirectory == "" ):
             LogDirectory = "./"
@@ -222,6 +253,17 @@ class Logger():
 
         return self
 
+    def GetOutputFilename(self: Logger) -> str:
+        """
+        GetOutputFilename:
+
+        This function...
+
+        Return (str):
+            ...
+        """
+        return self._Filename
+
     def WritesToFile(self: Logger) -> bool:
         """
         WritesToFile
@@ -232,13 +274,7 @@ class Logger():
         Return (bool):
             True if the underlying output stream is either stdout or stderr.
         """
-
-        OutputStreamFD: int = self._OutputStream.fileno()
-
-        if ( OutputStreamFD == 1 ) or ( OutputStreamFD == 2 ):
-            return False
-
-        return True
+        return self._Filename is not None
 
     def Println(self: Logger, Message: str = None) -> int:
         """
