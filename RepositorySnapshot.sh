@@ -152,7 +152,7 @@ function argSet() {
 function fileExists() {
     local FilenameToCheck="$1"
 
-    if [ ! -f "$(which $FilenameToCheck)" ]; then
+    if [ ! -f "$FilenameToCheck" ] && [ ! $(which "$FilenameToCheck") ]; then
         if [ $# -le 1 ]; then
             log $LOG_ATTENTION "File [ $FilenameToCheck ] does not exist."
         fi
