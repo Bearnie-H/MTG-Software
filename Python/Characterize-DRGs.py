@@ -386,11 +386,6 @@ def OpenLIFFile(Filename: str = "", SeriesSubstring: str = "") -> typing.Tuple[b
         Z_Stack: np.ndarray = np.array([np.uint16(np.array(i) * ScaleFactor) for i in ImageStack.get_iter_z()])
         LogWriter.Println(f"Finished Reading z-slices from *.LIF file into numpy array!")
 
-        #   Linearly scale the contrast to take up the full 16-bit range.
-        LogWriter.Println(f"Linearly scaling image contrast to the full bit depth...")
-        for i in range(Z_Stack.shape[0]):
-            Z_Stack[i,:,:] = Utils.GammaCorrection(Z_Stack[i,:,:])
-
         return (True, Z_Stack)
     except:
         LogWriter.Warnln(f"File [ {Filename} ] failed to be opened and read as a *.LIF file!")
@@ -433,11 +428,6 @@ def OpenTIFFFile(Filename: str = None) -> typing.Tuple[bool, np.ndarray]:
         Z_Stack = np.array(Z_Stack)
         LogWriter.Println(f"Successfully read Z-Stack from *.TIFF file [ {Filename} ]...")
         LogWriter.Println(f"Image Stack has dimensions: x={Z_Stack.shape[1]}, y={Z_Stack.shape[2]}, z={Z_Stack.shape[0]}")
-
-        LogWriter.Println(f"Converting Z-Stack to 16-bit depth...")
-        Z_Stack = Z_Stack.astype(np.uint16)
-        for i in range(Z_Stack.shape[0]):
-            Z_Stack[i,:,:] = Utils.GammaCorrection(Z_Stack[i,:,:])
 
         return (True, Z_Stack)
     except:
