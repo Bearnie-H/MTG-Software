@@ -29,6 +29,8 @@
 */
 
 /* +++ Begin Top-level Header Includes +++ */
+#include <stdbool.h>
+#include <stdint.h>
 /* --- End Top-level Header Includes --- */
 
 /* +++ Begin Custom Header Includes +++ */
@@ -56,9 +58,116 @@
 /* --- End Program Macro Definitions --- */
 
 /* +++ Begin Program Typedefs +++ */
+
+/*
+    HallEffectMeasurement_t
+
+    This struct...
+*/
+typedef struct HallEffectMeasurement_t {
+
+    /*
+        The...
+    */
+    uint32_t Clock;
+
+    /*
+        The...
+    */
+    uint16_t Raw;
+
+} HallEffectMeasurement_t;
+
+/*
+    SensorReading_t
+
+    This struct...
+*/
+typedef struct SensorReading_t {
+
+    // ...
+    HallEffectMeasurement_t Field_X;
+
+    // ...
+    HallEffectMeasurement_t Field_Y;
+
+    // ...
+    HallEffectMeasurement_t Field_Z;
+
+    /*
+        The...
+    */
+    uint16_t Temperature;
+
+    /*
+        The...
+    */
+    uint8_t Address;
+
+} SensorReading_t;
+
 /* --- End Program Typedefs --- */
 
 /* +++ Begin Function Prototype Forward Declarations +++ */
+
+/*
+    InitializeSensorAddresses
+
+    This function...
+
+    Return (void):
+        ...
+*/
+void InitializeSensorAddresses(void);
+
+/*
+    ReadSensorArray
+
+    This function...
+
+    Return (bool):
+        ...
+*/
+bool ReadSensorArray(void);
+
+/*
+    ReadSensorLayer
+
+    This function...
+
+    LayerIndex:
+        ...
+
+    Return (bool):
+        ...
+*/
+bool ReadSensorLayer(uint8_t LayerIndex);
+
+/*
+    ReadSensor
+
+    This function...
+
+    LayerIndex:
+        ...
+    DeviceIndex:
+        ...
+
+    Return (bool):
+        ...
+*/
+bool ReadSensor(uint8_t LayerIndex, uint8_t DeviceIndex);
+
+/*
+    WriteSensorReadings
+
+    This function...
+
+    Return (bool):
+        ...
+*/
+bool WriteSensorReadings(void);
+
 /* --- End Function Prototype Forward Declarations --- */
 
 /* +++ Begin Interrupt Service Routine Function Forward Declarations +++ */
@@ -118,6 +227,10 @@
 
 void setup(void) {
 
+    // Configure all of the I2C addresses for the ALS31313 Hall-Effect sensors
+    // using the custom addressing overlay.
+    InitializeSensorAddresses();
+
     // ...
 
     return;
@@ -136,7 +249,13 @@ void setup(void) {
 */
 void loop(void) {
 
-    // ...
+    // Read the full array of sensors, in the pre-defined addressing order.
+    if ( ReadSensorArray() ) {
+
+        // If the sensor array read operation succeeded, then write out the measurements
+        // on the output stream.
+        WriteSensorReadings();
+    }
 
     return;
 }
@@ -144,6 +263,27 @@ void loop(void) {
 /* --- End Arduino Implementation Functions --- */
 
 /* +++ Begin Program Function Definitions +++ */
+void InitializeSensorAddresses(void) {
+
+    // ...
+
+    return;
+}
+
+bool ReadSensorArray(void) {
+
+    // ...
+
+    return false;
+}
+
+bool WriteSensorReadings(void) {
+
+    // ...
+
+    return false;
+}
+
 /* --- End Program Function Definitions --- */
 
 /* +++ Begin Struct/Class Method Definitions +++ */
