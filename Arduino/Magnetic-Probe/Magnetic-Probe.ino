@@ -1,7 +1,10 @@
 /*
+    Magnetic-Probe.ino
+
     Author(s):  Joseph Sadden
     Date:       1st December, 2023
-    Purpose:    This sketch...
+
+    This sketch...
 */
 
 /*
@@ -34,6 +37,11 @@
 /* --- End Top-level Header Includes --- */
 
 /* +++ Begin Custom Header Includes +++ */
+#include "include/common.h"
+#include "include/ALS31313.h"
+#include "include/SN74LV4051A.h"
+#include "include/I2CBus.h"
+#include "include/JSMP001.h"
 /* --- End Custom Header Includes --- */
 
 /*
@@ -58,116 +66,9 @@
 /* --- End Program Macro Definitions --- */
 
 /* +++ Begin Program Typedefs +++ */
-
-/*
-    HallEffectMeasurement_t
-
-    This struct...
-*/
-typedef struct HallEffectMeasurement_t {
-
-    /*
-        The...
-    */
-    uint32_t Clock;
-
-    /*
-        The...
-    */
-    uint16_t Raw;
-
-} HallEffectMeasurement_t;
-
-/*
-    SensorReading_t
-
-    This struct...
-*/
-typedef struct SensorReading_t {
-
-    // ...
-    HallEffectMeasurement_t Field_X;
-
-    // ...
-    HallEffectMeasurement_t Field_Y;
-
-    // ...
-    HallEffectMeasurement_t Field_Z;
-
-    /*
-        The...
-    */
-    uint16_t Temperature;
-
-    /*
-        The...
-    */
-    uint8_t Address;
-
-} SensorReading_t;
-
 /* --- End Program Typedefs --- */
 
 /* +++ Begin Function Prototype Forward Declarations +++ */
-
-/*
-    InitializeSensorAddresses
-
-    This function...
-
-    Return (void):
-        ...
-*/
-void InitializeSensorAddresses(void);
-
-/*
-    ReadSensorArray
-
-    This function...
-
-    Return (bool):
-        ...
-*/
-bool ReadSensorArray(void);
-
-/*
-    ReadSensorLayer
-
-    This function...
-
-    LayerIndex:
-        ...
-
-    Return (bool):
-        ...
-*/
-bool ReadSensorLayer(uint8_t LayerIndex);
-
-/*
-    ReadSensor
-
-    This function...
-
-    LayerIndex:
-        ...
-    DeviceIndex:
-        ...
-
-    Return (bool):
-        ...
-*/
-bool ReadSensor(uint8_t LayerIndex, uint8_t DeviceIndex);
-
-/*
-    WriteSensorReadings
-
-    This function...
-
-    Return (bool):
-        ...
-*/
-bool WriteSensorReadings(void);
-
 /* --- End Function Prototype Forward Declarations --- */
 
 /* +++ Begin Interrupt Service Routine Function Forward Declarations +++ */
@@ -183,12 +84,34 @@ bool WriteSensorReadings(void);
 /* --- End Program Global Constant Definitions --- */
 
 /* +++ Begin Pin Definitions +++ */
+const Pin_t LayerSelect_ADDR_0 = 2;
+const Pin_t LayerSelect_ADDR_1 = 3;
+const Pin_t LayerSelect_ADDR_2 = 4;
+const Pin_t LayerSelect_Enable = 6;
+
+const Pin_t DeviceSelect_ADDR_0 = 7;
+const Pin_t DeviceSelect_ADDR_1 = 8;
+const Pin_t DeviceSelect_ADDR_2 = 9;
+const Pin_t DeviceSelect_Enable = 5;
+
+const Pin_t I2CBus_Data = PIN_WIRE_SDA;
+const Pin_t I2CBus_Clock = PIN_WIRE_SCL;
+const Pin_t I2C_Bus_Enable = 10;
+
 /* --- End Pin Definitions --- */
 
 /* +++ Begin Hardware Register Declarations +++ */
 /* --- End Hardware Register Declarations --- */
 
 /* +++ Begin Program Global Variable Definitions +++ */
+SN74LV4051A_Multiplexer_t LayerSelect = SN74LV4051A_Multiplexer_t(LayerSelect_ADDR_0, LayerSelect_ADDR_1, LayerSelect_ADDR_2, LayerSelect_Enable);
+SN74LV4051A_Multiplexer_t DeviceSelect = SN74LV4051A_Multiplexer_t(DeviceSelect_ADDR_0, DeviceSelect_ADDR_1, DeviceSelect_ADDR_2, DeviceSelect_Enable);
+
+I2CBus_t I2CBus = I2CBus_t(I2CBus_Data, I2CBus_Clock, I2C_Bus_Enable);
+
+MagneticSensorArray_t Sensor = MagneticSensorArray_t(LayerSelect, DeviceSelect, DeviceSelect_Enable, I2CBus);
+
+MagneticSensorReading_t CurrentMeasurement = {0};
 /* --- End Program Global Variable Definitions –-- */
 
 /* +++ Begin Arduino Implementation Functions +++ */
@@ -227,9 +150,13 @@ bool WriteSensorReadings(void);
 
 void setup(void) {
 
-    // Configure all of the I2C addresses for the ALS31313 Hall-Effect sensors
-    // using the custom addressing overlay.
-    InitializeSensorAddresses();
+    // Set up the Arduino to provide high-resolution time-stamping
+    // ..
+
+    if ( ! Sensor.InitializeI2CAddressing() ) {
+        // ...
+        exit(-1);
+    }
 
     // ...
 
@@ -249,12 +176,16 @@ void setup(void) {
 */
 void loop(void) {
 
-    // Read the full array of sensors, in the pre-defined addressing order.
-    if ( ReadSensorArray() ) {
+    // Get a current timestamp to associate with the sensor...
+    // uint32_t Timestamp = Now();
 
-        // If the sensor array read operation succeeded, then write out the measurements
-        // on the output stream.
-        WriteSensorReadings();
+    // Read out the next sensor value...
+    if ( Sensor.ReadNextDevice(CurrentMeasurement) ) {
+
+        // ...And if it's successful, write it out to the serial port, after inserting the timestamp information.
+        // CurrentMeasurement.SetMeasurementTime(Timestamp);
+        size_t Length = CurrentMeasurement.AsBytes(SensorReading_Bytes);
+        Serial.write(SensorReading_Bytes, Length);
     }
 
     return;
@@ -263,27 +194,6 @@ void loop(void) {
 /* --- End Arduino Implementation Functions --- */
 
 /* +++ Begin Program Function Definitions +++ */
-void InitializeSensorAddresses(void) {
-
-    // ...
-
-    return;
-}
-
-bool ReadSensorArray(void) {
-
-    // ...
-
-    return false;
-}
-
-bool WriteSensorReadings(void) {
-
-    // ...
-
-    return false;
-}
-
 /* --- End Program Function Definitions --- */
 
 /* +++ Begin Struct/Class Method Definitions +++ */
