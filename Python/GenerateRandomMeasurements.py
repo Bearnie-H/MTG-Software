@@ -12,7 +12,7 @@ def RandomReading() -> str:
     FieldX: int = random.randint(-2048, 2047)
     FieldY: int = random.randint(-2048, 2047)
     FieldZ: int = random.randint(-2048, 2047)
-    Temperature: int = random.randint(-2048, 2047)
+    Temperature: int = random.randint(0, 4095)
     Timestamp: int = time.time_ns() % 2**32
 
     return f"{I2C_Address},{LayerIndex},{DeviceIndex},{FieldX},{FieldY},{FieldZ},{Temperature},{Timestamp}"

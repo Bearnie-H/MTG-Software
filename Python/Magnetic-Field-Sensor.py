@@ -18,15 +18,18 @@ import serial
 import signal
 import sys
 import threading
+import time
 import typing
 #   ...
 
 #   Import the necessary third-part modules
 import numpy as np
+import matplotlib
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 import matplotlib.pyplot as plt
-import matplotlib.animation as anim
+from matplotlib.colors import Colormap
+from mpl_toolkits.mplot3d import axes3d
 #   ...
 
 #   Import the desired locally written modules
@@ -287,6 +290,18 @@ class MeasurementStream():
 
         return
 
+    def __len__(self: MeasurementStream) -> int:
+        """
+        __len__
+
+        This function...
+
+        Return (int):
+            ....
+        """
+
+        return len(self.Measurements)
+
     def StartReading(self: MeasurementStream) -> None:
         """
         StartReading
@@ -322,12 +337,12 @@ class MeasurementStream():
             ...
         """
 
+        if ( len(self.Measurements) > 0 ):
+            return self.Measurements.pop(0)
+
         if ( not self._MonitorActive ):
             self.LogWriter.Warnln(f"Cannot read next measurement from MeausrementStream, asynchronous thread is not active to read from the underlying stream!")
             return None
-
-        if ( len(self.Measurements) > 0 ):
-            return self.Measurements.pop(0)
 
         return None
 
@@ -361,6 +376,7 @@ class MeasurementStream():
         while ( self._MonitorActive ) and ( self.SerialPort.is_open ):
             pass
 
+        self._MonitorActive = False
         return
 
     def _ReadFile(self: MeasurementStream) -> None:
@@ -377,6 +393,7 @@ class MeasurementStream():
             while ( self._MonitorActive ):
                 Line: str = Measurements.readline()
                 if ( len(Line) == 0 ):
+                    self._MonitorActive = False
                     return
 
                 Fields: typing.List[str] = Line.split(",")
@@ -392,6 +409,7 @@ class MeasurementStream():
 
                 self.Measurements.append(RawMeasurement)
 
+        self._MonitorActive = False
         return
 
 Config: Configuration = Configuration(LogWriter=LogWriter)
@@ -425,9 +443,13 @@ def main() -> int:
     Measurements = MeasurementStream(LogWriter=LogWriter, SerialPort=Config.SerialPort, Filename=Config.MeasurementsFilename)
     Measurements.StartReading()
 
-    Fields_Figure: Figure = plt.figure()
+    #   Initialize the 3 dimensional array of formatted field values with zeroes, and initialize the
+    #   vector plot display window to show the field.
+    MagneticField: np.ndarray = np.zeros(shape=(6,64), dtype=np.float64)   #   I want to have two 3-d vectors containing (x,y,z) and (u,v,w)
+    MagneticFieldNorms: np.ndarray = np.zeros(shape=(4,64), dtype=np.float64)   #   I want 3d a (x,y,z) and a scalar (B)
+    TemperatureField: np.ndarray = np.zeros(shape=(4,64), dtype=np.float64)     #   I want a 3d (x,y,z) and a scalar (T)
 
-    # Fields_Animation: anim.TimedAnimation = anim.FuncAnimation(fig=Fields_Figure, func=UpdateFields, frames=None, interval=(1000.0 / 30), repeat=False, blit=True)
+    Fields_Figure: Figure = plt.figure()
 
     MagneticField_Axes: Axes = Fields_Figure.add_subplot(1, 2, 1, projection='3d')
     TemperatureField_Axes: Axes = Fields_Figure.add_subplot(1, 2, 2, projection='3d')
@@ -438,30 +460,43 @@ def main() -> int:
     if ( not Config.EnableDryRun ):
         OutputStream = open(f"Sensor-Readings - {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.csv", "w+")
 
-    #   Initialize the 3 dimensional array of formatted field values with zeroes, and initialize the
-    #   vector plot display window to show the field.
-    MagneticField: np.ndarray = np.zeros(shape=(6,64), dtype=np.float64)   #   I want to have two 3-d vectors containing (x,y,z) and (u,v,w)
-    TemperatureField: np.ndarray = np.zeros(shape=(4,64), dtype=np.float64)     #   I want a 3d (x,y,z) and a scalar (T)
-
     #   Enter the main loop where we re-fresh the display of the vector plot with the most up-to-date measurement values
     #   as read from the MeasurementStream.
     DrawInterval: int = 64
+    Count: int = 0
     while (( CurrentMeasurement := Measurements.Next() ) is not None ):
         OutputStream.write(CurrentMeasurement.ToString())
         Formatted: FormattedSensorReading = CurrentMeasurement.Format()
 
         MagneticField[:,Formatted.Index] = np.concatenate((Formatted.Position, Formatted.MagneticField))
+        MagneticFieldNorms[:,Formatted.Index] = np.concatenate((Formatted.Position, np.array([np.linalg.norm(Formatted.MagneticField)])))
         TemperatureField[:,Formatted.Index] = np.concatenate((Formatted.Position, np.array([Formatted.Temperature])))
 
-        MagneticField_Axes.quiver(MagneticField[0,:], MagneticField[1,:], MagneticField[2,:], MagneticField[3,:], MagneticField[4,:], MagneticField[5,:], normalize=True)
-        TemperatureField_Axes.scatter(TemperatureField[0,:], TemperatureField[1,:], TemperatureField[2,:], TemperatureField[3,:])
+        Count += 1
+        if ( Count == DrawInterval ):
+            MaxField: float = np.max(MagneticFieldNorms[3,:])
+            LogWriter.Println(f"Measurement Backlog: {len(Measurements)}")
 
-        DrawInterval -= 1
-        if ( DrawInterval == 0 ):
-            plt.draw_all()
-            plt.pause(0.05)
             MagneticField_Axes.cla()
-            DrawInterval = 64
+            TemperatureField_Axes.cla()
+
+            C = (MagneticFieldNorms[3,:]).copy()
+            if ( C.ptp() == 0 ):
+                C = np.zeros_like(C)
+            else:
+                C = (C.ravel() - C.min()) / C.ptp()
+            C = np.concatenate((C, np.repeat(C, 2)))
+            C = plt.cm.plasma(C)
+            MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MaxField, V=MagneticField[4,:]/MaxField, W=MagneticField[5,:]/MaxField, pivot='middle', length=4, arrow_length_ratio=0.5, colors=C)
+            TemperatureField_Axes.scatter(xs=TemperatureField[0,:], ys=TemperatureField[1,:], zs=TemperatureField[2,:], data=TemperatureField[3,:], depthshade=False, c=TemperatureField[3,:], cmap='plasma')
+            plt.draw_all()
+            plt.pause(0.01)
+
+            Count = 0
+
+    while ( len(Measurements) > 0 ):
+        LogWriter.Println(f"Waiting for measurement stream to end...")
+        time.sleep(1)
 
     Measurements.Halt()
     OutputStream.close()
