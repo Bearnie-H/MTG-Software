@@ -62,11 +62,13 @@ SN74LV4051A_Multiplexer_t::SN74LV4051A_Multiplexer_t(Pin_t Addr0, Pin_t Addr1, P
     this->ADDR_0 = Addr0;
     this->ADDR_1 = Addr1;
     this->ADDR_2 = Addr2;
+
     this->Enable = Enable;
 
     pinMode(Addr0, OUTPUT);
     pinMode(Addr1, OUTPUT);
     pinMode(Addr2, OUTPUT);
+
     pinMode(Enable, OUTPUT);
 
     return;
@@ -92,10 +94,12 @@ bool SN74LV4051A_Multiplexer_t::DisableDevice() const {
 
 bool SN74LV4051A_Multiplexer_t::EnableDevice() const {
 
+    // Initialize the address lines to a known default state.
     digitalWrite(this->ADDR_0, LOW);
     digitalWrite(this->ADDR_1, LOW);
     digitalWrite(this->ADDR_2, LOW);
 
+    // The enable signal for the SN74LV4051A is active-low, so pull the enable pin low.
     digitalWrite(this->Enable, LOW);
 
     return true;

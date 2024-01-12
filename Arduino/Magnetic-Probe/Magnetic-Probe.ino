@@ -94,8 +94,6 @@ const Pin_t DeviceSelect_ADDR_1 = 8;
 const Pin_t DeviceSelect_ADDR_2 = 9;
 const Pin_t DeviceSelect_Enable = 5;
 
-const Pin_t I2CBus_Data = PIN_WIRE_SDA;
-const Pin_t I2CBus_Clock = PIN_WIRE_SCL;
 const Pin_t I2C_Bus_Enable = 10;
 
 /* --- End Pin Definitions --- */
@@ -107,11 +105,11 @@ const Pin_t I2C_Bus_Enable = 10;
 SN74LV4051A_Multiplexer_t LayerSelect = SN74LV4051A_Multiplexer_t(LayerSelect_ADDR_0, LayerSelect_ADDR_1, LayerSelect_ADDR_2, LayerSelect_Enable);
 SN74LV4051A_Multiplexer_t DeviceSelect = SN74LV4051A_Multiplexer_t(DeviceSelect_ADDR_0, DeviceSelect_ADDR_1, DeviceSelect_ADDR_2, DeviceSelect_Enable);
 
-I2CBus_t I2CBus = I2CBus_t(I2CBus_Data, I2CBus_Clock, I2C_Bus_Enable);
+I2CBus_t I2CBus = I2CBus_t(I2C_Bus_Enable);
 
-MagneticSensorArray_t Sensor = MagneticSensorArray_t(LayerSelect, DeviceSelect, DeviceSelect_Enable, I2CBus);
+MagneticSensorArray_t Sensor = MagneticSensorArray_t(LayerSelect, DeviceSelect, I2CBus);
 
-MagneticSensorReading_t CurrentMeasurement = {0};
+MagneticSensorReading_t CurrentMeasurement;
 /* --- End Program Global Variable Definitions –-- */
 
 /* +++ Begin Arduino Implementation Functions +++ */

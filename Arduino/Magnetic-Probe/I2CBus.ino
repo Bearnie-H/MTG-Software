@@ -60,25 +60,18 @@
 
 I2CBus_t::I2CBus_t() {
 
-    this->DataPin = PIN_WIRE_SDA;
-    this->ClockPin = PIN_WIRE_SCL;
-    this->EnablePin = NOT_DISABLEABLE;
-    this->Enabled = true;
-
-    Wire.begin();
+    I2CBus_t(NOT_DISABLEABLE);
 
     return;
 }
 
-I2CBus_t::I2CBus_t(Pin_t Data, Pin_t Clock, Pin_t Enable) {
+I2CBus_t::I2CBus_t(Pin_t Enable) {
 
-    this->DataPin = Data;
-    this->DataPin = Clock;
     this->EnablePin = Enable;
 
     this->Disable();
 
-    Wire.begin();
+    this->begin();
 
     return;
 }
@@ -88,7 +81,7 @@ bool I2CBus_t::Enable() {
     if ( this->EnablePin != NOT_DISABLEABLE ) {
         digitalWrite(this->EnablePin, HIGH);
         if ( ! this->Enabled ) {
-            Wire.begin();
+            this->begin();
         }
         this->Enabled = true;
     }
@@ -101,7 +94,7 @@ bool I2CBus_t::Disable() {
     if ( this->EnablePin != NOT_DISABLEABLE ) {
         digitalWrite(this->EnablePin, LOW);
         if ( this->Enabled ) {
-            Wire.end();
+            this->end();
         }
         this->Enabled = false;
     }
@@ -117,8 +110,8 @@ bool  I2CBus_t::AddressExists(uint8_t Address) {
 
     // Send a message to the given address, and check if we get an ACK or a NACK back.
     // ...
-    Wire.beginTransmission(Address);
-    uint8_t error = Wire.endTransmission(true);
+    this->beginTransmission(Address);
+    uint8_t error = this->endTransmission(true);
 
     switch (error) {
         case 0:

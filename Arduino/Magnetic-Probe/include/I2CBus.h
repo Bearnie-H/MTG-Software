@@ -55,16 +55,16 @@ extern "C" {
 /* --- End Library Macro Definitions --- */
 
 /* +++ Begin Library Typedefs +++ */
-class I2CBus_t {
-    Pin_t DataPin;
-    Pin_t ClockPin;
+class I2CBus_t: public TwoWire {
+
     Pin_t EnablePin;
     bool Enabled;
+    TwoWire Wire;
 
     public:
-        I2CBus_t();
 
-        I2CBus_t(Pin_t Data, Pin_t Clock, Pin_t Enable);
+        I2CBus_t();
+        I2CBus_t(Pin_t Enable);
 
         bool IsEnabled() const;
         bool Enable();

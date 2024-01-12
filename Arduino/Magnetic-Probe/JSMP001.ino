@@ -77,7 +77,7 @@ const SN74LV4051A_Multiplexer_Channel_t DeviceSelectionTranslationTable[DEVICES_
 /* --- End Private Function Definitions --- */
 
 /* +++ Begin Struct/Class Method Definitions +++ */
-MagneticSensorArray_t::MagneticSensorArray_t(SN74LV4051A_Multiplexer_t &LayerSelect, SN74LV4051A_Multiplexer_t &DeviceSelect, Pin_t LayerSelectLine, I2CBus_t &I2CBus) {
+MagneticSensorArray_t::MagneticSensorArray_t(SN74LV4051A_Multiplexer_t &LayerSelect, SN74LV4051A_Multiplexer_t &DeviceSelect, I2CBus_t &I2CBus) {
 
     this->LayerSelect = LayerSelect;
     this->DeviceSelect = DeviceSelect;
@@ -103,7 +103,7 @@ bool MagneticSensorArray_t::InitializeI2CAddressing() {
         this->LayerSelect.EnableOutputChannel(LayerSelectionTranslationTable[this->LayerIndex]);
         this->DeviceSelect.EnableOutputChannel(DeviceSelectionTranslationTable[this->DeviceIndex]);
 
-        if ( ! Sensor.AssertAddress(( this->LayerIndex << 4 ) | ( this->DeviceIndex ), this->I2CBus) ) {
+        if ( ! Sensor.AssertAddress(this->I2CBus, Sensor.DetermineI2CAddress()) ) {
             this->LayerMask &= ~(1 << this->LayerIndex);
             this->NextLayer();
         }
@@ -114,13 +114,13 @@ bool MagneticSensorArray_t::InitializeI2CAddressing() {
 
     } while ( this->DeviceIndex != 0 && this->LayerIndex != 0 );
 
-
     this->LayerIndex = 0;
     this->DeviceIndex = 0;
 
     this->LayerSelect.DisableDevice();
     this->DeviceSelect.DisableDevice();
 
+    // Enable the shared I2C bus, rather than using the multiplexors
     this->I2CBus.Enable();
 
     return this->LayerMask != 0;
@@ -133,7 +133,7 @@ bool MagneticSensorArray_t::ReadNextDevice(MagneticSensorReading_t &CurrentMeasu
     this->LayerSelect.EnableOutputChannel(LayerSelectionTranslationTable[this->LayerIndex]);
     this->DeviceSelect.EnableOutputChannel(DeviceSelectionTranslationTable[this->DeviceIndex]);
 
-    return Sensor.ReadMeasurements(CurrentMeasurement, this->I2CBus);
+    return Sensor.ReadMeasurements(this->I2CBus, CurrentMeasurement);
 }
 
 ALS31313_t MagneticSensorArray_t::NextSensor() {
@@ -148,18 +148,19 @@ ALS31313_t MagneticSensorArray_t::NextSensor() {
 
 bool MagneticSensorArray_t::NextLayer() {
 
-    uint16_t LayerMask = this->LayerMask >> this->LayerIndex;
+    this->DeviceIndex = 0;
+    uint16_t LayerMask = (this->LayerMask >> this->LayerIndex);
 
     do {
         LayerMask >>= 1;
         this->LayerIndex++;
+
         if ( this->LayerIndex >= MAXIMUM_LAYERS ) {
             this->LayerIndex = 0;
             LayerMask = this->LayerMask;
         }
     } while ((LayerMask & 1) != 0);
 
-    this->DeviceIndex = 0;
     return true;
 }
 

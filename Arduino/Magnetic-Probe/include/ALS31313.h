@@ -89,16 +89,17 @@ class ALS31313_t {
     public:
         ALS31313_t(uint8_t LayerIndex, uint8_t DeviceIndex);
 
-        bool AssertAddress(uint8_t I2CAddress, I2CBus_t& Bus);
+        uint8_t DetermineI2CAddress();
+        bool AssertAddress(I2CBus_t& Bus, uint8_t I2CAddress);
         bool InitializeSettings(I2CBus_t& Bus);
-        bool ReadMeasurements(MagneticSensorReading_t& CurrentReading, I2CBus_t& Bus) const;
+        bool ReadMeasurements(I2CBus_t& Bus, MagneticSensorReading_t& CurrentReading) const;
 
     private:
-        uint8_t ValidateI2CAddress(uint8_t Expected, I2CBus_t& Bus);
+        uint8_t ValidateI2CAddress(I2CBus_t& Bus, uint8_t Expected);
         bool EnableWriteAccess(I2CBus_t& Bus) const;
-        bool SetI2CAddress(uint8_t NewAddress, I2CBus_t& Bus);
-        uint32_t ReadRegister(uint8_t RegisterAddress) const;
-        bool WriteRegister(uint8_t RegisterAddress, uint32_t Data) const;
+        bool SetI2CAddress(I2CBus_t& Bus, uint8_t NewAddress);
+        uint32_t ReadRegister(I2CBus_t& Bus, uint8_t RegisterAddress) const;
+        bool WriteRegister(I2CBus_t& Bus, uint8_t RegisterAddress, uint32_t Data) const;
 };
 /* --- End Library Typedefs --- */
 

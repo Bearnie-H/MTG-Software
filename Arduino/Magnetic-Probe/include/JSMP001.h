@@ -76,7 +76,7 @@ class MagneticSensorArray_t {
     uint16_t LayerMask;
 
     public:
-        MagneticSensorArray_t(SN74LV4051A_Multiplexer_t &LayerSelect, SN74LV4051A_Multiplexer_t &DeviceSelect, Pin_t LayerSelectLine, I2CBus_t &I2CBusEnable);
+        MagneticSensorArray_t(SN74LV4051A_Multiplexer_t &LayerSelect, SN74LV4051A_Multiplexer_t &DeviceSelect, I2CBus_t &I2CBusEnable);
         ~MagneticSensorArray_t() = default;
 
         bool InitializeI2CAddressing();
