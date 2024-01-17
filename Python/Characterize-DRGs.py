@@ -25,6 +25,7 @@ import typing
 #   Import the necessary third-part modules
 import cv2
 import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import readlif
 from readlif.reader import LifFile, LifImage
@@ -68,16 +69,18 @@ class Configuration():
 
         self._LogWriter: Logger.Logger = LogWriter
         self._StartTime: datetime.datetime = datetime.datetime.now()
-        self._OutputDirectory: str = None
+        self._OutputDirectory: str = ""
 
         self.EnableDryRun: bool = False
         self.ValidateArguments: bool = False
         self.HeadlessMode: bool = False
 
         self.ImageStackFile: str = ""
-        self.ClearingAlgorithm: str = None
-        self.LIFSeriesName: str = None
+        self.ClearingAlgorithm: str = ""
+        self.LIFSeriesName: str = ""
         self.MIPGamma: float = 1.0
+        self.EnableZTruncation: bool = False
+        self.ZTruncationThreshold: float = 0.0
 
         self.MIProjectionFilename: str = ""
         self.ConfigurationDumpFilename: str = ""
@@ -124,14 +127,27 @@ class Configuration():
         else:
             self._LogWriter.Println(f"Working with image-clearing algorithm [ {self.ClearingAlgorithm} ].")
 
+        if ( Config.EnableZTruncation ):
+            self._LogWriter.Println(f"Enabling saturated feature truncation of the Z-Stack prior to computation of the Maximum Intensity Projection.")
+            if ( not 0 < self.ZTruncationThreshold < 1.0 ):
+                self._LogWriter.Errorln(f"Saturated feature truncation threshold must be a real number on the range (0, 1) - Got [ {self.ZTruncationThreshold} ]!")
+                self._LogWriter.Warnln(f"Disabling Z-Stack saturated feature truncation due to invalid threshold...")
+                self.EnableZTruncation = False
+            else:
+                self._LogWriter.Println(f"Saturated feature truncation will allow features up to a brightness curvature value of [ {self.ZTruncationThreshold*100}% ] the logarithmic pixel depth.")
+        else:
+            self._LogWriter.Println(f"Disabling Z-Stack saturated feature truncation...")
+
         #   Ensure the image stack file provided is suitable.
         Valid |= self._OpenImageStack(self.ImageStackFile, self.ClearingAlgorithm)
 
+        #   Validate the Gamma value used for contrast adjustment
         if ( self.MIPGamma <= 0.0 ):
             self._LogWriter.Errorln(f"Gamma value for non-linear constrast stretch of maximum intensity projection of the Z-Stack must be a positive real number - Got [ {self.MIPGamma} ].")
             Valid |= False
         else:
             self._LogWriter.Println(f"Working with gamma value of [ {self.MIPGamma} ] for Z-Stack constrast stretch.")
+
         #   ...
 
         if Valid:
@@ -234,6 +250,8 @@ class Configuration():
             f"...",
             f"---------- Tuning Parameters & Variables ----------",
             f"MIP Gamma Value:                  {self.MIPGamma:.4f}",
+            f"Z-Stack Truncation Enabled:       {self.EnableZTruncation}",
+            f"Z-Stack Truncation Threshold:     {self.ZTruncationThreshold if self.EnableZTruncation else 'N/A'}",
             f"...",
             f"---------- Results & Metrics ----------",
             f"Image Bit Depth:                  {np.iinfo(self._Z_Stack.dtype).bits if self._Z_Stack is not None else 'unknown'} bit",
@@ -244,7 +262,7 @@ class Configuration():
             f"Headless Mode:                    {self.HeadlessMode}",
             f"...",
             f"---------- Output Artefacts ----------",
-            f"Artefact Directory:               {self.OutputDirectory()}",
+            f"Artefact Directory:               {self.OutputDirectory() if not self.EnableDryRun else 'N/A'}",
             f"Output Log File:                  {self._LogWriter.GetOutputFilename() if self._LogWriter.WritesToFile() else 'None'}",
             f"Configuration State File:         {os.path.basename(self.ConfigurationDumpFilename)}",
             f"Maximum Intensity Projection:     {os.path.basename(self.MIProjectionFilename)}",
@@ -283,11 +301,11 @@ class Configuration():
         """
         self._LogWriter.Println(f"Attempting to open image-stack file [ {ImageStackFilename} ]...")
 
-        if ( self.EnableDryRun ):
-            self._LogWriter.Println(f"Dry-Run Mode: Skipping memory-intensive opening of z-stack...")
-            self._LogWriter.Println(f"Generating random z-stack array for testing...")
-            self._Z_Stack: np.ndarray = np.random.randint(0, 256, size=(10, 1024, 1024), dtype=np.uint8)
-            return True
+        # if ( self.EnableDryRun ):
+        #     self._LogWriter.Println(f"Dry-Run Mode: Skipping memory-intensive opening of z-stack...")
+        #     self._LogWriter.Println(f"Generating random z-stack array for testing...")
+        #     self._Z_Stack: np.ndarray = np.random.randint(0, 256, size=(10, 1024, 1024), dtype=np.uint8)
+        #     return True
 
         Success, self._Z_Stack = OpenLIFFile(ImageStackFilename, ClearingAlgorithm)
         if ( Success ):
@@ -447,9 +465,16 @@ def main() -> int:
 
     LogWriter.Println(f"Beginning the Dorsal Root Ganglion Neurite Outgrowth Analysis...")
 
+    #   Clean up the Z-Stacks to remove the staining saturation "noise" signals.
+    if ( Config.EnableZTruncation ):
+        LogWriter.Println(f"Cleaning up Z-Stack to remove regions where the staining oversaturated the fluorescent signal...")
+        RemoveStainSaturation(Config.GetZStack())
+        LogWriter.Println(f"Finished cleaning up Z-Stack!")
+
+    #   Compute the maximum intensity projection of the Z-Stack.
     LogWriter.Println(f"Computing the Maximum Intensity Projection (MIP) of the Z-Stack...")
     MIProjection: np.ndarray = MaximumIntensityProjection(Config.GetZStack())
-    LogWriter.Println(f"Successfully computed MIP of the provided Z-Stack...")
+    LogWriter.Println(f"Successfully computed MIP of the provided Z-Stack!")
 
     #   ...
 
@@ -458,6 +483,76 @@ def main() -> int:
     WriteConfigurationState()
 
     return 0
+
+def RemoveStainSaturation(Z_Stack: np.ndarray) -> None:
+    """
+    RemoveStainSaturation
+
+    This function...
+
+    Z_Stack:
+        ...
+
+    Return (None):
+        ...
+    """
+
+    SaturationPercentileStart: float = 0.95
+    SaturationPercentileEnd: float = 1.0
+    StepSize: float = 0.0001
+    CurvatureThreshold: int = int(np.exp(Config.ZTruncationThreshold * np.log(np.iinfo(Z_Stack.dtype).max)))
+
+    #   Iterate through each slice of the Z-Stack...
+    for SliceIndex, Slice in enumerate(Z_Stack):
+
+        ### +++ TESTING +++
+        # Histogram, Edges = np.histogram(Slice, bins=(2**np.iinfo(Slice.dtype).bits), range=(0, 2**np.iinfo(Slice.dtype).bits - 1), density=False)
+        ### --- TESTING ---
+
+        #   We want to look for "outliers" in terms of pixel brightness values.
+        #
+        #   We know that the most problematic outliers are those where the
+        #   brightness saturates and therefore overwhelms anything and
+        #   everything in any other layer of the Z-Stack when taking the Maximum
+        #   Intensity Projection.
+        #
+        #   One way we can remove these outliers is to consider the relationship
+        #   between the n-th percentile, and the corresponding pixel brightness
+        #   value it corresponds to. In the bulk of the image, we expect a
+        #   relatively slow change, or low slope to the curve. For the saturated
+        #   outliers, on the other hand, we expect to see this change to very
+        #   large changes in pixel brightness for a very small increment in
+        #   percentile. Therefore, we want to look for the "knee" of this curve
+        #   and declare everything past the knee to be outliers to be masked
+        #   out.
+        Percentiles: np.ndarray = np.arange(SaturationPercentileStart, SaturationPercentileEnd, StepSize)
+        PixelBrightnesses: np.ndarray = np.array(
+            [np.quantile(Slice, x) for x in Percentiles]
+        )
+        Slopes: np.ndarray = np.diff(PixelBrightnesses, n=1) / (StepSize * 100)
+        Curvatures: np.ndarray = np.diff(Slopes, n=1) / (StepSize * 100)
+
+        SaturationPercentile: float = Percentiles[np.argmax(Curvatures > CurvatureThreshold) + 2]
+
+        #   Compute the saturation threshold (in terms of pixel brightness) for the current slice.
+        SaturationThreshold: int = int(np.quantile(Slice, SaturationPercentile))
+        LogWriter.Println(f"Applying saturation threshold at the [ {SaturationPercentile*100:.4f}-th ] percentile ({SaturationThreshold}) for slice [ {SliceIndex}/{Z_Stack.shape[0]} ]...")
+
+        #   Set all oversaturated pixels to 0, to allow features in other layers to take priority.
+        if ( not Config.HeadlessMode ):
+            Original: np.ndarray = Slice.copy()
+            Truncated: np.ndarray = Original.copy()
+            Truncated[Truncated > SaturationThreshold] = 0.0
+            Original = Utils.GammaCorrection(Original, Gamma=Config.MIPGamma)
+            Truncated = Utils.GammaCorrection(Truncated, Gamma=Config.MIPGamma)
+            Utils.DisplayImage(f"Original and Post Saturation Slice {SliceIndex}/{Z_Stack.shape[0]}", cv2.hconcat([Utils.ConvertTo8Bit(Original), Utils.ConvertTo8Bit(Truncated)]), HoldTime=3, Topmost=True)
+
+        #   Update the actual Z-Stack pixel values with the newly filtered slice.
+        Slice[Slice > SaturationThreshold] = 0
+        Z_Stack[SliceIndex,...] = Slice
+
+    return
+
 
 def MaximumIntensityProjection(Z_Stack: np.ndarray) -> np.ndarray:
     """
@@ -493,13 +588,14 @@ def MaximumIntensityProjection(Z_Stack: np.ndarray) -> np.ndarray:
     Projection = Utils.GammaCorrection(Projection, Gamma=Config.MIPGamma)
 
     #   Display the MIP image to the user...
-    LogWriter.Println(f"Displaying MIP of Z-Stack now...")
-    Utils.DisplayImage("Maximum Intensity Projection", Utils.ConvertTo8Bit(Projection), 0, True, ShowOverride=(not Config.HeadlessMode))
+    if ( not Config.HeadlessMode ):
+        LogWriter.Println(f"Displaying Maximum Intensity Projection of the Z-Stack now...")
+        Utils.DisplayImage("Maximum Intensity Projection", Utils.ConvertTo8Bit(Projection), 0, True)
 
     #   If dry run mode is not enabled, write out this projection as an output artefact.
-    SaveFilename: str = os.path.join(Config.OutputDirectory(), f"Maximum Intensity Projection - Gamma {Config.MIPGamma:.4f}.png")
-    Config.MIProjectionFilename: str = SaveFilename
     if ( not Config.EnableDryRun ):
+        SaveFilename: str = os.path.join(Config.OutputDirectory(), f"Maximum Intensity Projection - Gamma {Config.MIPGamma:.4f}.png")
+        Config.MIProjectionFilename: str = SaveFilename
         Success: bool = cv2.imwrite(SaveFilename, Projection)
         if ( Success ):
             LogWriter.Println(f"Successfully saved Maximum Intensity Projection as file [ {SaveFilename} ].")
@@ -560,6 +656,10 @@ def ProcessArguments() -> bool:
 
     #   Add in flags for tuning parameters or analysis inputs.
     Flags.add_argument("--mip-gamma", dest="MIPGamma", metavar="gamma", type=float, required=False, default=1.0, help="The brightness gamma value to use to non-linearly stretch the constrast of the generated MIP image from the Z-Stack.")
+    Flags.add_argument("--z-truncation-threshold", dest="ZTruncationThreshold", metavar="threshold", type=float, required=False, default=0.875, help="If Z Truncation is enabled, what logarithmic fraction of the bit depth of the image should be used as the threshold for determining saturated features?")
+
+    #   Add in flags to enable or disable certain functionalities within the script
+    Flags.add_argument("--disable-z-truncation", dest="EnableZTruncation", action="store_false", required=False, default=True, help="Disable the pixel saturation filtering of the Z-Stack used to remove saturated artefacts from the staining process.")
 
     #   Add in flags for manipulating the logging functionality of the script.
     Flags.add_argument("--log-file", dest="LogFile", metavar="file-path", type=str, required=False, default="-", help="File path to the file to write all log messages of this program to.")
@@ -584,16 +684,19 @@ def ProcessArguments() -> bool:
 
     if ( Arguments.Quiet ):
         LogWriter.SetOutputFilename("/dev/null")
+    elif ( Arguments.LogFile == "-" ):
+        LogWriter.SetOutputStream(sys.stdout)
     else:
         LogWriter.SetOutputFilename(os.path.join(Config.OutputDirectory(), Arguments.LogFile))
 
-    Config.EnableDryRun: bool         = Arguments.DryRun
-    Config.ValidateArguments: bool    = Arguments.Validate
-    Config.HeadlessMode: bool         = Arguments.Headless
+    Config.EnableDryRun: bool           = Arguments.DryRun
+    Config.ValidateArguments: bool      = Arguments.Validate
+    Config.HeadlessMode: bool           = Arguments.Headless
 
-    Config.ClearingAlgorithm: str     = Arguments.ClearingAlgo
-    Config.MIPGamma: float            = Arguments.MIPGamma
-
+    Config.ClearingAlgorithm: str       = Arguments.ClearingAlgo
+    Config.MIPGamma: float              = Arguments.MIPGamma
+    Config.EnableZTruncation: bool      = Arguments.EnableZTruncation
+    Config.ZTruncationThreshold: float  = Arguments.ZTruncationThreshold
 
     LogWriter.Println(f"Finished parsing command-line arguments!")
 

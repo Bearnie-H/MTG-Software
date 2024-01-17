@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import itertools
 import os
 import serial
 import signal
@@ -25,10 +26,12 @@ import typing
 #   Import the necessary third-part modules
 import numpy as np
 import matplotlib
-from matplotlib.figure import Figure
 from matplotlib.axes import Axes
-import matplotlib.pyplot as plt
+from matplotlib import cm
 from matplotlib.colors import Colormap
+from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.mplot3d import axes3d
 #   ...
 
@@ -156,7 +159,7 @@ class RawSensorReading():
         FieldY: float = self.Field_Y / float(MagneticFieldSensitivity)
         FieldZ: float = self.Field_Z / float(MagneticFieldSensitivity)
 
-        Temperature: float = TemperatureSensitivity * float(self.Temperature - TemperatureOffset)
+        Temperature: float = ComputeFormattedTemperature(self.Temperature)
 
         X, Y, Z = PositionLookup(self.LayerIndex, self.DeviceIndex, Config.IndexingCorner)
 
@@ -363,6 +366,28 @@ class MeasurementStream():
 
         return
 
+    def ShouldDisplay(self: MeasurementStream, Count: int) -> bool:
+        """
+        ShouldDisplay
+
+        This function...
+
+        Count:
+            ...
+
+        Return (bool):
+            ...
+        """
+
+        #   If we're reading from the serial port, acutally monitor the backlog
+        #   versus the count of samples since the last refresh...
+        if ( self.Filename is None ) or ( self.Filename == "" ):
+            #   Allow the backlog to grow to no more than 5 times the last refresh value.
+            return self.__len__() < ( 5 * Count )
+        else:
+            #   If we're reading from a file, just update every 64 measurements
+            return (Count >= 64)
+
     def _ReadSerialPort(self: MeasurementStream) -> None:
         """
         _ReadSerialPort
@@ -454,6 +479,28 @@ def main() -> int:
     MagneticField_Axes: Axes = Fields_Figure.add_subplot(1, 2, 1, projection='3d')
     TemperatureField_Axes: Axes = Fields_Figure.add_subplot(1, 2, 2, projection='3d')
 
+    MagneticField_Axes.set_xlabel('X Direction (µm)')
+    MagneticField_Axes.set_zlabel('Z Direction (µm)')
+    MagneticField_Axes.set_ylabel('Y Direction (µm)')
+
+    TemperatureField_Axes.set_xlabel('X Direction (µm)')
+    TemperatureField_Axes.set_zlabel('Z Direction (µm)')
+    TemperatureField_Axes.set_ylabel('Y Direction (µm)')
+
+    MagneticNorm = matplotlib.colors.Normalize(vmin=0, vmax=2047)
+    TemperatureNorm = matplotlib.colors.Normalize(vmin=ComputeFormattedTemperature(0), vmax=ComputeFormattedTemperature(4095))
+    ColourMap = cm.plasma
+    MagneticScalarMap = cm.ScalarMappable(norm=MagneticNorm, cmap=ColourMap)
+    TemperatureScalarMap = cm.ScalarMappable(norm=TemperatureNorm, cmap=ColourMap)
+    # MagneticDivider = make_axes_locatable(MagneticField_Axes)
+    # TemperatureDivider = make_axes_locatable(TemperatureField_Axes)
+    # MagneticCAX = MagneticDivider.append_axes("right", size="5%", pad=0.05)
+    # TemperatureCAX = TemperatureDivider.append_axes("right", size="5%", pad=0.05)
+    MagneticFieldColourBar = Fields_Figure.colorbar(MagneticScalarMap, ax=MagneticField_Axes, label='Magentic Field Strength (mT)', shrink=0.5, pad=.2, aspect=10)
+    TemperatureFieldColourBar = Fields_Figure.colorbar(TemperatureScalarMap, ax=TemperatureField_Axes, label=r'Temperature $\degree$C', shrink=0.5, pad=.2, aspect=10)
+
+    Fields_Figure.tight_layout()
+
     #   Initialize the output writer to append each measurement to a text file for later review or
     #   replay of the time-varying field measurements.
     OutputStream: typing.TextIO = open(os.devnull, "w+")
@@ -462,7 +509,6 @@ def main() -> int:
 
     #   Enter the main loop where we re-fresh the display of the vector plot with the most up-to-date measurement values
     #   as read from the MeasurementStream.
-    DrawInterval: int = 64
     Count: int = 0
     while (( CurrentMeasurement := Measurements.Next() ) is not None ):
         OutputStream.write(CurrentMeasurement.ToString())
@@ -473,22 +519,22 @@ def main() -> int:
         TemperatureField[:,Formatted.Index] = np.concatenate((Formatted.Position, np.array([Formatted.Temperature])))
 
         Count += 1
-        if ( Count == DrawInterval ):
+        if ( Measurements.ShouldDisplay(Count) ):
             MaxField: float = np.max(MagneticFieldNorms[3,:])
             LogWriter.Println(f"Measurement Backlog: {len(Measurements)}")
 
-            MagneticField_Axes.cla()
-            TemperatureField_Axes.cla()
+            for artist in itertools.chain(MagneticField_Axes.lines, MagneticField_Axes.collections, TemperatureField_Axes.lines, TemperatureField_Axes.collections):
+                artist.remove()
 
             C = (MagneticFieldNorms[3,:]).copy()
-            if ( C.ptp() == 0 ):
-                C = np.zeros_like(C)
-            else:
-                C = (C.ravel() - C.min()) / C.ptp()
             C = np.concatenate((C, np.repeat(C, 2)))
-            C = plt.cm.plasma(C)
+            C = ColourMap(MagneticNorm(C))
             MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MaxField, V=MagneticField[4,:]/MaxField, W=MagneticField[5,:]/MaxField, pivot='middle', length=4, arrow_length_ratio=0.5, colors=C)
-            TemperatureField_Axes.scatter(xs=TemperatureField[0,:], ys=TemperatureField[1,:], zs=TemperatureField[2,:], data=TemperatureField[3,:], depthshade=False, c=TemperatureField[3,:], cmap='plasma')
+            TemperatureField_Axes.scatter(xs=TemperatureField[0,:], ys=TemperatureField[1,:], zs=TemperatureField[2,:], data=TemperatureField[3,:], depthshade=False, c=TemperatureField[3,:], cmap=ColourMap, vmin=TemperatureScalarMap.get_clim()[0], vmax=TemperatureScalarMap.get_clim()[1])
+
+            MagneticField_Axes.set_title(f'Magnetic Field\nMean = {MagneticFieldNorms[3,:].mean():.0f}mT\nMaximum = {MagneticFieldNorms[3,:].max():.0f}mT')
+            TemperatureField_Axes.set_title(f'Temperature Field\nMean = {TemperatureField[3,:].mean():.2f}C\nMaximum = {TemperatureField[3,:].max():.2f}C')
+
             plt.draw_all()
             plt.pause(0.01)
 
@@ -580,6 +626,20 @@ def PositionLookup(LayerIndex: int, DeviceIndex: int, IndexingCorner: str) -> ty
         LogWriter.Errorln(f"...")
 
     return (X, Y, Z)
+
+def ComputeFormattedTemperature(RawValue: int) -> float:
+    """
+    ComputeFormattedTemperature
+
+    This function...
+
+    RawValue:
+        ...
+
+    Return (float):
+        ...
+    """
+    return TemperatureSensitivity * float(RawValue - TemperatureOffset)
 
 #   Allow this script to be called from the command-line and execute the main function.
 #   If anything needs to happen before executing main, add it here before the call.
