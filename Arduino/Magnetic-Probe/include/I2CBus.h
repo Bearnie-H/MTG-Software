@@ -51,31 +51,42 @@ extern "C" {
 
 /* +++ Begin Library Macro Definitions +++ */
 #define NOT_DISABLEABLE (uint8_t)-1
+
+#define EMPTY_BUS_TEST_ADDRESS (uint8_t)42
 #define NO_VALID_ADDRESS (uint8_t)-1
+#define RESERVED_I2C_ADDRESS_END (uint8_t)8
 /* --- End Library Macro Definitions --- */
 
 /* +++ Begin Library Typedefs +++ */
-class I2CBus_t: public TwoWire {
+class I2CBus_t {
 
     Pin_t EnablePin;
     bool Enabled;
-    TwoWire Wire;
 
     public:
+        TwoWire Wire;
 
         I2CBus_t();
         I2CBus_t(Pin_t Enable);
 
-        bool IsEnabled() const;
+        bool IsEnabled();
         bool Enable();
         bool Disable();
 
         bool AddressExists(uint8_t Address);
+        bool Empty();
         // ...
 };
 /* --- End Library Typedefs --- */
 
 /* +++ Begin Library Function Definitions +++ */
+void Log_EnableI2CBus(Pin_t EnablePin);
+void Log_CheckBusEmpty(void);
+void Log_BusEmpty(bool IsEmpty);
+void Log_I2CBusAddressCheck(uint8_t Address);
+void Log_I2CBusAddressExists(uint8_t Address, bool Exist);
+void Log_I2CBusAddressCheckUnexpectedError(uint8_t Address, uint8_t Error);
+void Log_DisableI2CBus(Pin_t EnablePin);
 /* --- End Library Function Definitions --- */
 
 #ifdef __cplusplus

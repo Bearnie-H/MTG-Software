@@ -58,14 +58,14 @@ extern "C" {
     This enumeration...
 */
 typedef enum SN74LV4051A_Multiplexer_Channel_t {
-    CHANNEL_0,
-    CHANNEL_1,
-    CHANNEL_2,
-    CHANNEL_3,
-    CHANNEL_4,
-    CHANNEL_5,
-    CHANNEL_6,
-    CHANNEL_7,
+    CHANNEL_0 = 0,
+    CHANNEL_1 = 1,
+    CHANNEL_2 = 2,
+    CHANNEL_3 = 3,
+    CHANNEL_4 = 4,
+    CHANNEL_5 = 5,
+    CHANNEL_6 = 6,
+    CHANNEL_7 = 7,
 } SN74LV4051A_Multiplexer_Channel_t;
 
 /*
@@ -81,6 +81,10 @@ class SN74LV4051A_Multiplexer_t {
     Pin_t ADDR_0;
     Pin_t ADDR_1;
     Pin_t ADDR_2;
+
+    /*
+    */
+    Pin_t IO;
 
     /*
         ...
@@ -132,34 +136,42 @@ class SN74LV4051A_Multiplexer_t {
 
             This function...
 
-            Return (bool):
+            Return (void):
                 ...
         */
-        bool EnableDevice() const;
+        void EnableDevice();
 
         /*
             DisableDevice
 
             This function...
 
-            Return (bool):
+            Return (void):
                 ...
         */
-        bool DisableDevice() const;
+        void DisableDevice();
 
         /*
             EnableOutputChannel
 
             This function...
 
-            Return (bool):
+            Return (void):
                 ...
         */
-        bool EnableOutputChannel(SN74LV4051A_Multiplexer_Channel_t Channel) const;
+        void EnableOutputChannel(SN74LV4051A_Multiplexer_Channel_t Channel);
+
+    private:
+
+        void doEnableOutputChannel(SN74LV4051A_Multiplexer_Channel_t Channel);
+
 };
 /* --- End Library Typedefs --- */
 
 /* +++ Begin Library Function Definitions +++ */
+void Log_EnableMux(Pin_t Addr0, Pin_t Addr1, Pin_t Addr2);
+void Log_EnableMuxChannel(Pin_t Addr0, Pin_t Addr1, Pin_t Addr2, SN74LV4051A_Multiplexer_Channel_t Channel);
+void Log_DisableMux(Pin_t Addr0, Pin_t Addr1, Pin_t Addr2);
 /* --- End Library Function Definitions --- */
 
 #ifdef __cplusplus

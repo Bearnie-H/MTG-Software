@@ -85,83 +85,188 @@ MagneticSensorArray_t::MagneticSensorArray_t(SN74LV4051A_Multiplexer_t &LayerSel
     this->I2CBus = I2CBus;
 
     this->LayerIndex = 0;
-    this->LayerMask = (uint16_t)((1 << MAXIMUM_LAYERS) - 1);
-
     this->DeviceIndex = 0;
+    this->Initialized = false;
+
+    for (int i = 0; i < MAXIMUM_LAYERS; i++) {
+        this->DeviceMasks[i] = (uint8_t)(~0U);
+    }
 
     return;
 }
 
-bool MagneticSensorArray_t::InitializeI2CAddressing() {
-
-    this->LayerSelect.EnableDevice();
-    this->DeviceSelect.EnableDevice();
-
-    do {
-        ALS31313_t Sensor = this->NextSensor();
-
-        this->LayerSelect.EnableOutputChannel(LayerSelectionTranslationTable[this->LayerIndex]);
-        this->DeviceSelect.EnableOutputChannel(DeviceSelectionTranslationTable[this->DeviceIndex]);
-
-        if ( ! Sensor.AssertAddress(this->I2CBus, Sensor.DetermineI2CAddress()) ) {
-            this->LayerMask &= ~(1 << this->LayerIndex);
-            this->NextLayer();
-        }
-
-        if ( ! Sensor.InitializeSettings(this->I2CBus) ) {
-            return false;
-        }
-
-    } while ( this->DeviceIndex != 0 && this->LayerIndex != 0 );
+SensorError_t MagneticSensorArray_t::InitializeHardware() {
 
     this->LayerIndex = 0;
     this->DeviceIndex = 0;
 
-    this->LayerSelect.DisableDevice();
-    this->DeviceSelect.DisableDevice();
+    this->LayerSelect.EnableDevice();
+    this->DeviceSelect.EnableDevice();
+    this->ResetAddressingMasks();
 
-    // Enable the shared I2C bus, rather than using the multiplexors
-    this->I2CBus.Enable();
+    ALS31313_t Sensor = this->CurrentSensor();
+    for ( int i = 0; i < (MAXIMUM_LAYERS * DEVICES_PER_LAYER); i++ ) {
 
-    return this->LayerMask != 0;
+        this->LayerSelect.EnableOutputChannel(LayerSelectionTranslationTable[this->LayerIndex]);
+        this->DeviceSelect.EnableOutputChannel(DeviceSelectionTranslationTable[this->DeviceIndex]);
+
+        Log_InitializeSensor(this->LayerIndex, this->DeviceIndex);
+        SensorError_t InitializationError = Sensor.DefaultInitialize(this->I2CBus);
+        Log_SensorInitializationStatus(this->LayerIndex, this->DeviceIndex, InitializationError);
+
+        if ( InitializationError != Success ) {
+            // If an error occurs, mask this device to not be included in the iterator.
+            Log_DisablingDevice(this->LayerIndex, this->DeviceIndex, InitializationError);
+            this->DeviceMasks[this->LayerIndex] &= ~(0b1 << this->DeviceIndex);
+        }
+
+        Sensor = this->NextSensor();
+    }
+
+    // Check each layer, masking out any layers with 0 devices from the iterator.
+    uint8_t AnyDevices = 0x00;
+    for ( int i = 0; i < MAXIMUM_LAYERS; i++ ) {
+        if ( 0 == this->DeviceMasks[i] ) {
+            Log_DisablingLayer(i);
+        }
+        AnyDevices |= this->DeviceMasks[i];
+    }
+
+    if ( AnyDevices == 0 ) {
+        return DeviceNotFound;
+    }
+
+    this->LayerIndex = MAXIMUM_LAYERS;
+    this->DeviceIndex = DEVICES_PER_LAYER;
+    this->Initialized = true;
+
+    return Success;
 }
 
-bool MagneticSensorArray_t::ReadNextDevice(MagneticSensorReading_t &CurrentMeasurement) {
+ALS31313_t MagneticSensorArray_t::CurrentSensor() {
+    return ALS31313_t(this->LayerIndex, this->DeviceIndex, this->Initialized);
+}
 
-    ALS31313_t Sensor = this->NextSensor();
-
+SensorError_t MagneticSensorArray_t::ReadNextDevice(MagneticSensorReading_t &CurrentMeasurement) {
+    ALS31313_t Device = this->NextSensor();
     this->LayerSelect.EnableOutputChannel(LayerSelectionTranslationTable[this->LayerIndex]);
     this->DeviceSelect.EnableOutputChannel(DeviceSelectionTranslationTable[this->DeviceIndex]);
+    return Device.ReadMeasurements(this->I2CBus, CurrentMeasurement);
+}
 
-    return Sensor.ReadMeasurements(this->I2CBus, CurrentMeasurement);
+void MagneticSensorArray_t::ResetAddressingMasks(void) {
+
+    for ( int i = 0; i < MAXIMUM_LAYERS; i++ ) {
+        this->DeviceMasks[i] = (uint8_t)(~0U);
+    }
+
+    return;
 }
 
 ALS31313_t MagneticSensorArray_t::NextSensor() {
 
-    this->DeviceIndex++;
-    if ( this->DeviceIndex >= DEVICES_PER_LAYER ) {
-        this->NextLayer();
-    }
-
-    return ALS31313_t(this->LayerIndex, this->DeviceIndex);
-}
-
-bool MagneticSensorArray_t::NextLayer() {
-
-    this->DeviceIndex = 0;
-    uint16_t LayerMask = (this->LayerMask >> this->LayerIndex);
+    uint8_t InitialLayerIndex = this->LayerIndex;
+    uint8_t InitialDeviceIndex = this->DeviceIndex;
+    uint16_t CurrentMask = 0x00;
 
     do {
-        LayerMask >>= 1;
-        this->LayerIndex++;
+        this->DeviceIndex++;
 
-        if ( this->LayerIndex >= MAXIMUM_LAYERS ) {
-            this->LayerIndex = 0;
-            LayerMask = this->LayerMask;
+        if ( this->DeviceIndex >= DEVICES_PER_LAYER ) {
+            this->DeviceIndex = 0;
+            this->LayerIndex = (this->LayerIndex + 1) % MAXIMUM_LAYERS;
         }
-    } while ((LayerMask & 1) != 0);
 
-    return true;
+        CurrentMask = this->DeviceMasks[this->LayerIndex];
+        CurrentMask >>= (uint16_t)this->DeviceIndex;
+
+        if (( CurrentMask & 0b1 ) == 0b1 ) {
+            break;
+        }
+    } while ( !(( this->LayerIndex == InitialLayerIndex ) && ( this->DeviceIndex == InitialDeviceIndex )));
+
+    Log_ReportNextSensor(this->LayerIndex, this->DeviceIndex);
+
+    return ALS31313_t(this->LayerIndex, this->DeviceIndex, this->Initialized);
 }
 
 /* --- End Struct/Class Method Definitions --- */
+
+#if defined(DEBUG)
+
+void Log_ReportNextSensor(uint8_t LayerIndex, uint8_t DeviceIndex) {
+
+    Serial.print("Next sensor: (L,D) = ");
+    Serial.print(LayerIndex);
+    Serial.print(",");
+    Serial.println(DeviceIndex);
+
+
+    return;
+}
+
+void Log_InitializeSensor(uint8_t LayerIndex, uint8_t DeviceIndex) {
+
+    Serial.print("Default initializing ALS31313 to ");
+    Log_I2CAddress(ALS31313_t(LayerIndex, DeviceIndex).I2CAddressFromIndices());
+
+    return;
+}
+
+void Log_SensorInitializationStatus(uint8_t LayerIndex, uint8_t DeviceIndex, SensorError_t InitializationError) {
+
+    Serial.print("Initialized ALS31313 at: (L,D) = ");
+    Serial.print(LayerIndex);
+    Serial.print(",");
+    Serial.print(DeviceIndex);
+    Serial.print(" with status: ");
+
+    Log_SensorError(InitializationError);
+
+    return;
+}
+
+void Log_DisablingDevice(uint8_t LayerIndex, uint8_t DeviceIndex, SensorError_t InitializationError) {
+
+    Serial.print("Marking ALS31313 at: ");
+    Serial.print(LayerIndex);
+    Serial.print(",");
+    Serial.print(DeviceIndex);
+    Serial.print(" disabled - error: ");
+    Log_SensorError(InitializationError);
+
+    return;
+}
+
+void Log_DisablingLayer(uint8_t LayerIndex) {
+
+    Serial.print("Disabling layer ");
+    Serial.print(LayerIndex);
+    Serial.println(", no devices initialized");
+
+    return;
+}
+
+#else
+
+void Log_ReportNextSensor(uint8_t LayerIndex, uint8_t DeviceIndex) {
+    return;
+}
+
+void Log_InitializeSensor(uint8_t LayerIndex, uint8_t DeviceIndex) {
+    return;
+}
+
+void Log_SensorInitializationStatus(uint8_t LayerIndex, uint8_t DeviceIndex, SensorError_t InitializationError) {
+    return;
+}
+
+void Log_DisablingDevice(uint8_t LayerIndex, uint8_t DeviceIndex, SensorError_t InitializationError) {
+    return;
+}
+
+void Log_DisablingLayer(uint8_t LayerIndex) {
+    return;
+}
+
+#endif

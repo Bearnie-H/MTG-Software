@@ -1,10 +1,10 @@
 /*
-    common.h
+    common.ino
 
-    Author: Joseph Sadden
-    Date:   15th December, 2023
+    Author(s):  Joseph Sadden
+    Date:       1st February, 2024
 
-    This library...
+    This file...
 */
 
 /*
@@ -31,34 +31,74 @@
     SOFTWARE.
 */
 
-#ifndef COMMON_H
-#define COMMON_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* +++ Begin Top-level Header Includes +++ */
 #include <stdbool.h>
 #include <stdint.h>
 /* --- End Top-level Header Includes --- */
 
-/* +++ Begin Library Macro Definitions +++ */
-/* --- End Library Macro Definitions --- */
+/* +++ Begin Custom Header Includes +++ */
+#include "include/common.h"
+/* --- End Custom Header Includes --- */
 
-/* +++ Begin Library Typedefs +++ */
-typedef uint8_t Pin_t;
-/* --- End Library Typedefs --- */
+#if defined (DEBUG)
 
-/* +++ Begin Library Function Definitions +++ */
-void Log_OperationFailed(void);
-void Log_I2CAddress(uint8_t I2CAddress, bool Newline = true);
-void Log_DeviceAddress(uint8_t I2CAddress, bool Newline = true);
-void Log_PinDigitalLevel(Pin_t Pin, bool State, bool Newline = true);
-/* --- End Library Function Definitions --- */
+void Log_OperationFailed(void) {
 
-#ifdef __cplusplus
+    Serial.println("Error: Operation Failed");
+
+    return;
 }
-#endif
+
+void Log_DeviceAddress(uint8_t I2CAddress, bool Newline) {
+
+    Serial.print("device ");
+    Serial.print(I2CAddress);
+
+    if ( Newline ) {
+        Serial.println();
+    }
+
+    return;
+}
+
+void Log_I2CAddress(uint8_t I2CAddress, bool Newline) {
+
+    Serial.print("address ");
+    Serial.print(I2CAddress);
+
+    if ( Newline ) {
+        Serial.println();
+    }
+
+    return;
+}
+
+void Log_PinDigitalLevel(Pin_t Pin, bool State, bool Newline) {
+
+    Serial.print("Pin ");
+    Serial.print(Pin);
+    Serial.print("=");
+    Serial.print(State == 0 ? "LOW" : "HIGH");
+
+    if ( Newline ) {
+        Serial.println();
+    }
+
+    return;
+}
+
+#else
+
+void Log_OperationFailed(void) {
+    return;
+}
+
+void Log_DeviceAddress(uint8_t I2CAddress, bool Newline) {
+    return;
+}
+
+void Log_I2CAddress(uint8_t I2CAddress, bool Newline) {
+    return;
+}
 
 #endif

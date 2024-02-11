@@ -71,24 +71,32 @@ class MagneticSensorArray_t {
     I2CBus_t I2CBus;
 
     uint8_t DeviceIndex;
-
     uint8_t LayerIndex;
-    uint16_t LayerMask;
+
+    uint8_t DeviceMasks[MAXIMUM_LAYERS] = { (~0U) };
+
+    bool Initialized;
 
     public:
         MagneticSensorArray_t(SN74LV4051A_Multiplexer_t &LayerSelect, SN74LV4051A_Multiplexer_t &DeviceSelect, I2CBus_t &I2CBusEnable);
         ~MagneticSensorArray_t() = default;
 
-        bool InitializeI2CAddressing();
-        bool ReadNextDevice(MagneticSensorReading_t &CurrentMeasurement);
+        SensorError_t InitializeHardware(void);
+        ALS31313_t CurrentSensor(void);
+        SensorError_t ReadNextDevice(MagneticSensorReading_t &CurrentMeasurement);
+        void ResetAddressingMasks(void);
 
     private:
-        ALS31313_t NextSensor();
-        bool NextLayer();
+        ALS31313_t NextSensor(void);
 };
 /* --- End Library Typedefs --- */
 
 /* +++ Begin Library Function Definitions +++ */
+void Log_ReportNextSensor(uint8_t LayerIndex, uint8_t DeviceIndex);
+void Log_InitializeSensor(uint8_t LayerIndex, uint8_t DeviceIndex);
+void Log_SensorInitializationStatus(uint8_t LayerIndex, uint8_t DeviceIndex, SensorError_t InitializationError);
+void Log_DisablingDevice(uint8_t LayerIndex, uint8_t DeviceIndex, SensorError_t InitializationError);
+void Log_DisablingLayer(uint8_t LayerIndex);
 /* --- End Library Function Definitions --- */
 
 #ifdef __cplusplus

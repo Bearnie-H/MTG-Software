@@ -71,6 +71,8 @@ SN74LV4051A_Multiplexer_t::SN74LV4051A_Multiplexer_t(Pin_t Addr0, Pin_t Addr1, P
 
     pinMode(Enable, OUTPUT);
 
+    this->DisableDevice();
+
     return;
 }
 
@@ -81,81 +83,104 @@ SN74LV4051A_Multiplexer_t::~SN74LV4051A_Multiplexer_t() {
     return;
 }
 
-bool SN74LV4051A_Multiplexer_t::DisableDevice() const {
+void SN74LV4051A_Multiplexer_t::DisableDevice() {
+
+    // Log_DisableMux(this->ADDR_0, this->ADDR_1, this->ADDR_2, this->Enable);
 
     digitalWrite(this->Enable, HIGH);
 
-    digitalWrite(this->ADDR_0, LOW);
-    digitalWrite(this->ADDR_1, LOW);
-    digitalWrite(this->ADDR_2, LOW);
+    this->doEnableOutputChannel(CHANNEL_0);
 
-    return true;
+    return;
 }
 
-bool SN74LV4051A_Multiplexer_t::EnableDevice() const {
+void SN74LV4051A_Multiplexer_t::EnableDevice() {
 
-    // Initialize the address lines to a known default state.
-    digitalWrite(this->ADDR_0, LOW);
-    digitalWrite(this->ADDR_1, LOW);
-    digitalWrite(this->ADDR_2, LOW);
+    // Log_EnableMux(this->ADDR_0, this->ADDR_1, this->ADDR_2, this->Enable);
 
     // The enable signal for the SN74LV4051A is active-low, so pull the enable pin low.
     digitalWrite(this->Enable, LOW);
 
-    return true;
+    return;
 }
 
-bool SN74LV4051A_Multiplexer_t::EnableOutputChannel(SN74LV4051A_Multiplexer_Channel_t Channel) const {
+void SN74LV4051A_Multiplexer_t::EnableOutputChannel(SN74LV4051A_Multiplexer_Channel_t Channel) {
 
     this->DisableDevice();
-
-    // Should I just replace this with the boolean operators on the Channel_t type directly? Or just rely on the compiler to do this for me?
-    switch (Channel) {
-        case CHANNEL_0:
-            digitalWrite(this->ADDR_0, LOW);
-            digitalWrite(this->ADDR_1, LOW);
-            digitalWrite(this->ADDR_2, LOW);
-            break;
-        case CHANNEL_1:
-            digitalWrite(this->ADDR_0, HIGH);
-            digitalWrite(this->ADDR_1, LOW);
-            digitalWrite(this->ADDR_2, LOW);
-            break;
-        case CHANNEL_2:
-            digitalWrite(this->ADDR_0, LOW);
-            digitalWrite(this->ADDR_1, HIGH);
-            digitalWrite(this->ADDR_2, LOW);
-            break;
-        case CHANNEL_3:
-            digitalWrite(this->ADDR_0, HIGH);
-            digitalWrite(this->ADDR_1, HIGH);
-            digitalWrite(this->ADDR_2, LOW);
-            break;
-        case CHANNEL_4:
-            digitalWrite(this->ADDR_0, LOW);
-            digitalWrite(this->ADDR_1, LOW);
-            digitalWrite(this->ADDR_2, HIGH);
-            break;
-        case CHANNEL_5:
-            digitalWrite(this->ADDR_0, HIGH);
-            digitalWrite(this->ADDR_1, LOW);
-            digitalWrite(this->ADDR_2, HIGH);
-            break;
-        case CHANNEL_6:
-            digitalWrite(this->ADDR_0, LOW);
-            digitalWrite(this->ADDR_1, HIGH);
-            digitalWrite(this->ADDR_2, HIGH);
-            break;
-        case CHANNEL_7:
-            digitalWrite(this->ADDR_0, HIGH);
-            digitalWrite(this->ADDR_1, HIGH);
-            digitalWrite(this->ADDR_2, HIGH);
-            break;
-    }
-
+    // Log_EnableMuxChannel(this->ADDR_0, this->ADDR_1, this->ADDR_2, Channel);
+    this->doEnableOutputChannel(Channel);
     this->EnableDevice();
 
-    return true;
+    return;
+}
+
+void SN74LV4051A_Multiplexer_t::doEnableOutputChannel(SN74LV4051A_Multiplexer_Channel_t Channel) {
+
+    digitalWrite(this->ADDR_0, (Channel >> 0) & 0b001);
+    digitalWrite(this->ADDR_1, (Channel >> 1) & 0b001);
+    digitalWrite(this->ADDR_2, (Channel >> 2) & 0b001);
+
+    return;
 }
 
 /* --- End Struct/Class Method Definitions --- */
+
+#if defined(DEBUG)
+
+void Log_EnableMux(Pin_t Addr0, Pin_t Addr1, Pin_t Addr2, Pin_t Enable) {
+
+    Serial.print("Enabling Mux: ");
+    Log_PinDigitalLevel(Addr0, digitalRead(Addr0), false);
+    Serial.print(", ");
+    Log_PinDigitalLevel(Addr1, digitalRead(Addr1), false);
+    Serial.print(", ");
+    Log_PinDigitalLevel(Addr2, digitalRead(Addr2), false);
+    Serial.print(", (Enable): ");
+    Log_PinDigitalLevel(Enable, LOW);
+
+    return;
+}
+
+void Log_EnableMuxChannel(Pin_t Addr0, Pin_t Addr1, Pin_t Addr2, SN74LV4051A_Multiplexer_Channel_t Channel) {
+
+    Serial.print("Enabling Channel ");
+    Serial.print(Channel);
+    Serial.print(" of Mux: ");
+    Log_PinDigitalLevel(Addr0, Channel & 0b001, false);
+    Serial.print(", ");
+    Log_PinDigitalLevel(Addr1, Channel & 0b010, false);
+    Serial.print(", ");
+    Log_PinDigitalLevel(Addr2, Channel & 0b100);
+
+    return;
+}
+
+void Log_DisableMux(Pin_t Addr0, Pin_t Addr1, Pin_t Addr2, Pin_t Enable) {
+
+    Serial.print("Disabling Mux: ");
+    Log_PinDigitalLevel(Addr0, digitalRead(Addr0), false);
+    Serial.print(", ");
+    Log_PinDigitalLevel(Addr1, digitalRead(Addr1), false);
+    Serial.print(", ");
+    Log_PinDigitalLevel(Addr2, digitalRead(Addr2), false);
+    Serial.print(", (Enable): ");
+    Log_PinDigitalLevel(Enable, HIGH);
+
+    return;
+}
+
+#else
+
+void Log_EnableMux(Pin_t Addr0, Pin_t Addr1, Pin_t Addr2, Pin_t Enable) {
+    return;
+}
+
+void Log_EnableMuxChannel(Pin_t Addr0, Pin_t Addr1, Pin_t Addr2, SN74LV4051A_Multiplexer_Channel_t Channel) {
+    return;
+}
+
+void Log_DisableMux(Pin_t Addr0, Pin_t Addr1, Pin_t Addr2, Pin_t Enable) {
+     return;
+}
+
+#endif

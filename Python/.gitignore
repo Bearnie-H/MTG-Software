@@ -6,4 +6,4 @@ __pycache__/**
 UpdateRequirements.sh
 requirements.in
 
-Sensor-Readings*.csv
+*Sensor-Readings*.csv
