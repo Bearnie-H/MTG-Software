@@ -471,10 +471,22 @@ def main() -> int:
         RemoveStainSaturation(Config.GetZStack())
         LogWriter.Println(f"Finished cleaning up Z-Stack!")
 
+    #   Segment the Z-Stack into the following four classes:
+    #   1)  DRG Body
+    #   2)  Growth Chip Edges
+    #   3)  Neurites
+    #   4)  Background
+    #
+    #   So that each of these can be operated on independently for the remainder of the analysis.
+    #   ...
+
+
     #   Compute the maximum intensity projection of the Z-Stack.
-    LogWriter.Println(f"Computing the Maximum Intensity Projection (MIP) of the Z-Stack...")
-    MIProjection: np.ndarray = MaximumIntensityProjection(Config.GetZStack())
-    LogWriter.Println(f"Successfully computed MIP of the provided Z-Stack!")
+    LogWriter.Println(f"Computing the Maximum Intensity Projections (MIPs) of the Z-Stack...")
+    X_MIProjection: np.ndarray = MaximumIntensityProjection(Config.GetZStack(), axis='x')
+    Y_MIProjection: np.ndarray = MaximumIntensityProjection(Config.GetZStack(), axis='y')
+    Z_MIProjection: np.ndarray = MaximumIntensityProjection(Config.GetZStack(), axis='z')
+    LogWriter.Println(f"Successfully computed MIPs of the provided Z-Stack!")
 
     #   ...
 
@@ -504,10 +516,6 @@ def RemoveStainSaturation(Z_Stack: np.ndarray) -> None:
 
     #   Iterate through each slice of the Z-Stack...
     for SliceIndex, Slice in enumerate(Z_Stack):
-
-        ### +++ TESTING +++
-        # Histogram, Edges = np.histogram(Slice, bins=(2**np.iinfo(Slice.dtype).bits), range=(0, 2**np.iinfo(Slice.dtype).bits - 1), density=False)
-        ### --- TESTING ---
 
         #   We want to look for "outliers" in terms of pixel brightness values.
         #
@@ -545,7 +553,7 @@ def RemoveStainSaturation(Z_Stack: np.ndarray) -> None:
             Truncated[Truncated > SaturationThreshold] = 0.0
             Original = Utils.GammaCorrection(Original, Gamma=Config.MIPGamma)
             Truncated = Utils.GammaCorrection(Truncated, Gamma=Config.MIPGamma)
-            Utils.DisplayImage(f"Original and Post Saturation Slice {SliceIndex}/{Z_Stack.shape[0]}", cv2.hconcat([Utils.ConvertTo8Bit(Original), Utils.ConvertTo8Bit(Truncated)]), HoldTime=3, Topmost=True)
+            Utils.DisplayImage(f"Original and Post Saturation Slice {SliceIndex}/{Z_Stack.shape[0]}", cv2.hconcat([Utils.ConvertTo8Bit(Original), Utils.ConvertTo8Bit(Truncated)]), HoldTime=1, Topmost=True)
 
         #   Update the actual Z-Stack pixel values with the newly filtered slice.
         Slice[Slice > SaturationThreshold] = 0
@@ -554,7 +562,7 @@ def RemoveStainSaturation(Z_Stack: np.ndarray) -> None:
     return
 
 
-def MaximumIntensityProjection(Z_Stack: np.ndarray) -> np.ndarray:
+def MaximumIntensityProjection(Z_Stack: np.ndarray, Axis: str='z') -> np.ndarray:
     """
     MaximumIntensityProjection
 
@@ -571,6 +579,8 @@ def MaximumIntensityProjection(Z_Stack: np.ndarray) -> np.ndarray:
 
     Z_Stack:
         The current open Z-stack of the DRG to compute the projection of.
+    Axis:
+        Which axis of the Z-Stack should be collapsed in the MIP.
 
     Return (np.ndarray):
         The resulting 2D NumPy array of the MIP image. The pixel values are
@@ -579,28 +589,38 @@ def MaximumIntensityProjection(Z_Stack: np.ndarray) -> np.ndarray:
         (default = 1).
     """
 
+    axis: int = 0
+    if ( Axis.lower() == 'z' ):
+        axis = 0
+    elif ( Axis.lower() == 'y' ):
+        axis = 1
+    elif ( Axis.lower() == 'x' ):
+        axis = 2
+    else:
+        raise ValueError(f"Maximum Intensity Projection Axis must be one of [ 'x', 'y', 'z' ]. Got [ '{Axis}' ]")
+
     #   Given that the Z_Stack has the 0th axis corresponding to each Z-Slice through the stack,
     #   the maximum intensity projection (MIP) is computed as the maximum pixel value over the
     #   0th axis of the 3D array.
-    Projection: np.ndarray = np.max(Z_Stack, axis=0)
+    Projection: np.ndarray = np.max(Z_Stack, axis=axis)
 
     #   Apply Gamma correction to this projection image...
     Projection = Utils.GammaCorrection(Projection, Gamma=Config.MIPGamma)
 
     #   Display the MIP image to the user...
     if ( not Config.HeadlessMode ):
-        LogWriter.Println(f"Displaying Maximum Intensity Projection of the Z-Stack now...")
-        Utils.DisplayImage("Maximum Intensity Projection", Utils.ConvertTo8Bit(Projection), 0, True)
+        LogWriter.Println(f"Displaying {Axis.upper()}-Axis Maximum Intensity Projection of the Z-Stack now...")
+        Utils.DisplayImage(f"{Axis.upper()}-Axis Maximum Intensity Projection", Utils.ConvertTo8Bit(Projection), 0, True)
 
     #   If dry run mode is not enabled, write out this projection as an output artefact.
     if ( not Config.EnableDryRun ):
-        SaveFilename: str = os.path.join(Config.OutputDirectory(), f"Maximum Intensity Projection - Gamma {Config.MIPGamma:.4f}.png")
+        SaveFilename: str = os.path.join(Config.OutputDirectory(), f"Maximum Intensity Projection - {Axis.upper()} Axis - Gamma {Config.MIPGamma:.4f}.png")
         Config.MIProjectionFilename: str = SaveFilename
         Success: bool = cv2.imwrite(SaveFilename, Projection)
         if ( Success ):
-            LogWriter.Println(f"Successfully saved Maximum Intensity Projection as file [ {SaveFilename} ].")
+            LogWriter.Println(f"Successfully saved {Axis.upper()}-Axis Maximum Intensity Projection as file [ {SaveFilename} ].")
         else:
-            LogWriter.Println(f"Failed to save Maximum Intensity Projection as file [ {SaveFilename} ]!")
+            LogWriter.Println(f"Failed to save {Axis.upper()}-Axis Maximum Intensity Projection as file [ {SaveFilename} ]!")
 
     return Projection
 
