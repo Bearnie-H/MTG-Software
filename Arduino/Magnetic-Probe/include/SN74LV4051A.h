@@ -83,10 +83,6 @@ class SN74LV4051A_Multiplexer_t {
     Pin_t ADDR_2;
 
     /*
-    */
-    Pin_t IO;
-
-    /*
         ...
     */
     Pin_t Enable;

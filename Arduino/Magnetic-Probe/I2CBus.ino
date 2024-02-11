@@ -79,7 +79,7 @@ I2CBus_t::I2CBus_t(Pin_t Enable) {
     this->Enabled = false;
     this->Wire = Wire;
 
-    pinMode(11, OUTPUT);
+    pinMode(this->EnablePin, OUTPUT);
     digitalWrite(this->EnablePin, LOW);
 
     this->Wire.setClock(I2C_WIRE_SPEED);

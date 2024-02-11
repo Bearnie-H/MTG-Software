@@ -96,13 +96,6 @@ PositionLookup_D: typing.Dict[int, typing.Tuple[float, float]] = {
 
 SensorPitch_Z: float = 8.6      #   mm
 SensorOffset_Z: float = 0.65    #   mm
-X_Length = 13.5 #   mm
-Y_Length = 13.0 #   mm
-Z_Length = SensorPitch_Z * 8    #   mm
-
-Scale_x = 1 #4
-Scale_y = 1 #Scale_x * (Y_Length / X_Length)
-Scale_z = 1 #Z_Length / X_Length
 
 SerialMessageLength: int = 16   #   bytes, including start and stop bytes.
 
@@ -743,6 +736,7 @@ def main() -> int:
 
     Measurements.Halt()
     RawOutputStream.close()
+    FormattedOutputStream.close()
 
     return 0
 
