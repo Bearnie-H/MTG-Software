@@ -22,6 +22,7 @@ import serial.tools.list_ports_common
 import signal
 import sys
 import threading
+import time
 import traceback
 import typing
 #   ...
@@ -275,7 +276,7 @@ class FormattedSensorReading():
             ...
         """
 
-        return f"{self.Position[0]:+.4f},{self.Position[1]:+.4f},{self.Position[2]:+.4f},{self.MagneticField[0] / 10.0:+4.1f},{self.MagneticField[1] / 10.0:+4.1f},{self.MagneticField[2] / 10.0:+4.1f},{self.Temperature:.2f},{self.Timestamp * 1e-6:.6f}"
+        return f"{self.Position[0]:+2.4f},{self.Position[1]:+2.4f},{self.Position[2]:+2.4f},{self.MagneticField[0] / 10.0:+4.1f},{self.MagneticField[1] / 10.0:+4.1f},{self.MagneticField[2] / 10.0:+4.1f},{self.Temperature:+3.2f},{self.Timestamp * 1e-6:.6f}"
 
     pass
 
@@ -306,6 +307,8 @@ class Configuration():
         self.SerialPort: serial.Serial = None
         self.SerialDevice: str = None
         self.BaudRate: int = 0
+
+        self.MeasurementRate: float = None
 
         self.MeasurementsFilename: str = None
 
@@ -468,18 +471,29 @@ class MeasurementStream():
 
         Buffer: bytearray = bytearray()
 
+        StartTime: float = time.time()
+        EndTime: float = 0.0
+        Count: int = 0
+        Limit: int = 128
+
         while ( self._MonitorActive ) and ( self.SerialPort.is_open ):
-            RawBytes: bytes = self.SerialPort.read(min(Config.BaudRate, 1024))
+            RawBytes: bytes = self.SerialPort.read(min(Config.BaudRate, 2048))
             Buffer.extend(RawBytes[:])
             if ( len(Buffer) == 0 ):
+                self.LogWriter.Write(f"Waiting for serial data...\r")
+                time.sleep(1e-2)
                 continue
 
             Done: bool = False
             while ( not Done ):
                 Buffer, Measurement, Message, Done = self._ParseSerialBytes(Buffer)
                 if ( Measurement is not None ):
-                    # self.LogWriter.Println(f"Received measurement: {Measurement.ToString()}")
                     self.Measurements.append(Measurement)
+                    Count += 1
+                    if ( Count == Limit ):
+                        EndTime = time.time()
+                        Config.MeausrementRate = Count / (EndTime - StartTime)
+                        Count, StartTime = 0, EndTime
                 elif ( Message is not None ) and ( len(Message) > 0 ):
                     self.ArduinoLogWriter.Println(f'Log Message: {Message}')
 
@@ -656,7 +670,7 @@ def main() -> int:
     MagneticFieldMax: int = 2047
     ColourMap = cm.plasma
     MagneticNorm = matplotlib.colors.Normalize(vmin=0, vmax=MagneticFieldMax * math.sqrt(3) / 10.0)
-    TemperatureNorm = matplotlib.colors.Normalize(vmin=ComputeFormattedTemperature(0), vmax=ComputeFormattedTemperature(4095))
+    TemperatureNorm = matplotlib.colors.Normalize(vmin=0, vmax=100)
     MagneticScalarMap = cm.ScalarMappable(norm=MagneticNorm, cmap=ColourMap)
     TemperatureScalarMap = cm.ScalarMappable(norm=TemperatureNorm, cmap=ColourMap)
     MagneticFieldColourBar = Fields_Figure.colorbar(MagneticScalarMap, ax=MagneticField_Axes, label='Magentic Field Strength (mT)', shrink=0.5, pad=.2, aspect=10)
@@ -697,7 +711,6 @@ def main() -> int:
 
         Count += 1
         if ( Measurements.ShouldDisplay(Count) ):
-            # LogWriter.Println(f"Measurement Backlog: {len(Measurements)}")
 
             for artist in itertools.chain(MagneticField_Axes.lines, MagneticField_Axes.collections, TemperatureField_Axes.lines, TemperatureField_Axes.collections):
                 artist.remove()
@@ -708,6 +721,11 @@ def main() -> int:
 
             MagneticField_NonZero = MagneticField[MagneticField_NonZeroMask]
             MagneticField_NonZero = MagneticField_NonZero.reshape((6, int(MagneticField_NonZero.shape[0] / 6)))
+            MagneticField_Average = MagneticField_NonZero[3:6,:].copy()
+            MagneticField_Average = MagneticField_Average.mean(axis=1)
+            MagneticField_Average **= 2
+            MagneticField_Average = MagneticField_Average.sum()
+            MagneticField_Average **= 0.5
 
             MagneticFieldNorm_NonZero = MagneticFieldNorms[TemperatureField_NonZeroMask]
             MagneticFieldNorm_NonZero = MagneticFieldNorm_NonZero.reshape((4, int(MagneticFieldNorm_NonZero.shape[0] / 4)))
@@ -722,8 +740,14 @@ def main() -> int:
             MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MagneticFieldMax, V=MagneticField[4,:]/MagneticFieldMax, W=MagneticField[5,:]/MagneticFieldMax, colors=C, arrow_length_ratio=0.33, normalize=False, length=MagneticScalarMap.get_clim()[1] / 5.0)
             TemperatureField_Axes.scatter(xs=TemperatureField_NonZero[0,:], ys=TemperatureField_NonZero[1,:], zs=TemperatureField_NonZero[2,:], data=TemperatureField_NonZero[3,:], depthshade=False, c=TemperatureField_NonZero[3,:], cmap=ColourMap, vmin=TemperatureScalarMap.get_clim()[0], vmax=TemperatureScalarMap.get_clim()[1])
 
-            MagneticField_Axes.set_title(f'Magnetic Field\nMean = {MagneticFieldNorm_NonZero[3,:].mean():.1f}mT\nMaximum = {MagneticFieldNorm_NonZero[3,:].max():.1f}mT')
-            TemperatureField_Axes.set_title(f'Temperature Field\nMean = {TemperatureField_NonZero[3,:].mean():.2f}C\nMaximum = {TemperatureField_NonZero[3,:].max():.2f}C\nMinimum = {TemperatureField_NonZero[3,:].min():.2f}C')
+            MagneticFieldTitle: str = f'Magnetic Field\nAverage = {MagneticField_Average:.1f}mT\nMean Magnitude = {MagneticFieldNorm_NonZero[3,:].mean():.1f}mT\nMaximum = {MagneticFieldNorm_NonZero[3,:].max():.1f}mT'
+            TemperatureFieldTitle: str = f'Temperature Field\nMean = {TemperatureField_NonZero[3,:].mean():.2f}C\nMaximum = {TemperatureField_NonZero[3,:].max():.2f}C\nMinimum = {TemperatureField_NonZero[3,:].min():.2f}C'
+            if ( Config.MeasurementRate is not None ):
+                MagneticFieldTitle += f"\nSampling Rate = {Config.MeasurementRate:.3f}Hz"
+                TemperatureFieldTitle += f"\nSampling Rate = {Config.MeasurementRate:.3f}Hz"
+
+            MagneticField_Axes.set_title(MagneticFieldTitle)
+            TemperatureField_Axes.set_title(TemperatureFieldTitle)
 
             plt.draw_all(force=True)
             plt.pause(0.01)
@@ -796,13 +820,12 @@ def HandleArguments() -> bool:
         #   ...
         Config.BaudRate = Arguments.BaudRate
         Config.SerialDevice = Arguments.SerialPort
-        Config.SerialPort = serial.Serial(Config.SerialDevice, Config.BaudRate, timeout=0.1, xonxoff=False)
+        Config.SerialPort = serial.Serial(Config.SerialDevice, Config.BaudRate, timeout=50e-2, xonxoff=False)
     else:
         #   ...
         Valid = False
         pass
     #   ...
-
 
     Config.IndexingCorner = Arguments.PositionReference
     #   ...

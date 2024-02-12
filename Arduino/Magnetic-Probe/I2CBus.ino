@@ -66,9 +66,9 @@ I2CBus_t::I2CBus_t() {
     this->Enabled = true;
     this->Wire = Wire;
 
+    this->Wire.begin();
     this->Wire.setClock(I2C_WIRE_SPEED);
     this->Wire.setWireTimeout(I2C_WIRE_TIMEOUT, true);
-    this->Wire.begin();
 
     return;
 }
@@ -82,9 +82,9 @@ I2CBus_t::I2CBus_t(Pin_t Enable) {
     pinMode(this->EnablePin, OUTPUT);
     digitalWrite(this->EnablePin, LOW);
 
+    this->Wire.begin();
     this->Wire.setClock(I2C_WIRE_SPEED);
     this->Wire.setWireTimeout(I2C_WIRE_TIMEOUT, true);
-    this->Wire.begin();
 
     return;
 }
