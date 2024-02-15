@@ -42,7 +42,7 @@
 
 /* +++ Begin Private Macro Definitions +++ */
 #define I2C_WIRE_SPEED (uint32_t)100000  // Hz
-#define I2C_WIRE_TIMEOUT (uint32_t)(((1.0 / I2C_WIRE_SPEED) * 1e6) * 500) // µs
+#define I2C_WIRE_TIMEOUT (uint32_t)(((1.0 / I2C_WIRE_SPEED) * 1e6) * 1000) // µs
 /* --- End Private Macro Definitions --- */
 
 /* +++ Begin Private Typedefs +++ */
@@ -66,9 +66,9 @@ I2CBus_t::I2CBus_t() {
     this->Enabled = true;
     this->Wire = Wire;
 
-    this->Wire.begin();
     this->Wire.setClock(I2C_WIRE_SPEED);
     this->Wire.setWireTimeout(I2C_WIRE_TIMEOUT, true);
+    this->Wire.begin();
 
     return;
 }
@@ -82,9 +82,9 @@ I2CBus_t::I2CBus_t(Pin_t Enable) {
     pinMode(this->EnablePin, OUTPUT);
     digitalWrite(this->EnablePin, LOW);
 
-    this->Wire.begin();
     this->Wire.setClock(I2C_WIRE_SPEED);
     this->Wire.setWireTimeout(I2C_WIRE_TIMEOUT, true);
+    this->Wire.begin();
 
     return;
 }

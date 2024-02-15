@@ -180,6 +180,10 @@ SensorError_t ALS31313_t::SetI2CAddress(I2CBus_t& Bus, uint8_t NewAddress) {
         return Status;
     }
 
+    if ( this->I2CAddress != NewAddress ) {
+        Status = I2CAddressPowerCycleRequired;
+    }
+
     this->I2CAddress = NewAddress;
     return Status;
 }
@@ -340,9 +344,10 @@ SensorError_t ALS31313_t::DefaultInitialize(I2CBus_t& Bus) {
     }
 
     // Write the new I2C address to the device.
-    if ( this->SetI2CAddress(Bus, ExpectedAddress) != Success) {
+    SensorError_t Status = this->SetI2CAddress(Bus, ExpectedAddress);
+    if ( Status != Success) {
         Log_OperationFailed();
-        return I2CAddressChangeFailure;
+        return Status;
     }
 
     return Success;
@@ -399,16 +404,16 @@ SensorError_t ALS31313_t::ReadMeasurements(I2CBus_t& Bus, MagneticSensorReading_
     CurrentMeasurement.FieldZ       = (((MSBs & FieldZMSBDataMask)      >> FieldZMSBBitOffset)      << 4) | ((LSBs & FieldZLSBDataMask)      >> FieldZLSBBitOffset     );
     CurrentMeasurement.Temperature  = (((MSBs & TemperatureMSBDataMask) >> TemperatureMSBBitOffset) << 6) | ((LSBs & TemperatureLSBDataMask) >> TemperatureLSBBitOffset);
 
-    CurrentMeasurement.FieldX      = SignExtendValue(CurrentMeasurement.FieldX,      SENSOR_BIT_DEPTH);
-    CurrentMeasurement.FieldY      = SignExtendValue(CurrentMeasurement.FieldY,      SENSOR_BIT_DEPTH);
-    CurrentMeasurement.FieldZ      = SignExtendValue(CurrentMeasurement.FieldZ,      SENSOR_BIT_DEPTH);
+    CurrentMeasurement.FieldX      = SignExtendValue(CurrentMeasurement.FieldX, SENSOR_BIT_DEPTH);
+    CurrentMeasurement.FieldY      = SignExtendValue(CurrentMeasurement.FieldY, SENSOR_BIT_DEPTH);
+    CurrentMeasurement.FieldZ      = SignExtendValue(CurrentMeasurement.FieldZ, SENSOR_BIT_DEPTH);
 
     CurrentMeasurement.Timestamp   = (uint32_t)micros();
 
     return Success;
 }
 
-SensorError_t ALS31313_t::WriteRegisterAddress(I2CBus_t& Bus, uint8_t RegisterAddress) {
+SensorError_t ALS31313_t::WriteRegisterAddress(I2CBus_t& Bus, uint8_t RegisterAddress, bool EndTransmission) {
 
     // Begin an I2C transaction with the I2C address of this device.
     Bus.Wire.beginTransmission(this->I2CAddress);
@@ -418,26 +423,30 @@ SensorError_t ALS31313_t::WriteRegisterAddress(I2CBus_t& Bus, uint8_t RegisterAd
         return I2CAddressWriteFailure_Unknown;
     }
 
-    // Wait for the response from this sending byte...
-    switch ( Bus.Wire.endTransmission(false) ) {
-        case 0:
-            return Success;
-        case 1:
-            return I2CAddressWriteFailure_DataTooLong;
-        case 2:
-            return I2CAddressWriteFailure_AddressNACK;
-        case 3:
-            return I2CAddressWriteFailure_DataNACK;
-        case 5:
-            return I2CAddressWriteFailure_Timeout;
-        default:
-            return I2CAddressWriteFailure_Unknown;
+    if ( EndTransmission ) {
+        // Wait for the response from this sending byte...
+        switch ( Bus.Wire.endTransmission(false) ) {
+            case 0:
+                return Success;
+            case 1:
+                return I2CAddressWriteFailure_DataTooLong;
+            case 2:
+                return I2CAddressWriteFailure_AddressNACK;
+            case 3:
+                return I2CAddressWriteFailure_DataNACK;
+            case 5:
+                return I2CAddressWriteFailure_Timeout;
+            default:
+                return I2CAddressWriteFailure_Unknown;
+        }
     }
+
+    return Success;
 }
 
 SensorError_t ALS31313_t::ReadRegister(I2CBus_t& Bus, uint8_t RegisterAddress, uint32_t* Out) {
 
-    SensorError_t Status = WriteRegisterAddress(Bus, RegisterAddress);
+    SensorError_t Status = this->WriteRegisterAddress(Bus, RegisterAddress, true);
     if ( Status != Success ) {
         return Status;
     }
@@ -457,12 +466,9 @@ SensorError_t ALS31313_t::WriteRegister(I2CBus_t& Bus, uint8_t RegisterAddress, 
 
     Log_WriteRegister(this->I2CAddress, RegisterAddress, Data);
 
-    // Begin an I2C transaction with the I2C address of this device.
-    Bus.Wire.beginTransmission(this->I2CAddress);
-
-    // Write the register address we wish to interact with...
-    if ( Bus.Wire.write(RegisterAddress) != 1 ) {
-        return I2CAddressWriteFailure_Unknown;
+    SensorError_t Status = this->WriteRegisterAddress(Bus, RegisterAddress, false);
+    if ( Status != Success ) {
+        return Status;
     }
 
     // Write the data...
@@ -857,6 +863,9 @@ void Log_SensorError(SensorError_t Error, bool Newline) {
             break;
         case I2CAddressChangeFailure:
             Serial.print("I2C Address Not Changed");
+            break;
+        case I2CAddressPowerCycleRequired:
+            Serial.print("New I2C Address Requires Power Cycle");
             break;
         case BandwidthSelectChangeFailure:
             Serial.print("Bandwidth Select Not Changed");

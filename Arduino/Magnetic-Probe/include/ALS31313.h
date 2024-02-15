@@ -146,6 +146,7 @@ typedef enum SensorError_t {
     WriteAccessNotEnabled,
     I2CADCStatusChangeFailure,
     I2CAddressChangeFailure,
+    I2CAddressPowerCycleRequired,
     BandwidthSelectChangeFailure,
     HallEffectModeChangeFailure,
     I2CCRCModeChangeFailure,
@@ -185,7 +186,7 @@ class ALS31313_t {
         SensorError_t ReadMeasurements(I2CBus_t& Bus, MagneticSensorReading_t& CurrentMeasurement);
 
     // private:
-        SensorError_t WriteRegisterAddress(I2CBus_t& Bus, uint8_t RegisterAddress);
+        SensorError_t WriteRegisterAddress(I2CBus_t& Bus, uint8_t RegisterAddress, bool EndTransmission);
         SensorError_t ReadRegister(I2CBus_t& Bus, uint8_t RegisterAddress, uint32_t* Out);
         SensorError_t WriteRegister(I2CBus_t& Bus, uint8_t RegisterAddress, uint32_t Data);
         SensorError_t UpdateRegister(I2CBus_t& Bus, uint8_t RegisterAddress, uint32_t Data, uint32_t Mask, bool Force = false);

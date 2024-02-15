@@ -4,7 +4,7 @@ This subsection of the Mend-the-Gap software repository contains the full set of
 `Python` scripts, classes, and tools developed for image analysis, data
 manipulation, and results presentation. All of the tools are collected here
 together in a single directory for simplicity of access, with all `Python`
-classes collected together in the shared `MTG` folder.
+classes collected together in the shared `MTG_Common` folder.
 
 ##  Installing the Repository
 

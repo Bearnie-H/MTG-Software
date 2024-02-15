@@ -32,8 +32,8 @@ from readlif.reader import LifFile, LifImage
 #   ...
 
 #   Import the desired locally written modules
-from MTG import Logger
-from MTG import Utils
+from MTG_Common import Logger
+from MTG_Common import Utils
 #   ...
 
 #   Define the classes required by this program.
@@ -301,12 +301,6 @@ class Configuration():
         """
         self._LogWriter.Println(f"Attempting to open image-stack file [ {ImageStackFilename} ]...")
 
-        # if ( self.EnableDryRun ):
-        #     self._LogWriter.Println(f"Dry-Run Mode: Skipping memory-intensive opening of z-stack...")
-        #     self._LogWriter.Println(f"Generating random z-stack array for testing...")
-        #     self._Z_Stack: np.ndarray = np.random.randint(0, 256, size=(10, 1024, 1024), dtype=np.uint8)
-        #     return True
-
         Success, self._Z_Stack = OpenLIFFile(ImageStackFilename, ClearingAlgorithm)
         if ( Success ):
             self._LogWriter.Println(f"Successfully opened and extraced Z-Stack image from *.LIF file [ {ImageStackFilename} ].")
@@ -375,7 +369,7 @@ def OpenLIFFile(Filename: str = "", SeriesSubstring: str = "") -> typing.Tuple[b
             LogWriter.Println(f"Image/Series [ {Index}/{LifStack.num_images} ] - Name: {Image['name']}")
             if ( str(Image['name']).lower().find(SeriesSubstring.lower()) >= 0 ):
                 LogWriter.Println(f"Found series using clearing algorithm [ {SeriesSubstring} ] at index [ {Index} ].")
-                Config.LIFSeriesName: str = Image['name']
+                Config.LIFSeriesName = Image['name']
                 ClearedSeriesIndex = Index-1
 
         if ( Config.HeadlessMode ):
@@ -615,7 +609,7 @@ def MaximumIntensityProjection(Z_Stack: np.ndarray, Axis: str='z') -> np.ndarray
     #   If dry run mode is not enabled, write out this projection as an output artefact.
     if ( not Config.EnableDryRun ):
         SaveFilename: str = os.path.join(Config.OutputDirectory(), f"Maximum Intensity Projection - {Axis.upper()} Axis - Gamma {Config.MIPGamma:.4f}.png")
-        Config.MIProjectionFilename: str = SaveFilename
+        Config.MIProjectionFilename = SaveFilename
         Success: bool = cv2.imwrite(SaveFilename, Projection)
         if ( Success ):
             LogWriter.Println(f"Successfully saved {Axis.upper()}-Axis Maximum Intensity Projection as file [ {SaveFilename} ].")
@@ -638,7 +632,7 @@ def WriteConfigurationState() -> None:
         output directory.
     """
 
-    Config.ConfigurationDumpFilename: str = os.path.join(Config.OutputDirectory(), f"{os.path.splitext(os.path.basename(sys.argv[0]))[0]} - Configuration State.txt")
+    Config.ConfigurationDumpFilename  = os.path.join(Config.OutputDirectory(), f"{os.path.splitext(os.path.basename(sys.argv[0]))[0]} - Configuration State.txt")
     ConfigurationState: str = Config.DumpConfiguration()
 
     LogWriter.Println(f"Writing application configuration state to standard output...")
@@ -700,7 +694,7 @@ def ProcessArguments() -> bool:
     #   object as required.
     #   ...
 
-    Config.ImageStackFile: str        = Arguments.ImageStack
+    Config.ImageStackFile        = Arguments.ImageStack
 
     if ( Arguments.Quiet ):
         LogWriter.SetOutputFilename("/dev/null")
@@ -709,14 +703,14 @@ def ProcessArguments() -> bool:
     else:
         LogWriter.SetOutputFilename(os.path.join(Config.OutputDirectory(), Arguments.LogFile))
 
-    Config.EnableDryRun: bool           = Arguments.DryRun
-    Config.ValidateArguments: bool      = Arguments.Validate
-    Config.HeadlessMode: bool           = Arguments.Headless
+    Config.EnableDryRun         = Arguments.DryRun
+    Config.ValidateArguments    = Arguments.Validate
+    Config.HeadlessMode         = Arguments.Headless
 
-    Config.ClearingAlgorithm: str       = Arguments.ClearingAlgo
-    Config.MIPGamma: float              = Arguments.MIPGamma
-    Config.EnableZTruncation: bool      = Arguments.EnableZTruncation
-    Config.ZTruncationThreshold: float  = Arguments.ZTruncationThreshold
+    Config.ClearingAlgorithm    = Arguments.ClearingAlgo
+    Config.MIPGamma             = Arguments.MIPGamma
+    Config.EnableZTruncation    = Arguments.EnableZTruncation
+    Config.ZTruncationThreshold = Arguments.ZTruncationThreshold
 
     LogWriter.Println(f"Finished parsing command-line arguments!")
 

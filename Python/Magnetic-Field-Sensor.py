@@ -32,14 +32,12 @@ import numpy as np
 import matplotlib
 from matplotlib.axes import Axes
 from matplotlib import cm
-from matplotlib.colors import Colormap
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 #   ...
 
 #   Import the desired locally written modules
-from MTG import Logger
+from MTG_Common import Logger
 #   ...
 
 #   Define the globals to set by the command-line arguments
@@ -47,10 +45,13 @@ LogWriter: Logger.Logger = Logger.Logger(Prefix=os.path.basename(sys.argv[0]))
 #   ...
 
 #   Define the global constants of the program
+MagneticFieldOffset: int = 0        #   LSB - Corresponds to 0 Ga
 MagneticFieldSensitivity: int = 1   #   LSB/gauss
-TemperatureOffset: int = 1708       #   LSB
-TemperatureSensitivity: float = (302.0 / 4096.0) #  LSB/degC
 
+TemperatureOffset: int = 1708       #   LSB - Corresponds to 0 deg C
+TemperatureSensitivity: float = (302.0 / 4096.0) #  LSB/deg C
+
+#   Position Look-Up tables for the 4 different indexing corners.
 PositionLookup_A: typing.Dict[int, typing.Tuple[float, float]] = {
     0: (-5.964,  6.342 ),
     1: (-5.964,  12.842),
@@ -100,72 +101,141 @@ SensorOffset_Z: float = 0.65    #   mm
 
 SerialMessageLength: int = 16   #   bytes, including start and stop bytes.
 
+GaussToMilliTesla: float = 1.0 / 10.0   #   Conversion factor from Ga to mT
+
+class Configuration():
+    """
+    Configuration
+
+    This class represents the set of top-level application configuration
+    settings available to be modified.
+    """
+
+    def __init__(self: Configuration, LogWriter: Logger.Logger = Logger.Discarder) -> None:
+        """
+        Constructor
+
+        This function prepares the application configuration into a known initial state.
+
+        LogWriter:
+            The logger to use for writing all messages out to the user.
+
+        Return (None):
+            None, the configuration instance is initialized and ready to be used.
+        """
+
+        self._LogWriter: Logger.Logger = LogWriter
+
+        self.StreamType: str = None
+
+        self.SerialPort: serial.Serial = None
+        self.SerialDevice: str = None
+        self.BaudRate: int = 0
+        self.MeasurementRate: float = None
+
+        self.MeasurementsFilename: str = None
+
+        self.PositionReference: str = None
+
+        self.EnableDryRun: bool = False
+
+        return
+
 class RawSensorReading():
     """
     RawSensorReading
 
-    This class...
+    This class respresents a single raw reading from one of the N sensing
+    elements connected within the magnetic sensor array. This is a simple record
+    type to capture and format the raw bytes transmitted over the serial
+    interface from the micro-controller, with absolutely no formatting or data
+    manipulation applied.
     """
 
+    #   The I2C address of the device this record came from
     I2C_Address: int
 
+    #   The layer and intra-layer position information for the particular device.
     DeviceIndex: int
     LayerIndex: int
 
+    #   The raw sensor values for the X, Y, Z, and T measurements as seen by this sensor.
     Field_X: int
     Field_Y: int
     Field_Z: int
     Temperature: int
 
+    #   The timestamp of this sensor reading, as prepared by the micro-controller.
     Timestamp: int
 
     def Format(self: RawSensorReading) -> FormattedSensorReading:
         """
         Format
 
-        This function...
+        This function converts the raw sensor reading into the corresponding set
+        of dimensional values.  This is used to transform from raw bits to
+        dimensonal values to be used for proper analysis and interpretation.
 
         Return (FormattedSensorReading):
-            ...
+            A new instance of a FormattedSensorReading, containing the dimensional
+            values this reading corresponds to.
         """
 
         #   Convert the raw field values to dimensional values
-        FieldX: float = self.Field_X / float(MagneticFieldSensitivity)
-        FieldY: float = self.Field_Y / float(MagneticFieldSensitivity)
-        FieldZ: float = self.Field_Z / float(MagneticFieldSensitivity)
+        FieldX: float = ((self.Field_X - MagneticFieldOffset) / float(MagneticFieldSensitivity)) * GaussToMilliTesla
+        FieldY: float = ((self.Field_Y - MagneticFieldOffset) / float(MagneticFieldSensitivity)) * GaussToMilliTesla
+        FieldZ: float = ((self.Field_Z - MagneticFieldOffset) / float(MagneticFieldSensitivity)) * GaussToMilliTesla
 
+        #   Convert the temperature from bits to degrees Celcius
         Temperature: float = ComputeFormattedTemperature(self.Temperature)
 
+        #   Determine the X, Y, Z position of this sensor, relative to the particular corner
+        #   specified as the reference origin.
         X, Y, Z = PositionLookup(self.LayerIndex, self.DeviceIndex, Config.IndexingCorner)
 
+        #   Compute the index into the numpy arrays used for plotting, where this reading should be plotted.
         Index = self.LayerIndex * 2**3 + self.DeviceIndex
 
+        #   Format
         return FormattedSensorReading(np.array([FieldX, FieldY, FieldZ]), np.array([X, Y, Z]), Temperature, self.Timestamp, Index)
 
     def Valid(self: RawSensorReading) -> bool:
         """
         Valid
 
-        This function...
+        This function performs a basic check of the raw values, to check if
+        there was corruption or bit flips on the Serial line. This simply checks
+        that the values of this reading fall within the known bounds for each
+        value.
 
         Return (bool):
-            ...
+            True if no value is obviously wrong, False if at least one is.
         """
 
+        #   LayerIndex is limited to the range [0, 7]
         if not ( 0 <= self.LayerIndex < 8 ):
+            LogWriter.Warnln(f"Invalid RawSensorReading: LayerIndex out of range ({self.LayerIndex})")
             return False
 
+        #   DeviceIndex is limited to the range [0, 7]
         if not ( 0 <= self.DeviceIndex < 8 ):
+            LogWriter.Warnln(f"Invalid RawSensorReading: DeviceIndex out of range ({self.DeviceIndex})")
             return False
 
+        #   The I2C Address must be derived from the LayerIndex and DeviceIndex according to this equation.
         if ( self.I2C_Address != (self.LayerIndex * 16 + self.DeviceIndex + 8 )):
+            LogWriter.Warnln(f"Invalid RawSensorReading: Invalid I2C Address ({self.I2C_Address} vs. {(self.LayerIndex * 16 + self.DeviceIndex + 8 )})")
             return False
 
-        for Field in [self.Field_X, self.Field_Y, self.Field_Z]:
+        #   The X, Y, Z magnetic field values must be no more than signed 12-bit values.
+        for Field, Axis in zip([self.Field_X, self.Field_Y, self.Field_Z], ["X", "Y", "Z"]):
             if not ( -2048 <= Field < 2047 ):
+                LogWriter.Warnln(f"Invalid RawSensorReading: Field {Axis} out of range ({Field})")
                 return False
 
+        #   The temperature field value must be an unsigned 12-bit value
         if not ( 0 <= self.Temperature < 4096 ):
+            LogWriter.Warnln(f"Invalid RawSensorReading: Temperature out of range ({self.Temperature})")
             return False
 
         return True
@@ -174,10 +244,13 @@ class RawSensorReading():
         """
         CSVHeader
 
-        This function...
+        This function provides the column headers associated with the ToString()
+        method to describe the column ordering when writing to a CSV file for
+        data recording.
 
         Return (str):
-            ...
+            A comma-separated set of column identifiers, matching the order of
+            the data values provided by the ToString() method.
         """
 
         return f"I2C Address,Layer Index,Device Index,Field X, Field Y, Field Z,Temperature,Timestamp\r\n"
@@ -186,10 +259,13 @@ class RawSensorReading():
         """
         ToString
 
-        This function
+        This function produces a standard stringified interpretation of the
+        values of this record, in a standard format, resolution, and ordering.
+        This is suitable for recording the raw sensor values in a text-type file
+        for later review.
 
         Return (str):
-            ...
+            A comma-separated set of data values, in a standard order.
         """
 
         return f"{self.I2C_Address:3d},{self.LayerIndex},{self.DeviceIndex},{self.Field_X:+4d},{self.Field_Y:+4d},{self.Field_Z:+4d},{self.Temperature:4d},{self.Timestamp}"
@@ -198,7 +274,7 @@ class FormattedSensorReading():
     """
     FormattedSensorReading
 
-    This class...
+    This class represents a dimensional interpretation of a RawSensorReading() instance.
     """
 
     #   3D position, relative to one out of a set of user-selectable reference points
@@ -210,28 +286,29 @@ class FormattedSensorReading():
     #   Temperature, in units of degrees Celcius
     Temperature: float
 
-    #   ...
+    #   A timestamp, in units of seconds
     Timestamp: int
 
+    #   The index into the "global" numpy arrays used for the live plotting of the temperature and magnetic fields.
     Index: int
 
     def __init__(self: FormattedSensorReading, MagneticField: np.ndarray = np.array([0, 0, 0]), Position: np.ndarray = np.array([0, 0, 0]), Temperature: float = 0.0, Timestamp: int = 0, Index: int = 0) -> None:
         """
         Constructor
 
-        This function...
+        This function constructs a FormattedSensorReading from the values computed from a RawSensorReading.
 
         MagneticField:
-            ...
+            The magnetic field, as an [X, Y, Z] vector in units of mT.
         Position:
-            ...
+            The [X, Y, Z] position vector associated with the sensor which produced this reading, in units of mm.
         Temperature:
-            ...
+            The temperature, in units of degrees Celcius
         Timestamp:
-            ...
+            The timestamp provided by the micro-controller associated with this reading.
 
         Return (None):
-            ...
+            None, the instance is initialized with the provided field values
         """
 
         self.MagneticField = MagneticField
@@ -242,26 +319,17 @@ class FormattedSensorReading():
 
         return
 
-    def __str__(self: FormattedSensorReading) -> str:
-        """
-        __str__
-
-        This function...
-
-        Return (str):
-            ...
-        """
-
-        return f"X={self.MagneticField[0]}Ga, Y={self.MagneticField[1]}G, Z={self.MagneticField[2]}Ga, T={self.Temperature}C"
-
     def CSVHeader(self: FormattedSensorReading) -> str:
         """
         CSVHeader
 
-        This function...
+        This function provides the column headers associated with the ToString()
+        method to describe the column ordering when writing to a CSV file for
+        data recording.
 
         Return (str):
-            ...
+            A comma-separated set of column identifiers, matching the order of
+            the data values provided by the ToString() method.
         """
 
         return f"X (mm),Y (mm),Z (mm),U (mT),V (mT), W (mT),T (deg C),Timestamp (s)\r\n"
@@ -270,59 +338,23 @@ class FormattedSensorReading():
         """
         ToString
 
-        This function...
+        This function produces a standard stringified interpretation of the
+        values of this record, in a standard format, resolution, and ordering.
+        This is suitable for recording the raw sensor values in a text-type file
+        for later review.
 
         Return (str):
-            ...
+            A comma-separated set of data values, in a standard order.
         """
 
-        return f"{self.Position[0]:+2.4f},{self.Position[1]:+2.4f},{self.Position[2]:+2.4f},{self.MagneticField[0] / 10.0:+4.1f},{self.MagneticField[1] / 10.0:+4.1f},{self.MagneticField[2] / 10.0:+4.1f},{self.Temperature:+3.2f},{self.Timestamp * 1e-6:.6f}"
-
-    pass
-
-class Configuration():
-    """
-    Configuration
-
-    This class...
-    """
-
-    def __init__(self: Configuration, LogWriter: Logger.Logger = Logger.Discarder) -> None:
-        """
-        Constructor
-
-        This function...
-
-        LogWriter:
-            ...
-
-        Return (None):
-            ...
-        """
-
-        self._LogWriter: Logger.Logger = LogWriter
-
-        self.StreamType: str = None
-
-        self.SerialPort: serial.Serial = None
-        self.SerialDevice: str = None
-        self.BaudRate: int = 0
-
-        self.MeasurementRate: float = None
-
-        self.MeasurementsFilename: str = None
-
-        self.PositionReference: str = None
-
-        self.EnableDryRun: bool = False
-
-        return
+        return f"{self.Position[0]:+2.4f},{self.Position[1]:+2.4f},{self.Position[2]:+2.4f},{self.MagneticField[0]:+4.1f},{self.MagneticField[1]:+4.1f},{self.MagneticField[2]:+4.1f},{self.Temperature:+3.2f},{self.Timestamp * 1e-6:.6f}"
 
 class MeasurementStream():
     """
     MeasurementStream
 
-    This class...
+    This class represents an abstract "stream" of sensor readings, which can be
+    read and processed sequentially.
     """
 
     LogWriter: Logger.Logger
@@ -336,6 +368,26 @@ class MeasurementStream():
     _MonitorActive: bool
 
     def __init__(self: MeasurementStream, LogWriter: Logger.Logger = Logger.Discarder, SerialPort: serial.Serial = None, Filename: str = None) -> None:
+        """
+        Constructor
+
+        This function initializes the MeasurementStream, providing a Logger for
+        it to write messages out to the user, and either a Serial Port to read
+        from, or a filename to read measurements from.
+
+        LogWriter:
+            The logger to use for any messages out to the user.
+        SerialPort:
+            The pre-initialized serial port to read messages from. None if the
+            file should be read instead.
+        Filename:
+            The name of the disk file to open and read measurements from. None
+            if the Serial port should be read instead.
+
+        Return (None):
+            None, the MeasurementStream is initialized and ready to
+            StartReading() in order to start processing sensor readings.
+        """
 
         self.LogWriter = LogWriter
         self.ArduinoLogWriter = Logger.Logger(OutputStream=LogWriter.RawStream(), Prefix="Arduino")
@@ -353,10 +405,10 @@ class MeasurementStream():
         """
         __len__
 
-        This function...
+        This function returns the number of unprocessed sensor readings buffered and waiting to be read out.
 
         Return (int):
-            ....
+            The number of unprocessed sensor readings buffered and waiting to be read out.
         """
 
         return len(self.Measurements)
@@ -365,24 +417,26 @@ class MeasurementStream():
         """
         StartReading
 
-        This function...
+        This function spawns a thread to read the underlying stream for raw
+        readings, and present them for consumption by any other thread.
 
         Return (None):
-            ...
+            None, the new thread is spawned and all book-keeping for managing it
+            is handled within the class.
         """
 
         if ( self.Filename is not None ):
+            self.LogWriter.Println(f"Spawning thread to read file: {self.Filename}")
             self._MonitorActive = True
             self._MonitorThread: threading.Thread = threading.Thread(target=self._ReadFile)
             self._MonitorThread.start()
         elif ( self.SerialPort is not None ):
+            self.LogWriter.Println(f"Spawning thread to read serial port: {self.SerialPort.name}")
             self._MonitorActive = True
             self._MonitorThread: threading.Thread = threading.Thread(target=self._ReadSerialPort)
             self._MonitorThread.start()
         else:
             self.LogWriter.Errorln(f"Failed to start MeasurementStream, neither Serial Port nor File streams were initialized!")
-            #   ...
-            pass
 
         return
 
@@ -390,10 +444,11 @@ class MeasurementStream():
         """
         Next
 
-        This function...
+        This function returns the "next" buffered reading from the stream, if
+        one exists.
 
         Return (RawSensorReading):
-            ...
+            The oldest buffered reading available, if one exists.
         """
 
         if ( len(self.Measurements) > 0 ):
@@ -409,10 +464,13 @@ class MeasurementStream():
         """
         Active
 
-        This function...
+        This function checks whether this stream is still active. This is True
+        if either the asynchronous thread is still active, or there are still
+        buffered readings to process.
 
         Return (bool):
-            ...
+            True if the asynchronous thread is active or there are buffered
+            measurements. False otherwise.
         """
 
         return self._MonitorActive or len(self.Measurements) > 0
@@ -421,81 +479,94 @@ class MeasurementStream():
         """
         Halt
 
-        This function...
+        This function ends the asynchronous thread, cleaning up the resources
+        associated with it and waiting for it to complete before returning.
 
         Return (None):
-            ...
+            None, the spawned thread is halted and this function blocks until
+            the other thread is finalized and fully cleaned up.
         """
 
         self._MonitorActive = False
         if ( self._MonitorThread is not None ):
             self._MonitorThread.join()
-            self.Measurements = []
 
         return
-
-    def ShouldDisplay(self: MeasurementStream, Count: int) -> bool:
-        """
-        ShouldDisplay
-
-        This function...
-
-        Count:
-            ...
-
-        Return (bool):
-            ...
-        """
-
-        #   If we're reading from the serial port, acutally monitor the backlog
-        #   versus the count of samples since the last refresh...
-        if ( self.Filename is None ) or ( self.Filename == "" ):
-            #   Allow the backlog to grow to no more than 1 times the last refresh value.
-            return self.__len__() < ( Count )
-        else:
-            #   If we're reading from a file, just update every n measurements
-            return (Count >= 8)
 
     def _ReadSerialPort(self: MeasurementStream) -> None:
         """
         _ReadSerialPort
 
-        This function...
+        This function is the main function run by the asynchronous thread to
+        actually read the raw data being fed to the Serial port, convert this to
+        a set of RawSensorReading instances, and present them to be consumed by
+        the main thread of the program.
 
         Return (None):
-            ...
+            None, this function runs until either the Serial port is closed, or
+            the MeasurementStream is Halted. Sensor readings are parsed and
+            appended to the internal FIFO queue. Log messages from the
+            micro-controller are separated and printed to the dedicated
+            LogWriter.
         """
 
+        #   Try to assert the serial port is open and readable.
         if ( not self.SerialPort.is_open ):
             self.SerialPort.open()
 
+        #   We read from the serial port into a buffer, to allow stitching of
+        #   sensor readings or log messages across read boundaries
         Buffer: bytearray = bytearray()
 
+        #   Track the rate at which the MeasurementStream is actively receiving
+        #   meausrement valeus over the port.
         StartTime: float = time.time()
         EndTime: float = 0.0
         Count: int = 0
         Limit: int = 128
 
+        #   Until either the serial port closes, or the stream is requested to halt...
         while ( self._MonitorActive ) and ( self.SerialPort.is_open ):
+
+            #   Read a block of data from the serial port, accounting for both
+            #   timeout in the case of not enough data to satisfy the read(),
+            #   and for too much data to fit into the requested read size.
             RawBytes: bytes = self.SerialPort.read(min(Config.BaudRate, 2048))
+
+            #   Stitch this together with any existing data in the local buffer...
             Buffer.extend(RawBytes[:])
+
+            #   If there's nothing to process, sleep to yield this thread and
+            #   not over-aggressivly read the serial port.
             if ( len(Buffer) == 0 ):
                 self.LogWriter.Write(f"Waiting for serial data...\r")
                 time.sleep(1e-2)
                 continue
 
+            #   While there's data yet to process within the local buffer...
             Done: bool = False
             while ( not Done ):
+
+                #   Check whether it's a sensor measurement, a log message, or a partial packet.
+                #   If something is successfully parsed, remove it from the buffer, moving
+                #   on to the "next" data to process.
                 Buffer, Measurement, Message, Done = self._ParseSerialBytes(Buffer)
+
+                #   If a complete meausrement is parsed out, append it to the FIFO queue and
+                #   attempt to update the sampling rate estimate.
                 if ( Measurement is not None ):
                     self.Measurements.append(Measurement)
                     Count += 1
                     if ( Count == Limit ):
                         EndTime = time.time()
-                        Config.MeausrementRate = Count / (EndTime - StartTime)
+                        Config.MeasurementRate = Count / (EndTime - StartTime)
                         Count, StartTime = 0, EndTime
+
+                #   Otherwise, if it's a message of non-zero length, print it out using the
+                #   dedicated micro-controller Logger
                 elif ( Message is not None ) and ( len(Message) > 0 ):
                     self.ArduinoLogWriter.Println(f'Log Message: {Message}')
+
 
         self.LogWriter.Println(f"_ReadSerialPort() exiting...")
         self._MonitorActive = False
@@ -507,31 +578,61 @@ class MeasurementStream():
         """
         _ParseSerialBytes
 
-        This function...
+        This function is what actually parses out either sensor readings or log
+        messages from the local data buffer containing the values as read from
+        the serial port.  This buffer contains some set of raw byte sensor
+        readings (in a known format), interspersed with ASCII log messages from
+        the micro-controller. This function identifies which is at the "front"
+        of the buffer, reads the complete data record, and returns at most one
+        non-None value to the caller. If only a partial record is present, the
+        fourth element of the return tuple is used to indicate that processing
+        on this buffer should wait until after the next read() of the serial
+        port.
 
         Buffer:
-            ...
+            The current array of unprocessed bytes as read from the serial port.
+            This is ordered such that lower indices correspond to earlier bytes,
+            and will be processed to extract the set of sensor readings or log
+            messages as they were written to the Serial port.
 
         Return (Tuple):
             [0] (bytearray):
-                ...
+                The (potentially modified) buffer, after removing the bytes
+                successfully processed and parsed.
             [1] (RawSensorReading):
-                ...
+                The RawSensorReading instance corresponding to the raw data
+                packet processed. This value is not None only if the first record
+                in the buffer is successfully parsed as a sensor reading.
             [2] (str):
-                ...
+                The log message from the micro-controller to be printed out by
+                the dedicated logger. This value is not None only if the first
+                record in the buffer is successfully parsed as a log message.
+                Trailing whitespace is stripped to ensure consistent display and
+                printing of the message.
             [3] (bool):
-                ...
+                A boolean value indicating whether or not the buffer is
+                exhausted and a new read() of the SerialPort is required.  This
+                does not necessarily correspond to len(Buffer) == 0 being True,
+                but rather that whatever contents the buffer contains is not a
+                complete record.
         """
 
+        #   Wrap this all in a try-catch block, as corrupted bits on the Serial
+        #   port or invalid UTF-8 codepoints have a tendency to cause
+        #   exceptions. If we get such a sequence, we just ignore it since we
+        #   will override any individual reading in short order anyway.
         try:
 
             Measurement: RawSensorReading = None
             Message: str = None
 
+            #   Nothing to read, nothing to process, and a new read() is required.
             if ( len(Buffer) == 0 ):
                 return (Buffer, None, None, True)
 
+            #   Sensor readings ALWAYS start with a NUL byte
             if ( Buffer[0] == 0x00 ):
+
                 #   It's a sensor reading, read a fixed number of bytes and strip the CR/LF bytes.
                 #   Make sure we have enough bytes to fill an entire measurement.
                 if ( len(Buffer) < SerialMessageLength ):
@@ -539,11 +640,15 @@ class MeasurementStream():
 
                 MeasurementBytes: bytearray = Buffer[:SerialMessageLength]
 
+                #   The byte order, format, and endianness is all strictly
+                #   defined by the firmware of the micro-controller. We simply
+                #   must match the formatting here.
                 Measurement = RawSensorReading()
                 Measurement.I2C_Address     = MeasurementBytes[1]
                 Measurement.LayerIndex      = MeasurementBytes[2]
                 Measurement.DeviceIndex     = MeasurementBytes[3]
 
+                #   Arduino is a little-endian architecture, and only the magnetic field values are signed quantities.
                 Measurement.Field_X         = int.from_bytes(MeasurementBytes[4:6],   byteorder='little', signed=True)
                 Measurement.Field_Y         = int.from_bytes(MeasurementBytes[6:8],   byteorder='little', signed=True)
                 Measurement.Field_Z         = int.from_bytes(MeasurementBytes[8:10],  byteorder='little', signed=True)
@@ -551,27 +656,41 @@ class MeasurementStream():
 
                 Measurement.Timestamp       = int.from_bytes(MeasurementBytes[12:16], byteorder='little', signed=False)
 
+                #   Perform a very rudimentary check to assert the values of the
+                #   record are within the expected bounds based on the known bit
+                #   depths or ranges of these quantities.
                 if ( not Measurement.Valid() ):
                     Measurement = None
 
+                #   Fast-Forward the buffer to reflect that a reading has been
+                #   successfully processed.
                 Buffer = Buffer[SerialMessageLength:]
 
             else:
                 #   It's a log message, read to the next newline.
                 MessageEnd: int = Buffer.find(ord('\n'))
                 if ( MessageEnd == -1 ):
-                    #   If no newline is found, then we only have part of the message, so we're finished reading.
+                    #   If no newline is found, then we only have part of the
+                    #   message, so we're finished reading.
                     return (Buffer, None, None, True)
 
+                #   Extract out the message, decode it as UTF-8, and remove all
+                #   trailing whitespace
                 Message = Buffer[:MessageEnd].decode().rstrip()
+
+                #   Fast-Forward the buffer, noting that we want to remove the
+                #   newline we indexed as the end of the message.
                 Buffer = Buffer[MessageEnd+1:]
 
             return (Buffer, Measurement, Message, False)
 
         except:
+            #   If an exception occurred, catch it and ignore it.
             if ( len(Buffer) == 0 ):
+                #   If the buffer is empty, just skip ahead and try a new read()...
                 return (Buffer, None, None, True)
             else:
+                #   Otherwise, assume we got a garbage byte and skip ahead one byte.
                 return (Buffer[1:], None, None, False)
 
 
@@ -579,26 +698,42 @@ class MeasurementStream():
         """
         _ReadFile
 
-        This function...
+        This function is the main function for reading RawSensorReading() values
+        from a CSV file. This parses each line into a RawSensorReading instance,
+        and pushes them to the internal FIFO queue.
 
         Return (None):
-            ...
+            None, the file is read and the internal FIFO queue populated until
+            the file contents are exhausted.
         """
 
         FirstLine: bool = True
 
         with open(self.Filename, "r") as Measurements:
             while ( self._MonitorActive ):
+
+                #   Read a line from the file...
                 Line: str = Measurements.readline()
+
+                #   If this is the first line of the file, check if it contains
+                #   the column headers or not...
                 if ( FirstLine == True ):
                     if ( Line.split(",")[0].lower().startswith("i2c") ):
+                        #   If it does contain the headers, skip ahead one line
+                        #   and unset the flag to check for a header.
                         Line = Measurements.readline()
                     FirstLine = False
 
+                #   If we reach an empty line, that's the end of the file.
+                #   Indicate that this thread is halting and can be join()ed at
+                #   any time.
                 if ( len(Line) == 0 ):
+                    self.LogWriter.Println(f"_ReadFile() ending - Empty line encountered.")
                     self._MonitorActive = False
                     return
 
+                #   Parse the fields from the line, building the
+                #   RawSensorReading() instance from them.
                 Fields: typing.List[str] = Line.split(",")
                 RawMeasurement: RawSensorReading = RawSensorReading()
                 RawMeasurement.I2C_Address = int(Fields[0])
@@ -612,6 +747,8 @@ class MeasurementStream():
 
                 self.Measurements.append(RawMeasurement)
 
+        #   If the file closes somehow, also indicate this thread is ended.
+        self.LogWriter.Println(f"_ReadFile() ending - File closed.")
         self._MonitorActive = False
         return
 
@@ -622,10 +759,12 @@ def SafeShutdown(signal: typing.Any, frame: typing.Any) -> None:
     """
     SafeShutdown
 
-    This function...
+    This function will safely shut down any of the spawned resources, allowing
+    the program to close smoothly, safely, and in a timely manner if either a
+    fatal exception occurs or a keyboard-interrupt is requested.
 
     Return (None):
-        ...
+        None, the program will exit once this returns.
     """
 
     if ( Measurements is not None ):
@@ -635,6 +774,7 @@ def SafeShutdown(signal: typing.Any, frame: typing.Any) -> None:
 
     return
 
+#   Attach the SafeShutdown function to the keyboard interrupt signal.
 signal.signal(signal.SIGINT, SafeShutdown)
 
 #   Main
@@ -654,95 +794,134 @@ def main() -> int:
     MagneticFieldNorms: np.ndarray = np.zeros(shape=(4,64), dtype=np.float64)   #   I want 3d a (x,y,z) and a scalar (B)
     TemperatureField: np.ndarray = np.zeros(shape=(4,64), dtype=np.float64)     #   I want a 3d (x,y,z) and a scalar (T)
 
+    #   Create the figure object to work with.
     Fields_Figure: Figure = plt.figure()
 
+    #   Create subplots for the magnetic and temperature fields, as 3D plots.
     MagneticField_Axes: Axes = Fields_Figure.add_subplot(1, 2, 1, projection='3d')
     TemperatureField_Axes: Axes = Fields_Figure.add_subplot(1, 2, 2, projection='3d')
 
+    #   Label the axes of each of the subplots.
     MagneticField_Axes.set_xlabel('X Direction (mm)')
-    MagneticField_Axes.set_zlabel('Z Direction (mm)')
     MagneticField_Axes.set_ylabel('Y Direction (mm)')
-
+    MagneticField_Axes.set_zlabel('Z Direction (mm)')
     TemperatureField_Axes.set_xlabel('X Direction (mm)')
-    TemperatureField_Axes.set_zlabel('Z Direction (mm)')
     TemperatureField_Axes.set_ylabel('Y Direction (mm)')
+    TemperatureField_Axes.set_zlabel('Z Direction (mm)')
 
+    #   Prepare and initialize the normalization maps and colour maps for
+    #   colouring and plotting the data values in each of the subplots
     MagneticFieldMax: int = 2047
     ColourMap = cm.plasma
-    MagneticNorm = matplotlib.colors.Normalize(vmin=0, vmax=MagneticFieldMax * math.sqrt(3) / 10.0)
+    MagneticNorm = matplotlib.colors.Normalize(vmin=0, vmax=MagneticFieldMax * math.sqrt(3) * GaussToMilliTesla)
     TemperatureNorm = matplotlib.colors.Normalize(vmin=0, vmax=100)
     MagneticScalarMap = cm.ScalarMappable(norm=MagneticNorm, cmap=ColourMap)
     TemperatureScalarMap = cm.ScalarMappable(norm=TemperatureNorm, cmap=ColourMap)
     MagneticFieldColourBar = Fields_Figure.colorbar(MagneticScalarMap, ax=MagneticField_Axes, label='Magentic Field Strength (mT)', shrink=0.5, pad=.2, aspect=10)
-    TemperatureFieldColourBar = Fields_Figure.colorbar(TemperatureScalarMap, ax=TemperatureField_Axes, label=r'Temperature $\degree$C', shrink=0.5, pad=.2, aspect=10)
+    TemperatureFieldColourBar = Fields_Figure.colorbar(TemperatureScalarMap, ax=TemperatureField_Axes, label=r'Temperature ($\degree$C)', shrink=0.5, pad=.2, aspect=10)
 
-    Fields_Figure.subplots_adjust(bottom=0.05, top=0.95)
+    #   Set the default viewing position of the plots to something where overlap
+    #   between layers is relatively minor
+    FigureAzimuth: float = -110
+    FigureElevation: float = 70
+    MagneticField_Axes.azim = FigureAzimuth
+    MagneticField_Axes.elev = FigureElevation
+    TemperatureField_Axes.azim = FigureAzimuth
+    TemperatureField_Axes.elev = FigureElevation
+
     Fields_Figure.tight_layout()
 
     #   Initialize the output writer to append each measurement to a text file for later review or
     #   replay of the time-varying field measurements.
     RawOutputStream: typing.TextIO = open(os.devnull, "w+")
     FormattedOutputStream: typing.TextIO = open(os.devnull, "w+")
-    if ( not Config.EnableDryRun ) and ( Config.SerialPort is not None ):
+    if ( not Config.EnableDryRun ):
         MeasurementsFilename: str = f"Sensor-Readings - {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.csv"
-        RawOutputStream = open("Raw " + MeasurementsFilename, "w+")
+        if ( Config.MeasurementsFilename is not None ):
+            MeasurementsFilename = Config.MeasurementsFilename
         FormattedOutputStream = open("Formatted " + MeasurementsFilename, "w+")
-
-        RawOutputStream.write(RawSensorReading().CSVHeader())
         FormattedOutputStream.write(FormattedSensorReading().CSVHeader())
+        if ( Config.SerialPort is not None ):
+            RawOutputStream = open("Raw " + MeasurementsFilename, "w+")
+            RawOutputStream.write(RawSensorReading().CSVHeader())
 
     #   Enter the main loop where we re-fresh the display of the vector plot with the most up-to-date measurement values
     #   as read from the MeasurementStream.
+    UniqueSensingElements: typing.Set[int] = set()
     Count: int = 0
     while ( Measurements.Active() ):
+
+        #   Pop the oldest measurement off the queue...
         CurrentMeasurement = Measurements.Next()
         if ( CurrentMeasurement is None ):
+            #   If there is none, redraw the figures with potentally new data and try again
+            Count = 0
             plt.draw_all(force=True)
             plt.pause(0.1)
             continue
 
+        #   Update the set of unique devices being read, to allow the update
+        #   function to know this dynamically.
+        UniqueSensingElements.add(CurrentMeasurement.I2C_Address)
+
+        #   Compute the dimensional sensor readings, and write out the raw and
+        #   formatted values to the respective output files.
         Formatted: FormattedSensorReading = CurrentMeasurement.Format()
         RawOutputStream.writelines([CurrentMeasurement.ToString(), "\r\n"])
         FormattedOutputStream.writelines([Formatted.ToString(), "\r\n"])
 
-        MagneticField[:,Formatted.Index] = np.concatenate((Formatted.Position, Formatted.MagneticField / 10.0))
-        MagneticFieldNorms[:,Formatted.Index] = np.concatenate((Formatted.Position, np.array([np.linalg.norm(Formatted.MagneticField / 10.0)])))
+        #   Push the new data into the pre-allocated plotted data arrays, so the
+        #   next re-draw of the figures can include this next reading.
+        MagneticField[:,Formatted.Index] = np.concatenate((Formatted.Position, Formatted.MagneticField))
+        MagneticFieldNorms[:,Formatted.Index] = np.concatenate((Formatted.Position, np.array([np.linalg.norm(Formatted.MagneticField)])))
         TemperatureField[:,Formatted.Index] = np.concatenate((Formatted.Position, np.array([Formatted.Temperature])))
 
         Count += 1
-        if ( Measurements.ShouldDisplay(Count) ):
+        #   For reading from a file, update once we have received as many new
+        #   readings as there are sensing elements.
+        #   For reading from a serial port, update to keep the backlog of
+        #   measurements consistent.
+        if (( Config.StreamType.lower() == "file" ) and ( Count >= len(UniqueSensingElements) )) \
+            or (( Config.StreamType.lower() == "serial" ) and ( Count >= len(Measurements) )):
 
+            LogWriter.Write(f"Measurement backlog: {len(Measurements)}                    \r")
+
+            #   Clear only the data markers from the plots, without clearing the titles or axis labels.
             for artist in itertools.chain(MagneticField_Axes.lines, MagneticField_Axes.collections, TemperatureField_Axes.lines, TemperatureField_Axes.collections):
                 artist.remove()
 
+            #   Compute a mask for the non-zero field values, to skip attempting
+            #   to plot the uninitialized elements of the data arrays.
             FieldNonZeroMask: np.ndarray = TemperatureField[3,:] != 0
             MagneticField_NonZeroMask = np.tile(FieldNonZeroMask, 6).reshape(MagneticField.shape)
             TemperatureField_NonZeroMask = np.tile(FieldNonZeroMask, 4).reshape(TemperatureField.shape)
 
+            #   Apply the non-zero mask...
             MagneticField_NonZero = MagneticField[MagneticField_NonZeroMask]
             MagneticField_NonZero = MagneticField_NonZero.reshape((6, int(MagneticField_NonZero.shape[0] / 6)))
             MagneticField_Average = MagneticField_NonZero[3:6,:].copy()
-            MagneticField_Average = MagneticField_Average.mean(axis=1)
-            MagneticField_Average **= 2
-            MagneticField_Average = MagneticField_Average.sum()
-            MagneticField_Average **= 0.5
-
+            MagneticField_Average = np.linalg.norm(MagneticField_Average.mean(axis=1))
             MagneticFieldNorm_NonZero = MagneticFieldNorms[TemperatureField_NonZeroMask]
             MagneticFieldNorm_NonZero = MagneticFieldNorm_NonZero.reshape((4, int(MagneticFieldNorm_NonZero.shape[0] / 4)))
-
             TemperatureField_NonZero = TemperatureField[TemperatureField_NonZeroMask]
             TemperatureField_NonZero = TemperatureField_NonZero.reshape((4, int(TemperatureField_NonZero.shape[0] / 4)))
 
+            #   Create a new array of colours to apply to the quiver-plot arrows
+            #   for the magnetic field, to allow both colour-grading and length
+            #   scaling in proportion to magnitude.
             C = (MagneticFieldNorm_NonZero[3,:]).copy()
             C = np.concatenate((C, np.repeat(C, 2)))
             C = ColourMap(MagneticNorm(C))
 
+            #   Update the actual data markers in the two plots with the most up-to-date data values.
             MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MagneticFieldMax, V=MagneticField[4,:]/MagneticFieldMax, W=MagneticField[5,:]/MagneticFieldMax, colors=C, arrow_length_ratio=0.33, normalize=False, length=MagneticScalarMap.get_clim()[1] / 5.0)
             TemperatureField_Axes.scatter(xs=TemperatureField_NonZero[0,:], ys=TemperatureField_NonZero[1,:], zs=TemperatureField_NonZero[2,:], data=TemperatureField_NonZero[3,:], depthshade=False, c=TemperatureField_NonZero[3,:], cmap=ColourMap, vmin=TemperatureScalarMap.get_clim()[0], vmax=TemperatureScalarMap.get_clim()[1])
 
+            #   Update the titles of the plots to provide summary values to the user.
             MagneticFieldTitle: str = f'Magnetic Field\nAverage = {MagneticField_Average:.1f}mT\nMean Magnitude = {MagneticFieldNorm_NonZero[3,:].mean():.1f}mT\nMaximum = {MagneticFieldNorm_NonZero[3,:].max():.1f}mT'
             TemperatureFieldTitle: str = f'Temperature Field\nMean = {TemperatureField_NonZero[3,:].mean():.2f}C\nMaximum = {TemperatureField_NonZero[3,:].max():.2f}C\nMinimum = {TemperatureField_NonZero[3,:].min():.2f}C'
             if ( Config.MeasurementRate is not None ):
+                #   If the sampling rate is known, also report this.
                 MagneticFieldTitle += f"\nSampling Rate = {Config.MeasurementRate:.3f}Hz"
                 TemperatureFieldTitle += f"\nSampling Rate = {Config.MeasurementRate:.3f}Hz"
 
@@ -754,10 +933,8 @@ def main() -> int:
 
             Count = 0
 
-    while ( len(Measurements) > 0 ):
-        LogWriter.Println(f"Waiting for measurement stream to end...")
-        plt.pause(1)
-
+    #   Once there are not more measurements to read, halt and clean up the
+    #   stream, and close the output files.
     Measurements.Halt()
     RawOutputStream.close()
     FormattedOutputStream.close()
@@ -768,10 +945,12 @@ def HandleArguments() -> bool:
     """
     HandleArguments
 
-    This function...
+    This function handles setting up, parsing, validating, and applying the
+    command-line arguments to the configuration state of the program.
 
     Return (bool):
-        ...
+        A boolean value indicating whether the program should continue past
+        argument handling.
     """
 
     #   Initialize the argument parser to handle the command-line arguments.
@@ -812,23 +991,17 @@ def HandleArguments() -> bool:
     #   Check which type of measurement stream should be read from.
     Config.StreamType = Arguments.StreamType.lower()
     if ( Config.StreamType == "file" ):
-        #   ...
         Config.MeasurementsFilename = Arguments.Filename
         Config.SerialPort = None
         Config.BaudRate = 0
     elif ( Config.StreamType == "serial" ):
-        #   ...
         Config.BaudRate = Arguments.BaudRate
         Config.SerialDevice = Arguments.SerialPort
         Config.SerialPort = serial.Serial(Config.SerialDevice, Config.BaudRate, timeout=50e-2, xonxoff=False)
     else:
-        #   ...
         Valid = False
-        pass
-    #   ...
 
     Config.IndexingCorner = Arguments.PositionReference
-    #   ...
 
     return Valid or ( not Arguments.Validate )
 
@@ -836,10 +1009,13 @@ def ListSerialPorts() -> None:
     """
     ListSerialPorts
 
-    This function...
+    This function reports a list of all of the available serial ports on the
+    current machine, in a format suitable for using with the --serial-port
+    command-line option
 
     Return (None):
-        ...
+        None, the resulting information is printed to the screen for the user to
+        review.
     """
 
     Devices: typing.List[serial.tools.list_ports_common.ListPortInfo] = serial.tools.list_ports.comports()
@@ -853,22 +1029,25 @@ def PositionLookup(LayerIndex: int, DeviceIndex: int, IndexingCorner: str) -> ty
     """
     PositionLookup:
 
-    This function...
+    This function performs the position look-up required to map a particular
+    LayerIndex and DeviceIndex pair to a specific (x,y,z) location, using the
+    provided indexing corner as the origin of the coordinate system.
 
     LayerIndex:
-        ...
+        The 0-indexed layer of the device to be mapped.
     DeviceIndex:
-        ...
+        The 0-indexed intra-layer index of the device to be mapped.
     IndexingCorner:
-        ...
+        The specific corner of the daughterboard to use as the origin of
+        the coordinate system.
 
     Return (typing.Tuple[float, float, float]):
         [0] - float:
-            ...
+            X position (mm)
         [1] - float:
-            ...
+            Y position (mm)
         [2] - float:
-            ...
+            Z position (mm)
     """
 
     X, Y = 0.0, 0.0
@@ -883,7 +1062,7 @@ def PositionLookup(LayerIndex: int, DeviceIndex: int, IndexingCorner: str) -> ty
     elif ( IndexingCorner.upper() == "D" ):
         X, Y = PositionLookup_D[DeviceIndex]
     else:
-        LogWriter.Errorln(f"...")
+        LogWriter.Errorln(f"Unknown indexing corner value: {IndexingCorner}")
 
     return (X, Y, Z)
 
@@ -891,13 +1070,15 @@ def ComputeFormattedTemperature(RawValue: int) -> float:
     """
     ComputeFormattedTemperature
 
-    This function...
+    This function performs the conversion for the temperature value reported by the ALS31313 from
+    raw ADC bits to degrees Celcius. The sensitivity and offset values are taken directly from the data sheet
+    of this device.
 
     RawValue:
-        ...
+        The raw 12-bit unsigned integer value reported by the ALS31313.
 
     Return (float):
-        ...
+        The corresponding dimensional temperature value, in units of Degrees Celcius.
     """
     return TemperatureSensitivity * float(RawValue - TemperatureOffset)
 
