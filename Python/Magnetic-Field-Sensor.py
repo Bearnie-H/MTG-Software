@@ -97,7 +97,7 @@ PositionLookup_D: typing.Dict[int, typing.Tuple[float, float]] = {
 }
 
 SensorPitch_Z: float = 8.6      #   mm
-SensorOffset_Z: float = 0.65    #   mm
+SensorOffset_Z: float = 1.6 + 0.65    #   mm
 
 SerialMessageLength: int = 16   #   bytes, including start and stop bytes.
 
