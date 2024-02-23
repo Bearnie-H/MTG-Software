@@ -191,7 +191,7 @@ class RawSensorReading():
 
         #   Determine the X, Y, Z position of this sensor, relative to the particular corner
         #   specified as the reference origin.
-        X, Y, Z = PositionLookup(self.LayerIndex, self.DeviceIndex, Config.IndexingCorner)
+        X, Y, Z = PositionLookup(self.LayerIndex, self.DeviceIndex, Config.PositionReference)
 
         #   Compute the index into the numpy arrays used for plotting, where this reading should be plotted.
         Index = self.LayerIndex * 2**3 + self.DeviceIndex
@@ -229,7 +229,7 @@ class RawSensorReading():
 
         #   The X, Y, Z magnetic field values must be no more than signed 12-bit values.
         for Field, Axis in zip([self.Field_X, self.Field_Y, self.Field_Z], ["X", "Y", "Z"]):
-            if not ( -2048 <= Field < 2047 ):
+            if not ( -2048 < Field <= 2047 ):
                 LogWriter.Warnln(f"Invalid RawSensorReading: Field {Axis} out of range ({Field})")
                 return False
 
@@ -510,67 +510,73 @@ class MeasurementStream():
             LogWriter.
         """
 
-        #   Try to assert the serial port is open and readable.
-        if ( not self.SerialPort.is_open ):
-            self.SerialPort.open()
+        try:
 
-        #   We read from the serial port into a buffer, to allow stitching of
-        #   sensor readings or log messages across read boundaries
-        Buffer: bytearray = bytearray()
+            #   Try to assert the serial port is open and readable.
+            if ( not self.SerialPort.is_open ):
+                self.SerialPort.open()
 
-        #   Track the rate at which the MeasurementStream is actively receiving
-        #   meausrement valeus over the port.
-        StartTime: float = time.time()
-        EndTime: float = 0.0
-        Count: int = 0
-        Limit: int = 128
+            #   We read from the serial port into a buffer, to allow stitching of
+            #   sensor readings or log messages across read boundaries
+            Buffer: bytearray = bytearray()
 
-        #   Until either the serial port closes, or the stream is requested to halt...
-        while ( self._MonitorActive ) and ( self.SerialPort.is_open ):
+            #   Track the rate at which the MeasurementStream is actively receiving
+            #   meausrement valeus over the port.
+            StartTime: float = time.time()
+            EndTime: float = 0.0
+            Count: int = 0
+            Limit: int = 128
 
-            #   Read a block of data from the serial port, accounting for both
-            #   timeout in the case of not enough data to satisfy the read(),
-            #   and for too much data to fit into the requested read size.
-            RawBytes: bytes = self.SerialPort.read(min(Config.BaudRate, 2048))
+            #   Until either the serial port closes, or the stream is requested to halt...
+            while ( self._MonitorActive ) and ( self.SerialPort.is_open ):
 
-            #   Stitch this together with any existing data in the local buffer...
-            Buffer.extend(RawBytes[:])
+                #   Read a block of data from the serial port, accounting for both
+                #   timeout in the case of not enough data to satisfy the read(),
+                #   and for too much data to fit into the requested read size.
+                RawBytes: bytes = self.SerialPort.read(min(Config.BaudRate, 2048))
 
-            #   If there's nothing to process, sleep to yield this thread and
-            #   not over-aggressivly read the serial port.
-            if ( len(Buffer) == 0 ):
-                self.LogWriter.Write(f"Waiting for serial data...\r")
-                time.sleep(1e-2)
-                continue
+                #   Stitch this together with any existing data in the local buffer...
+                Buffer.extend(RawBytes[:])
 
-            #   While there's data yet to process within the local buffer...
-            Done: bool = False
-            while ( not Done ):
+                #   If there's nothing to process, sleep to yield this thread and
+                #   not over-aggressivly read the serial port.
+                if ( len(Buffer) == 0 ):
+                    self.LogWriter.Write(f"Waiting for serial data...\r")
+                    time.sleep(1e-2)
+                    continue
 
-                #   Check whether it's a sensor measurement, a log message, or a partial packet.
-                #   If something is successfully parsed, remove it from the buffer, moving
-                #   on to the "next" data to process.
-                Buffer, Measurement, Message, Done = self._ParseSerialBytes(Buffer)
+                #   While there's data yet to process within the local buffer...
+                Done: bool = False
+                while ( not Done ):
 
-                #   If a complete meausrement is parsed out, append it to the FIFO queue and
-                #   attempt to update the sampling rate estimate.
-                if ( Measurement is not None ):
-                    self.Measurements.append(Measurement)
-                    Count += 1
-                    if ( Count == Limit ):
-                        EndTime = time.time()
-                        Config.MeasurementRate = Count / (EndTime - StartTime)
-                        Count, StartTime = 0, EndTime
+                    #   Check whether it's a sensor measurement, a log message, or a partial packet.
+                    #   If something is successfully parsed, remove it from the buffer, moving
+                    #   on to the "next" data to process.
+                    Buffer, Measurement, Message, Done = self._ParseSerialBytes(Buffer)
 
-                #   Otherwise, if it's a message of non-zero length, print it out using the
-                #   dedicated micro-controller Logger
-                elif ( Message is not None ) and ( len(Message) > 0 ):
-                    self.ArduinoLogWriter.Println(f'Log Message: {Message}')
+                    #   If a complete meausrement is parsed out, append it to the FIFO queue and
+                    #   attempt to update the sampling rate estimate.
+                    if ( Measurement is not None ):
+                        self.Measurements.append(Measurement)
+                        Count += 1
+                        if ( Count == Limit ):
+                            EndTime = time.time()
+                            Config.MeasurementRate = Count / (EndTime - StartTime)
+                            Count, StartTime = 0, EndTime
+
+                    #   Otherwise, if it's a message of non-zero length, print it out using the
+                    #   dedicated micro-controller Logger
+                    elif ( Message is not None ) and ( len(Message) > 0 ):
+                        self.ArduinoLogWriter.Println(f'Log Message: {Message}')
 
 
-        self.LogWriter.Println(f"_ReadSerialPort() exiting...")
-        self._MonitorActive = False
-        self.SerialPort.close()
+            self.LogWriter.Println(f"_ReadSerialPort() exiting...")
+            self._MonitorActive = False
+            self.SerialPort.close()
+        except:
+            self.LogWriter.Errorln(f"Exception occured during _ReadSerialPort() - [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}\n")
+            self._MonitorActive = False
+            return
 
         return
 
@@ -707,50 +713,56 @@ class MeasurementStream():
             the file contents are exhausted.
         """
 
-        FirstLine: bool = True
+        try:
 
-        with open(self.Filename, "r") as Measurements:
-            while ( self._MonitorActive ):
+            FirstLine: bool = True
+            with open(self.Filename, "r") as Measurements:
+                while ( self._MonitorActive ):
 
-                #   Read a line from the file...
-                Line: str = Measurements.readline()
+                    #   Read a line from the file...
+                    Line: str = Measurements.readline()
 
-                #   If this is the first line of the file, check if it contains
-                #   the column headers or not...
-                if ( FirstLine == True ):
-                    if ( Line.split(",")[0].lower().startswith("i2c") ):
-                        #   If it does contain the headers, skip ahead one line
-                        #   and unset the flag to check for a header.
-                        Line = Measurements.readline()
-                    FirstLine = False
+                    #   If this is the first line of the file, check if it contains
+                    #   the column headers or not...
+                    if ( FirstLine == True ):
+                        if ( Line.split(",")[0].upper().startswith("I2C") ):
+                            #   If it does contain the headers, skip ahead one line
+                            #   and unset the flag to check for a header.
+                            Line = Measurements.readline()
+                        FirstLine = False
 
-                #   If we reach an empty line, that's the end of the file.
-                #   Indicate that this thread is halting and can be join()ed at
-                #   any time.
-                if ( len(Line) == 0 ):
-                    self.LogWriter.Println(f"_ReadFile() ending - Empty line encountered.")
-                    self._MonitorActive = False
-                    return
+                    #   If we reach an empty line, that's the end of the file.
+                    #   Indicate that this thread is halting and can be join()ed at
+                    #   any time.
+                    if ( len(Line) == 0 ):
+                        self.LogWriter.Println(f"_ReadFile() ending - Empty line encountered.")
+                        self._MonitorActive = False
+                        return
 
-                #   Parse the fields from the line, building the
-                #   RawSensorReading() instance from them.
-                Fields: typing.List[str] = Line.split(",")
-                RawMeasurement: RawSensorReading = RawSensorReading()
-                RawMeasurement.I2C_Address = int(Fields[0])
-                RawMeasurement.LayerIndex  = int(Fields[1])
-                RawMeasurement.DeviceIndex = int(Fields[2])
-                RawMeasurement.Field_X     = int(Fields[3])
-                RawMeasurement.Field_Y     = int(Fields[4])
-                RawMeasurement.Field_Z     = int(Fields[5])
-                RawMeasurement.Temperature = int(Fields[6])
-                RawMeasurement.Timestamp   = int(Fields[7])
+                    #   Parse the fields from the line, building the
+                    #   RawSensorReading() instance from them.
+                    Fields: typing.List[str] = Line.split(",")
+                    RawMeasurement: RawSensorReading = RawSensorReading()
+                    RawMeasurement.I2C_Address = int(Fields[0])
+                    RawMeasurement.LayerIndex  = int(Fields[1])
+                    RawMeasurement.DeviceIndex = int(Fields[2])
+                    RawMeasurement.Field_X     = int(Fields[3])
+                    RawMeasurement.Field_Y     = int(Fields[4])
+                    RawMeasurement.Field_Z     = int(Fields[5])
+                    RawMeasurement.Temperature = int(Fields[6])
+                    RawMeasurement.Timestamp   = int(Fields[7])
 
-                self.Measurements.append(RawMeasurement)
+                    self.Measurements.append(RawMeasurement)
 
-        #   If the file closes somehow, also indicate this thread is ended.
-        self.LogWriter.Println(f"_ReadFile() ending - File closed.")
-        self._MonitorActive = False
-        return
+            #   If the file closes somehow, also indicate this thread is ended.
+            self.LogWriter.Println(f"_ReadFile() ending - File closed.")
+            self._MonitorActive = False
+            return
+
+        except Exception as e:
+            self.LogWriter.Errorln(f"Exception occured during _ReadFile() - [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}\n")
+            self._MonitorActive = False
+            return
 
 Config: Configuration = Configuration(LogWriter=LogWriter)
 Measurements: MeasurementStream = None
@@ -767,6 +779,7 @@ def SafeShutdown(signal: typing.Any, frame: typing.Any) -> None:
         None, the program will exit once this returns.
     """
 
+    LogWriter.Warnln(f"Shutdown requested... Closing MeasurementStream and open Figures...")
     if ( Measurements is not None ):
         Measurements.Halt()
 
@@ -881,10 +894,8 @@ def main() -> int:
         #   readings as there are sensing elements.
         #   For reading from a serial port, update to keep the backlog of
         #   measurements consistent.
-        if (( Config.StreamType.lower() == "file" ) and ( Count >= len(UniqueSensingElements) )) \
+        if (( Config.StreamType.lower() == "file" ) and (( Count >= len(UniqueSensingElements) ) or ( len(Measurements) < len(UniqueSensingElements) ))) \
             or (( Config.StreamType.lower() == "serial" ) and ( Count >= len(Measurements) )):
-
-            LogWriter.Write(f"Measurement backlog: {len(Measurements)}                    \r")
 
             #   Clear only the data markers from the plots, without clearing the titles or axis labels.
             for artist in itertools.chain(MagneticField_Axes.lines, MagneticField_Axes.collections, TemperatureField_Axes.lines, TemperatureField_Axes.collections):
@@ -927,6 +938,7 @@ def main() -> int:
 
             MagneticField_Axes.set_title(MagneticFieldTitle)
             TemperatureField_Axes.set_title(TemperatureFieldTitle)
+            Fields_Figure.suptitle(f"Measurement Backlog: {len(Measurements)}")
 
             plt.draw_all(force=True)
             plt.pause(0.01)
@@ -938,6 +950,8 @@ def main() -> int:
     Measurements.Halt()
     RawOutputStream.close()
     FormattedOutputStream.close()
+    LogWriter.Println(f"MeasurementStream closed. Press [ q ] to close figure and end the program...")
+    plt.show(block=True)
 
     return 0
 
@@ -954,15 +968,15 @@ def HandleArguments() -> bool:
     """
 
     #   Initialize the argument parser to handle the command-line arguments.
-    Parser: argparse.ArgumentParser = argparse.ArgumentParser(description="", add_help=True)
+    Parser: argparse.ArgumentParser = argparse.ArgumentParser(description="This script performs the field visualization for the hall-effect sensor array. This script can either read new measurements from the sensor over the serial port (--stream-type=serial), or replay previous meausrements saved to a file (--stream-type=file).", add_help=True)
 
     #   Add in all of the command-line flags this program will accept.
     Parser.add_argument("--list-serial-ports", dest="ListSerialPorts", action="store_true", required=False, default=False, help="List the possible available devices to use as serial port to read from.")
-    Parser.add_argument("--stream-type", dest="StreamType", metavar="file|serial", type=str, required=False, default="serial", help="")
-    Parser.add_argument("--serial-port", dest="SerialPort", metavar="port", type=str, required=False, default=None, help="")
-    Parser.add_argument("--baud-rate", dest="BaudRate", metavar="baud", type=int, required=False, default=9600, help="")
-    Parser.add_argument("--filename", dest="Filename", metavar="file-path", type=str, required=False, default=None, help="")
-    Parser.add_argument("--position-reference", dest="PositionReference", metavar="corner-label", type=str, required=False, default="A", help="")
+    Parser.add_argument("--stream-type", dest="StreamType", metavar="file|serial", type=str, required=False, default="", help="Which type of measurement stream is being read from? Either the Serial Port, or a File")
+    Parser.add_argument("--serial-port", dest="SerialPort", metavar="device", type=str, required=False, default=None, help="The device name of the Serial Port to read measurements from. See --list-serial-ports to learn what devices are available. Only required with --stream-type=serial")
+    Parser.add_argument("--baud-rate", dest="BaudRate", metavar="baud-rate", type=int, required=False, default=9600, help="The baud rate to use reading/writing the Serial Port. Only required for --stream-type=serial. Typically either 9600 for DEBUG mode, or 115200 for non-DEBUG mode.")
+    Parser.add_argument("--filename", dest="Filename", metavar="file-path", type=str, required=False, default=None, help="The path to the formatted CSV file containing raw meausrements to replay. Only required for --stream-type=serial")
+    Parser.add_argument("--position-reference", dest="PositionReference", metavar="corner-label", type=str, required=False, default="A", help="Which corner of Layer 0 was used as the indexing point to position the sensor relative to the magnetic source?")
 
     #   Add in flags for manipulating the logging functionality of the script.
     Parser.add_argument("--log-file", dest="LogFile", metavar="file-path", type=str, required=False, default="-", help="File path to the file to write all log messages of this program to.")
@@ -991,19 +1005,38 @@ def HandleArguments() -> bool:
     #   Check which type of measurement stream should be read from.
     Config.StreamType = Arguments.StreamType.lower()
     if ( Config.StreamType == "file" ):
-        Config.MeasurementsFilename = Arguments.Filename
-        Config.SerialPort = None
-        Config.BaudRate = 0
+        LogWriter.Println(f"Attempting to replay previous measurements from file [ {Arguments.Filename} ]...")
+        if ( Arguments.Filename is None ) or ( not os.path.exists(Arguments.Filename) ):
+            LogWriter.Errorln(f"File [ {Arguments.Filename} ] is not provided or does does not exist!")
+            Valid = False
+        else:
+            Config.MeasurementsFilename = Arguments.Filename
+            Config.SerialPort = None
+            Config.BaudRate = 0
     elif ( Config.StreamType == "serial" ):
-        Config.BaudRate = Arguments.BaudRate
-        Config.SerialDevice = Arguments.SerialPort
-        Config.SerialPort = serial.Serial(Config.SerialDevice, Config.BaudRate, timeout=50e-2, xonxoff=False)
+        LogWriter.Println(f"Attempting to read new measurements from Serial Port [ {Arguments.SerialPort} ] at [ {Arguments.BaudRate} baud ]...")
+        try:
+            Config.SerialPort = serial.Serial(Arguments.SerialPort, Arguments.BaudRate, timeout=50e-2, xonxoff=False)
+            Config.BaudRate = Arguments.BaudRate
+            Config.SerialDevice = Arguments.SerialPort
+        except Exception as e:
+            LogWriter.Errorln(f"Failed to open Serial Port [ {Config.SerialDevice}]: [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}\n")
+            Valid = False
+            Config.SerialPort = None
+            Config.BaudRate = 0
+            Config.SerialDevice = ""
     else:
+        LogWriter.Errorln(f"Unknown or invalid --stream-type specified. Must be one of either [ serial ] or [ file ].")
         Valid = False
 
-    Config.IndexingCorner = Arguments.PositionReference
+    if ( Arguments.PositionReference.upper() not in "ABCD" ):
+        LogWriter.Errorln(f"Invalid or unknown indexing corner: [ {Arguments.PositionReference.upper()} ]")
+        Valid = False
+    else:
+        Config.PositionReference = Arguments.PositionReference.upper()
+        LogWriter.Println(f"Working with indexing position defined by corner [ {Config.PositionReference} ] of Layer 0.")
 
-    return Valid or ( not Arguments.Validate )
+    return Valid and ( not Arguments.Validate )
 
 def ListSerialPorts() -> None:
     """
@@ -1019,7 +1052,7 @@ def ListSerialPorts() -> None:
     """
 
     Devices: typing.List[serial.tools.list_ports_common.ListPortInfo] = serial.tools.list_ports.comports()
-    LogWriter.Println(f"Found the following {len(Devices)} candidate devices to read as Serial Ports:")
+    LogWriter.Println(f"Found the following {len(Devices)} candidate device(s) to read as Serial Ports:")
     for Index, Device in enumerate(Devices, start=1):
         LogWriter.Println(f"Device {Index}/{len(Devices)}: {Device}")
 
@@ -1088,6 +1121,8 @@ if __name__ == "__main__":
     try:
         if ( HandleArguments() ):
             main()
+        else:
+            LogWriter.Errorln(f"Failed to validate command-line arguments. Arguments either missing or invalid.")
     except Exception as e:
         LogWriter.Errorln(f"Exception raised in main(): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}\n")
         SafeShutdown(None, None)
