@@ -527,13 +527,15 @@ class MeasurementStream():
             Count: int = 0
             Limit: int = 128
 
+            self.LogWriter.Println(f"Starting to read the Serial Port... Press CTRL+C to halt and exit the program.")
+
             #   Until either the serial port closes, or the stream is requested to halt...
             while ( self._MonitorActive ) and ( self.SerialPort.is_open ):
 
                 #   Read a block of data from the serial port, accounting for both
                 #   timeout in the case of not enough data to satisfy the read(),
                 #   and for too much data to fit into the requested read size.
-                RawBytes: bytes = self.SerialPort.read(min(Config.BaudRate, 2048))
+                RawBytes: bytes = self.SerialPort.read(min(Config.BaudRate, 512))
 
                 #   Stitch this together with any existing data in the local buffer...
                 Buffer.extend(RawBytes[:])
@@ -542,7 +544,7 @@ class MeasurementStream():
                 #   not over-aggressivly read the serial port.
                 if ( len(Buffer) == 0 ):
                     self.LogWriter.Write(f"Waiting for serial data...\r")
-                    time.sleep(1e-2)
+                    time.sleep(1e-3)
                     continue
 
                 #   While there's data yet to process within the local buffer...
@@ -976,7 +978,7 @@ def HandleArguments() -> bool:
     Parser.add_argument("--serial-port", dest="SerialPort", metavar="device", type=str, required=False, default=None, help="The device name of the Serial Port to read measurements from. See --list-serial-ports to learn what devices are available. Only required with --stream-type=serial")
     Parser.add_argument("--baud-rate", dest="BaudRate", metavar="baud-rate", type=int, required=False, default=9600, help="The baud rate to use reading/writing the Serial Port. Only required for --stream-type=serial. Typically either 9600 for DEBUG mode, or 115200 for non-DEBUG mode.")
     Parser.add_argument("--filename", dest="Filename", metavar="file-path", type=str, required=False, default=None, help="The path to the formatted CSV file containing raw meausrements to replay. Only required for --stream-type=serial")
-    Parser.add_argument("--position-reference", dest="PositionReference", metavar="corner-label", type=str, required=False, default="A", help="Which corner of Layer 0 was used as the indexing point to position the sensor relative to the magnetic source?")
+    Parser.add_argument("--position-reference", dest="PositionReference", metavar="corner-label", type=str, required=False, default="D", help="Which corner of Layer 0 was used as the indexing point to position the sensor relative to the magnetic source?")
 
     #   Add in flags for manipulating the logging functionality of the script.
     Parser.add_argument("--log-file", dest="LogFile", metavar="file-path", type=str, required=False, default="-", help="File path to the file to write all log messages of this program to.")
@@ -1016,17 +1018,31 @@ def HandleArguments() -> bool:
     elif ( Config.StreamType == "serial" ):
         LogWriter.Println(f"Attempting to read new measurements from Serial Port [ {Arguments.SerialPort} ] at [ {Arguments.BaudRate} baud ]...")
         try:
-            Config.SerialPort = serial.Serial(Arguments.SerialPort, Arguments.BaudRate, timeout=50e-2, xonxoff=False)
-            Config.BaudRate = Arguments.BaudRate
             Config.SerialDevice = Arguments.SerialPort
+            LogWriter.Println(f"Attempting to open Serial Port [ {Config.SerialDevice} ]...")
+
+            Config.BaudRate = Arguments.BaudRate
+            LogWriter.Println(f"Configuring Serial Port for communication at [ {Config.BaudRate} baud ]...")
+            if ( Config.BaudRate not in serial.SerialBase.BAUDRATES ):
+                for BaudRate in serial.SerialBase.BAUDRATES:
+                    if ( BaudRate >= Config.BaudRate ):
+                        LogWriter.Warnln(f"Requested baud rate of [ {Config.BaudRate} ] is not supported... Switching to supported speed of [ {BaudRate} ].")
+                        Config.BaudRate = BaudRate
+                        break
+
+            Config.SerialPort = serial.Serial(Arguments.SerialPort, Arguments.BaudRate, timeout=50e-2, xonxoff=False)
         except Exception as e:
             LogWriter.Errorln(f"Failed to open Serial Port [ {Config.SerialDevice}]: [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}\n")
             Valid = False
             Config.SerialPort = None
             Config.BaudRate = 0
             Config.SerialDevice = ""
+            LogWriter.Println(f"Listing the available serial ports able to be used with [ --stream-type=serial ]...")
+            ListSerialPorts()
     else:
-        LogWriter.Errorln(f"Unknown or invalid --stream-type specified. Must be one of either [ serial ] or [ file ].")
+        LogWriter.Errorln(f"Unknown or invalid --stream-type specified. Must specify one of either [ --stream-type=serial ] or [ --stream-type=file ].")
+        LogWriter.Println(f"No --stream-type was specified... Listing the available Serial Port devices to be used with [ --stream-type=serial ].")
+        ListSerialPorts()
         Valid = False
 
     if ( Arguments.PositionReference.upper() not in "ABCD" ):
@@ -1054,7 +1070,7 @@ def ListSerialPorts() -> None:
     Devices: typing.List[serial.tools.list_ports_common.ListPortInfo] = serial.tools.list_ports.comports()
     LogWriter.Println(f"Found the following {len(Devices)} candidate device(s) to read as Serial Ports:")
     for Index, Device in enumerate(Devices, start=1):
-        LogWriter.Println(f"Device {Index}/{len(Devices)}: {Device}")
+        LogWriter.Println(f"Device {Index}/{len(Devices)}: [ {Device.device} ]")
 
     return
 
