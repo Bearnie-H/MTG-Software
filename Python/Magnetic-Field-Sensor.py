@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.11
 
 #   Author: Joseph Sadden
 #   Date:   18th December, 2023
@@ -851,12 +851,16 @@ def main() -> int:
     RawOutputStream: typing.TextIO = open(os.devnull, "w+")
     FormattedOutputStream: typing.TextIO = open(os.devnull, "w+")
     if ( not Config.EnableDryRun ):
+
         MeasurementsFilename: str = f"Sensor-Readings - {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.csv"
         if ( Config.MeasurementsFilename is not None ):
             MeasurementsFilename = Config.MeasurementsFilename
+
+        LogWriter.Println(f"Writing formatted sensor readings to the file [ Formatted {MeasurementsFilename} ]...")
         FormattedOutputStream = open("Formatted " + MeasurementsFilename, "w+")
         FormattedOutputStream.write(FormattedSensorReading().CSVHeader())
         if ( Config.SerialPort is not None ):
+            LogWriter.Println(f"Writing raw sensor telemetry to the file [ Raw {MeasurementsFilename} ]...")
             RawOutputStream = open("Raw " + MeasurementsFilename, "w+")
             RawOutputStream.write(RawSensorReading().CSVHeader())
 
@@ -926,8 +930,17 @@ def main() -> int:
             C = np.concatenate((C, np.repeat(C, 2)))
             C = ColourMap(MagneticNorm(C))
 
+            #   Compute the re-scaling factor to make the Z-axis vectors appear visually consistent with
+            #       the X and Y axes...
+            Z_VisualScaleFactor: float = 1
+            try:
+                Z_VisualScaleFactor: float = float(np.diff(MagneticField_Axes.get_zlim())) / float(np.mean([np.diff(MagneticField_Axes.get_xlim()), np.diff(MagneticField_Axes.get_ylim())]))
+            except:
+                pass
+
+
             #   Update the actual data markers in the two plots with the most up-to-date data values.
-            MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MagneticFieldMax, V=MagneticField[4,:]/MagneticFieldMax, W=MagneticField[5,:]/MagneticFieldMax, colors=C, arrow_length_ratio=0.33, normalize=False, length=MagneticScalarMap.get_clim()[1] / 5.0)
+            MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MagneticFieldMax, V=MagneticField[4,:]/MagneticFieldMax, W=(MagneticField[5,:]/MagneticFieldMax)*Z_VisualScaleFactor, colors=C, arrow_length_ratio=0.33, normalize=False, length=MagneticScalarMap.get_clim()[1] / 5.0)
             TemperatureField_Axes.scatter(xs=TemperatureField_NonZero[0,:], ys=TemperatureField_NonZero[1,:], zs=TemperatureField_NonZero[2,:], data=TemperatureField_NonZero[3,:], depthshade=False, c=TemperatureField_NonZero[3,:], cmap=ColourMap, vmin=TemperatureScalarMap.get_clim()[0], vmax=TemperatureScalarMap.get_clim()[1])
 
             #   Update the titles of the plots to provide summary values to the user.
@@ -1138,7 +1151,7 @@ if __name__ == "__main__":
         if ( HandleArguments() ):
             main()
         else:
-            LogWriter.Errorln(f"Failed to validate command-line arguments. Arguments either missing or invalid.")
+            LogWriter.Errorln(f"Failed to validate command-line arguments. Required arguments either missing or invalid.")
     except Exception as e:
         LogWriter.Errorln(f"Exception raised in main(): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}\n")
         SafeShutdown(None, None)
