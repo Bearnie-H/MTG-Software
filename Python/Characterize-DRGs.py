@@ -34,6 +34,7 @@ from readlif.reader import LifFile, LifImage
 #   Import the desired locally written modules
 from MTG_Common import Logger
 from MTG_Common import Utils
+from MTG_Common.ZStack import ZStack
 #   ...
 
 #   Define the classes required by this program.
@@ -301,14 +302,9 @@ class Configuration():
         """
         self._LogWriter.Println(f"Attempting to open image-stack file [ {ImageStackFilename} ]...")
 
-        Success, self._Z_Stack = OpenLIFFile(ImageStackFilename, ClearingAlgorithm)
-        if ( Success ):
-            self._LogWriter.Println(f"Successfully opened and extraced Z-Stack image from *.LIF file [ {ImageStackFilename} ].")
-            return True
-
-        Success, self._Z_Stack = OpenTIFFFile(ImageStackFilename)
-        if ( Success ):
-            self._LogWriter.Println(f"Successfully opened and extraced Z-Stack image from *.TIFF file [ {ImageStackFilename} ].")
+        ImageStack: ZStack = ZStack(LogWriter=LogWriter)
+        if ( ImageStack.OpenFile(ImageStackFilename, ClearingAlgorithm) ):
+            self._LogWriter.Println(f"Successfully opened and extraced Z-Stack image from file [ {ImageStackFilename} ].")
             return True
 
         self._LogWriter.Errorln(f"Failed to open file [ {ImageStackFilename} ] as either *.LIF or *.TIFF file to read Z-Stack image data!")
@@ -372,15 +368,15 @@ def OpenLIFFile(Filename: str = "", SeriesSubstring: str = "") -> typing.Tuple[b
                 Config.LIFSeriesName = Image['name']
                 ClearedSeriesIndex = Index-1
 
-        if ( Config.HeadlessMode ):
-            LogWriter.Errorln(f"Failed to identify expected series name for z-stack. Cannot determine the correct series while in headless mode!")
-            raise ValueError(f"Failed to identify expected series name for z-stack!")
-        else:
-            if ( ClearedSeriesIndex < 0 ):
-                #   Failed to identify the likely series based off the name.
-                #   Prompt the user to provide the index of the series.
-                LogWriter.Warnln(f"Failed to identify expected series name for z-stack...")
-                ClearedSeriesIndex = int(input("Please enter the index of the image or series to open as the z-stack: "))
+        if ( ClearedSeriesIndex < 0 ):
+            if ( Config.HeadlessMode ):
+                LogWriter.Errorln(f"Failed to identify expected series name for z-stack. Cannot determine the correct series while in headless mode!")
+                raise ValueError(f"Failed to identify expected series name for z-stack!")
+            else:
+                    #   Failed to identify the likely series based off the name.
+                    #   Prompt the user to provide the index of the series.
+                    LogWriter.Warnln(f"Failed to identify expected series name for z-stack...")
+                    ClearedSeriesIndex = int(input("Please enter the index of the image or series to open as the z-stack: "))
 
         LogWriter.Println(f"Working with series index [ {ClearedSeriesIndex+1} ] as the DRG Z-Stack...")
         ImageStack: LifImage = LifStack.get_image(ClearedSeriesIndex)
@@ -673,7 +669,7 @@ def ProcessArguments() -> bool:
     Flags.add_argument("--z-truncation-threshold", dest="ZTruncationThreshold", metavar="threshold", type=float, required=False, default=0.875, help="If Z Truncation is enabled, what logarithmic fraction of the bit depth of the image should be used as the threshold for determining saturated features?")
 
     #   Add in flags to enable or disable certain functionalities within the script
-    Flags.add_argument("--disable-z-truncation", dest="EnableZTruncation", action="store_false", required=False, default=True, help="Disable the pixel saturation filtering of the Z-Stack used to remove saturated artefacts from the staining process.")
+    Flags.add_argument("--enable-z-truncation", dest="EnableZTruncation", action="store_true", required=False, default=False, help="Enable the pixel saturation filtering of the Z-Stack used to remove saturated artefacts from the staining process.")
 
     #   Add in flags for manipulating the logging functionality of the script.
     Flags.add_argument("--log-file", dest="LogFile", metavar="file-path", type=str, required=False, default="-", help="File path to the file to write all log messages of this program to.")
@@ -695,7 +691,6 @@ def ProcessArguments() -> bool:
     #   ...
 
     Config.ImageStackFile        = Arguments.ImageStack
-
     if ( Arguments.Quiet ):
         LogWriter.SetOutputFilename("/dev/null")
     elif ( Arguments.LogFile == "-" ):

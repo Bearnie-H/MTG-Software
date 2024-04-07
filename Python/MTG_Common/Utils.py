@@ -135,12 +135,12 @@ def DisplayImages(Images: typing.List[typing.Tuple[str, np.ndarray]] = ["", None
 
     Key: int = 0
     if ( ImagesActive ):
-        Key = cv2.waitKey(round(HoldTime * 1000))
+        Key = cv2.waitKeyEx(round(HoldTime * 1000))
 
         #   Allow pressing the "P" key to pause, overriding the HoldTime setting until another key is pressed.
         while ( Key in [ord(x) for x in 'pP']):
             LogWriter.Println(f"[ P ] key pressed, pausing display until another key is pressed...")
-            Key = cv2.waitKey(0)
+            Key = cv2.waitKeyEx(0)
 
         #   Allow for the "S" key to save all currently displayed images to disk in the local directory.
         if ( Key in [ord(x) for x in 'sS' ]):
@@ -148,7 +148,7 @@ def DisplayImages(Images: typing.List[typing.Tuple[str, np.ndarray]] = ["", None
 
         [cv2.destroyWindow(Description) for (Description, _) in Images]
         [cv2.destroyWindow(Description) for Description in UnmanagedDescriptions]
-        _ = cv2.waitKey(1)
+        _ = cv2.waitKeyEx(1)
 
     return Key
 
