@@ -96,9 +96,6 @@ PositionLookup_D: typing.Dict[int, typing.Tuple[float, float]] = {
     7: (4.920,  19.342),
 }
 
-SensorPitch_Z: float = 8.6      #   mm
-SensorOffset_Z: float = 1.6 + 0.65    #   mm
-
 SerialMessageLength: int = 16   #   bytes, including start and stop bytes.
 
 GaussToMilliTesla: float = 1.0 / 10.0   #   Conversion factor from Ga to mT
@@ -136,6 +133,8 @@ class Configuration():
         self.MeasurementsFilename: str = None
 
         self.PositionReference: str = None
+        self.SensorOffset_Z: float = 1.6 + 0.65    #   mm
+        self.SensorPitch_Z: float = 0.0
 
         self.EnableDryRun: bool = False
 
@@ -992,6 +991,7 @@ def HandleArguments() -> bool:
     Parser.add_argument("--baud-rate", dest="BaudRate", metavar="baud-rate", type=int, required=False, default=9600, help="The baud rate to use reading/writing the Serial Port. Only required for --stream-type=serial. Typically either 9600 for DEBUG mode, or 115200 for non-DEBUG mode.")
     Parser.add_argument("--filename", dest="Filename", metavar="file-path", type=str, required=False, default=None, help="The path to the formatted CSV file containing raw meausrements to replay. Only required for --stream-type=serial")
     Parser.add_argument("--position-reference", dest="PositionReference", metavar="corner-label", type=str, required=False, default="D", help="Which corner of Layer 0 was used as the indexing point to position the sensor relative to the magnetic source?")
+    Parser.add_argument("--layer-separation", dest="LayerSeparation", metavar="mm", type=float, required=False, default=8.6, help="The consistent spacing between the layers of the sensor. If all layers are free-floating set to -1 to indicate this.")
 
     #   Add in flags for manipulating the logging functionality of the script.
     Parser.add_argument("--log-file", dest="LogFile", metavar="file-path", type=str, required=False, default="-", help="File path to the file to write all log messages of this program to.")
@@ -1065,6 +1065,13 @@ def HandleArguments() -> bool:
         Config.PositionReference = Arguments.PositionReference.upper()
         LogWriter.Println(f"Working with indexing position defined by corner [ {Config.PositionReference} ] of Layer 0.")
 
+    if ( Arguments.LayerSeparation < 0 ):
+        LogWriter.Println(f"Layers of the sensor are free-floating. Defaulting to a separation of 1mm for visualization purposes only.")
+        Config.SensorPitch_Z = 1.0
+    else:
+        LogWriter.Println(f"Layers of the sensor are separated by [ {Arguments.LayerSeparation:.2f}mm ].")
+        Config.SensorPitch_Z = Arguments.LayerSeparation
+
     return Valid and ( not Arguments.Validate )
 
 def ListSerialPorts() -> None:
@@ -1113,7 +1120,7 @@ def PositionLookup(LayerIndex: int, DeviceIndex: int, IndexingCorner: str) -> ty
     """
 
     X, Y = 0.0, 0.0
-    Z: float = (LayerIndex * SensorPitch_Z) + SensorOffset_Z
+    Z: float = (LayerIndex * Config.SensorPitch_Z) + Config.SensorOffset_Z
 
     if ( IndexingCorner.upper() == "A" ):
         X, Y = PositionLookup_A[DeviceIndex]
