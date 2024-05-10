@@ -72,9 +72,9 @@
     macro for production or experimental trials where debugging and
     instrumentation can be turned off.
 */
-#define DEBUG 1
+// #define DEBUG 1
 
-#if defined(NDEBUG)
+#if defined(NDEBUG) || !defined(DEBUG)
     #if defined(DEBUG)
         #undef DEBUG
     #endif

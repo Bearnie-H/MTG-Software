@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.11
+#!/usr/bin/env python3
 
 #   Author: Joseph Sadden
 #   Date:   18th December, 2023
@@ -196,7 +196,7 @@ class RawSensorReading():
         Index = self.LayerIndex * 2**3 + self.DeviceIndex
 
         #   Format
-        return FormattedSensorReading(np.array([FieldX, FieldY, FieldZ]), np.array([X, Y, Z]), Temperature, self.Timestamp, Index)
+        return FormattedSensorReading(np.array([FieldX, FieldY, FieldZ]), np.array([X, Y, Z]), Temperature, self.Timestamp / 1e6, Index)
 
     def Valid(self: RawSensorReading) -> bool:
         """
@@ -286,7 +286,7 @@ class FormattedSensorReading():
     Temperature: float
 
     #   A timestamp, in units of seconds
-    Timestamp: int
+    Timestamp: float
 
     #   The index into the "global" numpy arrays used for the live plotting of the temperature and magnetic fields.
     Index: int
@@ -888,6 +888,9 @@ def main() -> int:
         RawOutputStream.writelines([CurrentMeasurement.ToString(), "\r\n"])
         FormattedOutputStream.writelines([Formatted.ToString(), "\r\n"])
 
+        #   Store the current timestamp value, for reference in the figures.
+        CurrentTime: float = Formatted.Timestamp
+
         #   Push the new data into the pre-allocated plotted data arrays, so the
         #   next re-draw of the figures can include this next reading.
         MagneticField[:,Formatted.Index] = np.concatenate((Formatted.Position, Formatted.MagneticField))
@@ -939,11 +942,11 @@ def main() -> int:
 
 
             #   Update the actual data markers in the two plots with the most up-to-date data values.
-            MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MagneticFieldMax, V=MagneticField[4,:]/MagneticFieldMax, W=(MagneticField[5,:]/MagneticFieldMax)*Z_VisualScaleFactor, colors=C, arrow_length_ratio=0.33, normalize=False, length=MagneticScalarMap.get_clim()[1] / 5.0)
+            MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MagneticFieldMax, V=MagneticField[4,:]/MagneticFieldMax, W=(MagneticField[5,:]/MagneticFieldMax)*Z_VisualScaleFactor, colors=C, arrow_length_ratio=0.33, normalize=False, length=MagneticScalarMap.get_clim()[1] / 0.5)
             TemperatureField_Axes.scatter(xs=TemperatureField_NonZero[0,:], ys=TemperatureField_NonZero[1,:], zs=TemperatureField_NonZero[2,:], data=TemperatureField_NonZero[3,:], depthshade=False, c=TemperatureField_NonZero[3,:], cmap=ColourMap, vmin=TemperatureScalarMap.get_clim()[0], vmax=TemperatureScalarMap.get_clim()[1])
 
             #   Update the titles of the plots to provide summary values to the user.
-            MagneticFieldTitle: str = f'Magnetic Field\nAverage = {MagneticField_Average:.1f}mT\nMean Magnitude = {MagneticFieldNorm_NonZero[3,:].mean():.1f}mT\nMaximum = {MagneticFieldNorm_NonZero[3,:].max():.1f}mT'
+            MagneticFieldTitle: str = f'Magnetic Field\nAverage = {MagneticField_Average:.1f}mT\nMean Magnitude = {MagneticFieldNorm_NonZero[3,:].mean():.1f}mT\nMaximum = {MagneticFieldNorm_NonZero[3,:].max():.1f}mT\nMean Vector = {MagneticField_NonZero.mean(axis=1)[3:].round(2)}mT'
             TemperatureFieldTitle: str = f'Temperature Field\nMean = {TemperatureField_NonZero[3,:].mean():.2f}C\nMaximum = {TemperatureField_NonZero[3,:].max():.2f}C\nMinimum = {TemperatureField_NonZero[3,:].min():.2f}C'
             if ( Config.MeasurementRate is not None ):
                 #   If the sampling rate is known, also report this.
@@ -952,7 +955,7 @@ def main() -> int:
 
             MagneticField_Axes.set_title(MagneticFieldTitle)
             TemperatureField_Axes.set_title(TemperatureFieldTitle)
-            Fields_Figure.suptitle(f"Measurement Backlog: {len(Measurements)}")
+            Fields_Figure.suptitle(f"Measurement Backlog: {len(Measurements)}\nCurrent Time: {CurrentTime:.6f}s")
 
             plt.draw_all(force=True)
             plt.pause(0.01)
