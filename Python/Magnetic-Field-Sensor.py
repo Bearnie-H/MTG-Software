@@ -131,6 +131,7 @@ class Configuration():
         self.MeasurementRate: float = None
 
         self.MeasurementsFilename: str = None
+        self.OutputDirectory: str = "."
 
         self.PositionReference: str = None
         self.SensorOffset_Z: float = 1.6 + 0.65    #   mm
@@ -853,14 +854,14 @@ def main() -> int:
 
         MeasurementsFilename: str = f"Sensor-Readings - {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.csv"
         if ( Config.MeasurementsFilename is not None ):
-            MeasurementsFilename = Config.MeasurementsFilename
+            MeasurementsFilename = os.path.basename(Config.MeasurementsFilename)
 
         LogWriter.Println(f"Writing formatted sensor readings to the file [ Formatted {MeasurementsFilename} ]...")
-        FormattedOutputStream = open("Formatted " + MeasurementsFilename, "w+")
+        FormattedOutputStream = open(os.path.join(Config.OutputDirectory, "Formatted " + MeasurementsFilename), "w+")
         FormattedOutputStream.write(FormattedSensorReading().CSVHeader())
         if ( Config.SerialPort is not None ):
             LogWriter.Println(f"Writing raw sensor telemetry to the file [ Raw {MeasurementsFilename} ]...")
-            RawOutputStream = open("Raw " + MeasurementsFilename, "w+")
+            RawOutputStream = open(os.path.join(Config.OutputDirectory, "Raw " + MeasurementsFilename), "w+")
             RawOutputStream.write(RawSensorReading().CSVHeader())
 
     #   Enter the main loop where we re-fresh the display of the vector plot with the most up-to-date measurement values
@@ -942,7 +943,7 @@ def main() -> int:
 
 
             #   Update the actual data markers in the two plots with the most up-to-date data values.
-            MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MagneticFieldMax, V=MagneticField[4,:]/MagneticFieldMax, W=(MagneticField[5,:]/MagneticFieldMax)*Z_VisualScaleFactor, colors=C, arrow_length_ratio=0.33, normalize=False, length=MagneticScalarMap.get_clim()[1] / 0.5)
+            MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MagneticFieldMax, V=MagneticField[4,:]/MagneticFieldMax, W=(MagneticField[5,:]/MagneticFieldMax)*Z_VisualScaleFactor, arrow_length_ratio=0.33, normalize=False, length=MagneticScalarMap.get_clim()[1] / 0.5, colors=C)
             TemperatureField_Axes.scatter(xs=TemperatureField_NonZero[0,:], ys=TemperatureField_NonZero[1,:], zs=TemperatureField_NonZero[2,:], data=TemperatureField_NonZero[3,:], depthshade=False, c=TemperatureField_NonZero[3,:], cmap=ColourMap, vmin=TemperatureScalarMap.get_clim()[0], vmax=TemperatureScalarMap.get_clim()[1])
 
             #   Update the titles of the plots to provide summary values to the user.
@@ -995,6 +996,7 @@ def HandleArguments() -> bool:
     Parser.add_argument("--filename", dest="Filename", metavar="file-path", type=str, required=False, default=None, help="The path to the formatted CSV file containing raw meausrements to replay. Only required for --stream-type=serial")
     Parser.add_argument("--position-reference", dest="PositionReference", metavar="corner-label", type=str, required=False, default="D", help="Which corner of Layer 0 was used as the indexing point to position the sensor relative to the magnetic source?")
     Parser.add_argument("--layer-separation", dest="LayerSeparation", metavar="mm", type=float, required=False, default=8.6, help="The consistent spacing between the layers of the sensor. If all layers are free-floating set to -1 to indicate this.")
+    Parser.add_argument("--output-directory", dest="OutputDirectory", metavar="path", type=str, required=False, default=".", help="The output directory to write any output files or artefacts into.")
 
     #   Add in flags for manipulating the logging functionality of the script.
     Parser.add_argument("--log-file", dest="LogFile", metavar="file-path", type=str, required=False, default="-", help="File path to the file to write all log messages of this program to.")
@@ -1074,6 +1076,12 @@ def HandleArguments() -> bool:
     else:
         LogWriter.Println(f"Layers of the sensor are separated by [ {Arguments.LayerSeparation:.2f}mm ].")
         Config.SensorPitch_Z = Arguments.LayerSeparation
+
+    Config.OutputDirectory = os.path.abspath(Arguments.OutputDirectory)
+    if ( not Config.EnableDryRun ):
+        LogWriter.Println(f"Writing all output files to directory [ {Config.OutputDirectory} ]...")
+        os.makedirs(Config.OutputDirectory, mode=0o755, exist_ok=True)
+        LogWriter.Println(f"Created output directory [ {Config.OutputDirectory} ].")
 
     return Valid and ( not Arguments.Validate )
 
