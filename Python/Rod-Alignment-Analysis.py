@@ -19,6 +19,7 @@ import typing
 import cv2
 from openpiv import tools, pyprocess, validation, filters
 import numpy as np
+import matplotlib.pyplot as plt
 
 #   ...
 
@@ -26,6 +27,7 @@ import numpy as np
 from MTG_Common.Logger import Logger, Discarder
 from MTG_Common.AlignmentResults import AlignmentResult
 from MTG_Common import VideoReadWriter as vwr
+from MTG_Common import Utils as MyUtils
 #   ...
 
 class Configuration():
@@ -34,6 +36,8 @@ class Configuration():
 
     This class...
     """
+
+    VideoFilename: str
 
     WindowSize: int
     WindowOverlap: int
@@ -94,6 +98,8 @@ class Configuration():
             ...
         """
 
+        Config.VideoFilename = Arguments.Filename
+
         #   ...
 
         return
@@ -115,6 +121,7 @@ class Configuration():
         return Validated
 
 class PIVAnalyzer():
+
     """
     PIVAnalyzer
 
@@ -232,6 +239,87 @@ class PIVAnalyzer():
 LogWriter: Logger = Logger()
 Config: Configuration = Configuration(LogWriter=LogWriter)
 VelocimetryAnalyzer: PIVAnalyzer = PIVAnalyzer(LogWriter=LogWriter)
+
+def ComputeAlignmentMetric(Image: np.ndarray) -> float:
+    """
+    ComputeAlignmentMetric
+
+    This function...
+
+    Image:
+        ...
+
+    Return (float):
+        ...
+    """
+
+    AlignmentScore: float = 0.0
+
+    #   ...
+
+    return AlignmentScore
+
+def _ComputeAlignmentFraction(Image: np.ndarray, Arguments: typing.List[typing.Any]) -> typing.Tuple[np.ndarray, bool]:
+    """
+    _ComputeAlignmentFraction
+
+    This function...
+
+    Image:
+        ...
+
+    Return (Tuple[np.ndarray, bool]):
+        [0] - np.ndarray:
+            ...
+        [1] - bool:
+            ...
+    """
+    Image = MyUtils.BGRToGreyscale(Image)
+    _, Mask = cv2.threshold(Image, 50, 255, cv2.THRESH_BINARY)
+    Image = Image & Mask
+
+    AlignmentScore: float = ComputeAlignmentMetric(Image)
+
+    #   You can apply any transformations or operations on "Image" here 260-283
+    #   ...
+    #Altered_Image = cv2.flip(Image, 1)
+    #Altered_Image = cv2.threshold(Image, 150, 255, cv2.THRESH_BINARY_INV)
+    #Altered_Image = cv2.adaptiveThreshold(Image,255,cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV,9,4)
+    Altered_Image = MyUtils.GammaCorrection(Image, Gamma=1, Minimum=0, Maximum=255)
+    Altered_Image = cv2.GaussianBlur(Altered_Image,(3,3),0)
+    Altered_Image = cv2.adaptiveThreshold(Altered_Image,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV,9,5)
+    # Altered_Image = cv2.fastNlMeansDenoising(Altered_Image, None, 6, 7, 21)
+
+    Altered_Image =cv2.GaussianBlur(Altered_Image, (9, 9), 0)
+
+    Altered_Image = Altered_Image.astype(np.int16)
+    Gx = cv2.Sobel(Altered_Image, cv2.CV_16S, 0, 1, None, ksize=3)
+    Gy = cv2.Sobel(Altered_Image, cv2.CV_16S, 1, 0, None, ksize=3)
+
+    # EdgeDirection = np.arctan2(Gy.astype(np.float64), Gx.astype(np.float64))
+    EdgeDirection = np.arctan(Gy.astype(np.float64) / Gx.astype(np.float64))
+
+    Gradient = np.zeros((Gy.shape[0], Gy.shape[1], 3), dtype=np.uint8)
+    Gradient[:,:,0] = MyUtils.ConvertTo8Bit(EdgeDirection)
+    Gradient[:,:,1] = 255
+    Gradient[:,:,2] = MyUtils.ConvertTo8Bit(np.hypot(Gx, Gy))
+    Gradient = cv2.cvtColor(Gradient, cv2.COLOR_HSV2BGR)
+
+    EdgeDirection[Gx == 0] = np.NaN
+    EdgeDirection[Gy == 0] = np.NaN
+
+    ax = plt.subplot(1,1,1, projection='polar')
+    ax.hist(EdgeDirection.flatten(), bins=36, density=True)
+    plt.waitforbuttonpress(0.01)
+    plt.clf()
+
+    return Gradient, True
+
+    #   ...
+
+
+    return Altered_Image, True
+
 #   ...
 
 #   Main
@@ -240,7 +328,7 @@ def main() -> None:
 
     #   First, open the video file and prepare to start analyzing the frames to compute
     #       the velocity field
-    #   ...
+    Video: vwr.VideoReadWriter = vwr.VideoReadWriter(readFile=Config.VideoFilename, logger=LogWriter)
 
     #   Now, with the velocity field computed for each time-point within the source video,
     #       start processing these to extract out rotation rate information
@@ -248,6 +336,9 @@ def main() -> None:
 
     #   With the time-series rotation data, compute the alignment time by looking for
     #       key time-points in the "average amount of rotation" seen in the video.
+    Video.SourceFrameRate = 50
+    Video.PrepareWriter(None, FrameRate=50, Resolution=(480, 720), TopLeft=(500, 0))
+    Video.ProcessVideo(PlaybackMode=vwr.PlaybackMode_NormalSpeed, Callback=_ComputeAlignmentFraction)
     #   ...
 
     #   ...
@@ -268,6 +359,7 @@ def HandleArguments() -> bool:
     Flags: argparse.ArgumentParser = argparse.ArgumentParser()
 
     #   Add the command-line flags and parameters...
+    Flags.add_argument("--filename", dest="Filename", metavar="file-path", type=str, required=True, help="The video file showing rod rotation to be processed.")
     #   ...
 
             #   Add in flags for manipulating the logging functionality of the script.

@@ -943,7 +943,7 @@ def main() -> int:
 
 
             #   Update the actual data markers in the two plots with the most up-to-date data values.
-            MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MagneticFieldMax, V=MagneticField[4,:]/MagneticFieldMax, W=(MagneticField[5,:]/MagneticFieldMax)*Z_VisualScaleFactor, arrow_length_ratio=0.33, normalize=False, length=MagneticScalarMap.get_clim()[1] / 0.5, colors=C)
+            MagneticField_Axes.quiver(X=MagneticField[0,:], Y=MagneticField[1,:], Z=MagneticField[2,:], U=MagneticField[3,:]/MagneticFieldMax, V=MagneticField[4,:]/MagneticFieldMax, W=(MagneticField[5,:]/MagneticFieldMax)*Z_VisualScaleFactor, arrow_length_ratio=0.33, normalize=False, length=MagneticScalarMap.get_clim()[1], colors=C)
             TemperatureField_Axes.scatter(xs=TemperatureField_NonZero[0,:], ys=TemperatureField_NonZero[1,:], zs=TemperatureField_NonZero[2,:], data=TemperatureField_NonZero[3,:], depthshade=False, c=TemperatureField_NonZero[3,:], cmap=ColourMap, vmin=TemperatureScalarMap.get_clim()[0], vmax=TemperatureScalarMap.get_clim()[1])
 
             #   Update the titles of the plots to provide summary values to the user.
