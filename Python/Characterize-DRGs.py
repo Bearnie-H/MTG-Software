@@ -551,7 +551,6 @@ def RemoveStainSaturation(Z_Stack: np.ndarray) -> None:
 
     return
 
-
 def MaximumIntensityProjection(Z_Stack: np.ndarray, Axis: str='z') -> np.ndarray:
     """
     MaximumIntensityProjection
