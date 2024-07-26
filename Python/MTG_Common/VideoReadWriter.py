@@ -473,7 +473,12 @@ class VideoReadWriter(Iterator):
         Bottom = Top + self.OutputHeight
 
         #   Actually perform the cropping.
-        return Frame[Top:Bottom, Left:Right, :]
+        if ( len(Frame.shape) == 2 ):
+            return Frame[Top:Bottom, Left:Right]
+        elif ( len(Frame.shape) == 3 ):
+            return Frame[Top:Bottom, Left:Right, :]
+        else:
+            raise ValueError(f"Frame was in the wrong or unknown colour-space. Shape was: [ {Frame.shape} ]...")
 
     def _rotateFrame(self, Frame: np.ndarray) -> np.ndarray:
         """

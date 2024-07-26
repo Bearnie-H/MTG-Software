@@ -30,6 +30,7 @@ from MTG_Common.Logger import Logger, Discarder
 from MTG_Common.AlignmentResults import AlignmentResult
 from MTG_Common import VideoReadWriter as vwr
 from MTG_Common import Utils as MyUtils
+from MTG_Common import Utils as MyUtils
 #   ...
 
 class Configuration():
@@ -38,6 +39,8 @@ class Configuration():
 
     This class...
     """
+
+    VideoFilename: str
 
     IsVideo: bool
     IsImage: bool
@@ -107,6 +110,8 @@ class Configuration():
             ...
         """
 
+        Config.VideoFilename = Arguments.Filename
+
         if ( Arguments.IsVideo ):
             self.IsVideo = True
             self.VideoFilename = Arguments.Filename
@@ -132,11 +137,6 @@ class Configuration():
 
         Validated: bool = True
 
-        if ( self.IsVideo ):
-            if ( self.VideoFrameRate < 0 ):
-                self._LogWriter.Errorln(f"Invalid frame-rate [ {self.VideoFrameRate}fps ].")
-                Validated = False
-
         #   ...
 
         return Validated
@@ -149,6 +149,8 @@ class AngleTracker():
     """
 
     Times: np.ndarray
+    RodCounts: np.ndarray
+    AlignmentFractions: np.ndarray
     MeanAngles: np.ndarray
     AngularStDevs: np.ndarray
 
@@ -159,12 +161,15 @@ class AngleTracker():
         This function...
         """
 
-        self.Times = np.array([])
-        self.MeanAngles = np.array([])
-        self.AngularStDevs = np.array([])
+        self.Times              = np.array([])
+        self.RodCounts          = np.array([])
+        self.AlignmentFractions = np.array([])
+        self.MeanAngles         = np.array([])
+        self.AngularStDevs      = np.array([])
+
+        return
 
 class PIVAnalyzer():
-
     """
     PIVAnalyzer
 
@@ -283,28 +288,186 @@ LogWriter: Logger = Logger()
 Config: Configuration = Configuration(LogWriter=LogWriter)
 VelocimetryAnalyzer: PIVAnalyzer = PIVAnalyzer(LogWriter=LogWriter)
 
-def ComputeAlignmentMetric(Image: np.ndarray) -> float:
+def ComputeAlignmentMetric(Orientatons: np.ndarray) -> typing.Tuple[int, float, float, float]:
     """
     ComputeAlignmentMetric
+
+    This function...
+
+    Orientations:
+        ...
+
+    Return (Tuple):
+        [0] - int:
+            The total number of rods identified in the image
+        [1] - float:
+            The fraction of rods within 1 standard deviation of the mean rod orientation angle (i.e. Alignment Fraction)
+        [2] - float:
+            The mean orientation angle of the rods.
+                NOTE: An orientation of 0 corresponds to a purely vertical rod.
+        [3] - float:
+            The angular standard deviation of the rod angles.
+        ...
+    """
+
+    RodCount: int = len(Orientatons)
+    AngularMean: float = scipy.stats.circmean(Orientatons, high=180, low=0)
+    AngularStDev: float = scipy.stats.circstd(Orientatons, high=180, low=0)
+
+    #   Subtract the mean orientation angle, to get a copy of the orientations with mean angle at 0
+    ShiftedOrientations: np.ndarray = Orientatons.copy() - AngularMean
+
+    #   Wrap the values such that they are centred around 0 on the range (-90,90]
+    ShiftedOrientations[ShiftedOrientations > 90] = 180 - ShiftedOrientations[ShiftedOrientations > 90]
+
+    #   Find the count of rods with angles within 1 standard deviation of the mean orientation, and divide by the total number of rods
+    #   to get an alignment fraction value
+    AlignmentFraction: float = float(len(ShiftedOrientations[abs(ShiftedOrientations) < AngularStDev]) / RodCount)
+
+    Results = (RodCount, AlignmentFraction, AngularMean, AngularStDev)
+    LogWriter.Println(f"{RodCount=:}, {AlignmentFraction=:.4f}, {AngularMean=:.4f}, {AngularStDev=:.4f}")
+
+    return Results
+
+def RodsAdaptiveThreshold(Image: np.ndarray) -> np.ndarray:
+    """
+    RodsAdaptiveThreshold
+
+    This function:
+        ...
+
+    Image:
+        ...
+
+    Return (np.ndarray):
+        ...
+    """
+
+    #   Define the parameters of this operation
+    GaussianBlurKernelSize: int = 3
+    AdaptiveThresholdKernelSize: int = 9
+    AdaptiveThresholdConstant: int = 5
+
+    #   Assert that the image is in greyscale, single-channel format
+    Image = MyUtils.BGRToGreyscale(Image)
+
+    #   Apply a Gaussian blur to try to remove the speckling shot-noise from the image
+    # Image = cv2.GaussianBlur(Image, (GaussianBlurKernelSize, GaussianBlurKernelSize) ,0)
+
+    #   Apply an adaptive threshold to the image, to extract the (foreground) rods from the (background) gel.
+    Image = cv2.adaptiveThreshold(Image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, AdaptiveThresholdKernelSize, AdaptiveThresholdConstant)
+
+    return Image
+
+def RodSegmentation(Image: np.ndarray) -> typing.Tuple[np.ndarray, typing.List[int]]:
+    """
+    RodSegmentation
 
     This function...
 
     Image:
         ...
 
-    Return (float):
-        ...
+    Return (Tuple):
+        [1] - np.ndarray:
+            ...
+        [2] - List[int]:
+            ...
     """
 
-    AlignmentScore: float = 0.0
+    #   Define the parameters of this operation
+    ComponentConnectivity: int = 8
+    MinimumComponentArea: int = 10
+    MaximumComponentArea: int = 50
 
-    #   ...
+    #   Actually extract out the set of components from the image we're interested in working with
+    NumberOfComponents, LabelledImage, Stats, _ = cv2.connectedComponentsWithStats(Image, connectivity=ComponentConnectivity)
 
-    return AlignmentScore
+    #   Iterate over the set of components, and remove those which do not satisfy the requirements of being a rod
+    FilteredLabels: typing.List[int] = []
+    for ComponentId in range(1, NumberOfComponents):
 
+        Area = Stats[ComponentId, cv2.CC_STAT_AREA]
 
+        if not ( MinimumComponentArea <= Area <= MaximumComponentArea ):
+            #   If the area is too big or too small, ignore this component
+            LabelledImage[LabelledImage == ComponentId] = 0
+            continue
+
+        FilteredLabels.append(ComponentId)
+
+    return (LabelledImage, FilteredLabels)
+
+def EllipseContourOrientations(OriginalImage: np.ndarray, Components: np.ndarray, Labels: typing.List[int]) -> typing.Tuple[np.ndarray, np.ndarray]:
+    """
+    EllipseContourOrientations
+
+    This function...
+
+    OriginalImage:
+        ...
+    Components:
+        ...
+    Labels:
+        ...
+
+    Return (Tuple):
+        [0] - np.ndarray:
+            Annotated Image
+        [1] - np.ndarray:
+            Orientations
+    """
+
+    EllipseAreaBounds: typing.Tuple[int, int] = (10, 60)
+    EllipseAxisLengthBounds: typing.Tuple[int, int] = (1, 40)
+
+    Orientations: np.ndarray = np.array([])
+
+    #   Create the output annotated image to return and display
+    AnnotatedImage = MyUtils.GreyscaleToBGR(OriginalImage.copy())
+
+    #   Iterate over all of the filtered components in the image, one by one
+    for ComponentID in Labels:
+
+        #   Extract out just the pixels for this one component
+        Component: np.ndarray = Components.copy()
+        Component[Component != ComponentID] = 0
+        Component[Component == ComponentID] = 255
+        Component = Component.astype(np.uint8)
+
+        #   Find the contours of just this one component, there should only be one.
+        Contours, _ = cv2.findContours(Component, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_SIMPLE)
+
+        #   There should always and only be one contour found, but look at all of them just in case...
+        for Contour in Contours:
+
+            #   Assert that the contour always has at least 5 points
+            if ( len(Contour) < 5 ):
+                continue
+
+            #   Compute the ellipse which best matches this contour...
+            Ellipse = cv2.fitEllipseDirect(Contour)
+            (x, y), (Major, Minor), Angle = Ellipse
+
+            EllipseArea: float = (np.pi / 4.0) * Major * Minor  #   Since the Major and Minor values correspond to *diameters* rather than *radii*
+
+            #   Filter out ellipses with bad dimensions
+            if (math.isnan(EllipseArea)) or ( not ( EllipseAreaBounds[0] <= EllipseArea <= EllipseAreaBounds[1])):
+                continue
+            if not ( EllipseAxisLengthBounds[0] <= Major <= EllipseAxisLengthBounds[1] ):
+                continue
+            if not ( EllipseAxisLengthBounds[0] <= Minor <= EllipseAxisLengthBounds[1] ):
+                continue
+
+            Orientations = np.append(Orientations, Angle)
+            EllipseColour: np.ndarray = np.array([[[int(Angle), 255, 255]]], dtype=np.uint8)
+            EllipseColour = tuple(int(x) for x in cv2.cvtColor(EllipseColour, cv2.COLOR_HSV2BGR).flatten())
+            AnnotatedImage = cv2.ellipse(AnnotatedImage, Ellipse, EllipseColour, 1)
+
+    return AnnotatedImage, Orientations
 
 def _ComputeAlignmentFraction(Image: np.ndarray, Arguments: typing.List[typing.Any]) -> typing.Tuple[np.ndarray, bool]:
+
     """
     _ComputeAlignmentFraction
 
@@ -320,8 +483,6 @@ def _ComputeAlignmentFraction(Image: np.ndarray, Arguments: typing.List[typing.A
             ...
     """
 
-    # AlignmentScore: float = ComputeAlignmentMetric(Image)
-
     #   You can apply any transformations or operations on "Image" here 260-283
     #   ...
     AlignmentMethod = Arguments[0]
@@ -331,78 +492,39 @@ def _ComputeAlignmentFraction(Image: np.ndarray, Arguments: typing.List[typing.A
         Image = ComponentAlignmentMethod(Image, Arguments)
     return Image, True
 
-def ComponentAlignmentMethod (Image, Arguments):
+def ComponentAlignmentMethod(Image, Arguments):
 
+    #   Extract out the class instance used to track and record the angular information of the rods per frame...
     Angles: AngleTracker = Arguments[1]
 
     ScaleFactor: float = 1.0
     Image = MyUtils.UniformRescaleImage(Image, ScalingFactor=ScaleFactor)
 
-    Image=MyUtils.BGRToGreyscale(Image)
-    Image = cv2.GaussianBlur(Image,(3,3),0)
-    Image = cv2.adaptiveThreshold(Image,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV,9,5)
-    NumberOfComponents, labels, stats, centroids = cv2.connectedComponentsWithStats (Image, connectivity=8)
+    #   Apply an adaptive threshold to the image in order to identify the rods versus the background
+    ThresholdedImage = RodsAdaptiveThreshold(Image)
 
-    FilteredImage = np.zeros_like(Image)
-    RodCount = 0
-    for Component in range(1, NumberOfComponents):
+    #   Apply component-based segmentation of this binary image, to extract out the individual rods as distinct groups of pixels
+    Components, Labels = RodSegmentation(ThresholdedImage)
 
-        X, Y, W, H, Area = stats[Component, cv2.CC_STAT_LEFT], stats[Component, cv2.CC_STAT_TOP], stats[Component, cv2.CC_STAT_WIDTH], stats[Component, cv2.CC_STAT_HEIGHT], stats[Component, cv2.CC_STAT_AREA]
-        keepArea = 10 < Area and Area < 100
-        if keepArea:
-            FilteredImage[labels == Component] = 255
-            RodCount = RodCount + 1
+    #   Now, find the contours of each component within the image and fit an ellipse to these points in order to extract directionality information
+    AnnotatedImage, Orientations = EllipseContourOrientations(Image, Components, Labels)
 
-    # LogWriter.Println(f"Found a total of {RodCount} rods from {NumberOfComponents} components.")
-    Contours, Hierarchy = cv2.findContours (FilteredImage, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-    FilteredImage = MyUtils.GreyscaleToBGR(FilteredImage)
-    # FilteredImage = cv2.drawContours (FilteredImage, Contours, -1, (255,0,0),1)
-
-    Orientations = []
-    for Contour in Contours:
-        if ( len(Contour) < 5 ):
-            continue
-        ellipse = cv2.fitEllipseDirect(Contour)
-        #   Major and Minor are the lengths of the major and minor *diameters* of the ellipse,
-        #   not the *radii*
-        (x, y), (Major, Minor), Angle = ellipse
-        EllipseArea = math.pi * Major * Minor * (1/4)
-        if not ( 1 < EllipseArea <= 60 ) or ( math.isnan(EllipseArea) ):
-            continue
-        if not ( 1 < Major <= 40 ):
-            continue
-        if not ( 1 < Minor <= 40 ):
-            continue
-
-        #   Maybe we can filter these ellipses based off their axes lengths and their enclosed area?
-        FilteredImage = cv2.ellipse(FilteredImage, ellipse, (Angle, 255, 255), 1)
-
-        Orientations.append(Angle)
-
-    Orientations = np.array(Orientations)
-    MeanAngle: float = scipy.stats.circmean(Orientations, high=180, low=0)
-    AngularStDev: float = scipy.stats.circstd(Orientations, high=180, low=0)
-    StDev: float = np.std(Orientations)
+    #   Compute the alignment metrics we actually care about.
+    RodCount, AlignmentFraction, MeanAngle, AngularStDev = ComputeAlignmentMetric(Orientations)
 
     if ( len(Angles.MeanAngles) == 0 ):
         Angles.MeanAngles = np.array([MeanAngle])
-        Angles.AngularStDevs = np.array([StDev])
-        pass
+        Angles.AngularStDevs = np.array([AngularStDev])
     else:
         Angles.MeanAngles = np.append(Angles.MeanAngles, MeanAngle)
-        Angles.AngularStDevs = np.append(Angles.AngularStDevs, StDev)
-
-    LogWriter.Println(f"Mean Angle: {MeanAngle:.2f}degrees - Angular StDev: {AngularStDev:.4f}degrees - StDev: {StDev:.4f}")
+        Angles.AngularStDevs = np.append(Angles.AngularStDevs, AngularStDev)
 
     plt.clf()
     plt.hist(Orientations, bins=180, density=True)
     plt.show(block=False)
     plt.waitforbuttonpress(0.01)
 
-    FilteredImage = cv2.cvtColor(FilteredImage, cv2.COLOR_HSV2BGR)
-    FilteredImage = MyUtils.UniformRescaleImage(FilteredImage, ScalingFactor=(1.0/ScaleFactor))
-
-    return FilteredImage
+    return AnnotatedImage
 
 def SobelAlignmentMethod(Image:  np.ndarray, Arguments: typing.List[typing.Any]) -> np.ndarray:
     """
@@ -468,7 +590,11 @@ def main() -> None:
         #   ...
         plt.close()
 
-        plt.errorbar(x=Tracker.Times, y=Tracker.MeanAngles, yerr=Tracker.AngularStDevs, capsize=5, capthick=2)
+        plt.errorbar(x=Tracker.Times, y=Tracker.MeanAngles, yerr=Tracker.AngularStDevs, capsize=2, capthick=1, ecolor='r', elinewidth=0)
+        plt.xlabel(f"Time (s)")
+        plt.ylabel(f"Mean Rod Orientation Angle (degrees)")
+        plt.title(f"Mean Rod Orientation Angle vs. Time")
+        plt.suptitle(f"6% GelMA - 0.02vol% PCL Rods - Bright-Field Imaging")
         plt.show(block=True)
 
         #   ...

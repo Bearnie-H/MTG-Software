@@ -58,7 +58,6 @@ def DisplayImage(Description: str = "", Image: np.ndarray = None, HoldTime: int 
         An override to disable showing images when set to False. Allows simpler
         enabling/disabling during logging or development.
 
-    Return (int):
         The key-code which was pressed during display of the image, if any.
     """
     return DisplayImages(Images=[(Description, Image)], HoldTime=HoldTime, Topmost=Topmost, ShowOverride=ShowOverride)
@@ -498,6 +497,9 @@ def UniformRescaleImage(Image: np.ndarray = None, ScalingFactor: float = 1.0, In
 
     if ( ScalingFactor <= 0 ):
         raise ValueError(f"ScalingFactor must be a positive real number")
+
+    if ( ScalingFactor == 1.0 ):
+        return Image
 
     NewShape: typing.Tuple[int, int] = (int(round(ScalingFactor * Image.shape[1])), int(round(ScalingFactor * Image.shape[0])))
 
