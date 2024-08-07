@@ -20,6 +20,8 @@ import typing
 import cv2
 from openpiv import tools, pyprocess, validation, filters
 import numpy as np
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 import matplotlib.pyplot as plt
 import scipy.stats
 
@@ -32,6 +34,10 @@ from MTG_Common import VideoReadWriter as vwr
 from MTG_Common import Utils as MyUtils
 from MTG_Common import Utils as MyUtils
 #   ...
+
+ANALYSIS_METHOD_SOBEL:      int = 1
+ANALYSIS_METHOD_COMPONENT:  int = 2
+ANALYSIS_METHOD_HOUGH:      int = 3
 
 class Configuration():
     """
@@ -48,20 +54,13 @@ class Configuration():
     VideoFrameRate: float
     ImageFilename: str
 
-    WindowSize: int
-    WindowOverlap: int
-    InterFrameDuration: float
-    PixelSize: float
-    SNRThreshold: float
-    SmoothingStDevThreshold: float
-    SmoothingKernelSize: int
-    SmoothingIterations: int
-
     DryRun: bool
     Headless: bool
     ValidateOnly: bool
 
-    AlignmentMethod: str
+    AnalysisMethod: str
+    AnalysisType: int
+    PlaybackMode: int
 
     _LogWriter: Logger
 
@@ -78,8 +77,9 @@ class Configuration():
             ...
         """
 
+        self.PlaybackMode = vwr.PlaybackMode_NoDelay
+
         self._LogWriter = LogWriter
-        self.AlignmentMethod = ""
 
         return
 
@@ -110,7 +110,7 @@ class Configuration():
             ...
         """
 
-        Config.VideoFilename = Arguments.Filename
+        self.AnalysisMethod = Arguments.AnalysisMethod
 
         if ( Arguments.IsVideo ):
             self.IsVideo = True
@@ -120,6 +120,10 @@ class Configuration():
         elif ( Arguments.IsImage ):
             self.IsImage = True
             self.ImageFilename = Arguments.Filename
+
+        self.DryRun = Arguments.DryRun
+        self.Validate = Arguments.Validate
+        self.Headless = Arguments.Headless
 
         #   ...
 
@@ -137,9 +141,30 @@ class Configuration():
 
         Validated: bool = True
 
+        match (self.AnalysisMethod.lower()):
+            case "sobel":
+                self.AnalysisMethod = "Sobel Edge Detection"
+                self.AnalysisType = ANALYSIS_METHOD_SOBEL
+            case "component":
+                self.AnalysisMethod = "Component Extraction"
+                self.AnalysisType = ANALYSIS_METHOD_COMPONENT
+            case "hough":
+                self.AnalysisMethod = "Hough Line Transform"
+                self.AnalysisType = ANALYSIS_METHOD_HOUGH
+            case _:
+                self._LogWriter.Errorln(f"Invalid analysis method [ {self.AnalysisMethod} ]. Must be one of 'sobel', 'component', or 'hough'.")
+                Validated = False
+
+        if ( self.IsVideo ):
+            if ( self.VideoFrameRate < 0 ):
+                self._LogWriter.Errorln(f"Invalid frame-rate [ {self.VideoFrameRate}fps ].")
+                Validated = False
+            if ( self.Headless ):
+                self.PlaybackMode = vwr.PlaybackMode_NoDisplay
+
         #   ...
 
-        return Validated
+        return ( Validated ) or ( not self.ValidateOnly )
 
 class AngleTracker():
     """
@@ -154,6 +179,10 @@ class AngleTracker():
     MeanAngles: np.ndarray
     AngularStDevs: np.ndarray
 
+    IntraframeAlignmentFigure: Figure
+    AlignmentFractionFigure: Figure
+
+
     def __init__(self: AngleTracker) -> None:
         """
         Constructor
@@ -167,126 +196,110 @@ class AngleTracker():
         self.MeanAngles         = np.array([])
         self.AngularStDevs      = np.array([])
 
+        self.IntraframeAlignmentFigure = MyUtils.PrepareFigure(Interactive=(not Config.Headless))
+        self.AlignmentFractionFigure = MyUtils.PrepareFigure(Interactive=(not Config.Headless))
+
         return
 
-class PIVAnalyzer():
-    """
-    PIVAnalyzer
-
-    This class...
-    """
-
-    WindowSize: int
-    WindowOverlap: int
-    InterFrameDuration: float
-    PixelSize: float
-    SNRThreshold: float
-    SmoothingStDevThreshold: float
-    SmoothingKernelSize: int
-    SmoothingIterations: int
-
-    VelocityFields: np.ndarray
-
-    _PreviousFrame: np.ndarray
-    _LogWriter: Logger
-
-    def __init__(self: PIVAnalyzer, LogWriter: Logger = Logger(Prefix="PIVAnalyzer")) -> None:
+    def Update(self: AngleTracker, Orientations: np.ndarray, AlignmentAngle: float, AngularStDev: float, RodCount: int = None, AlignmentFraction: float = 0, Headless: bool = False) -> None:
         """
-        Constructor
+        Update
 
         This function...
 
-        LogWriter:
+        Orientations:
+            ...
+        AlignmentAngle:
+            ...
+        AngularStDev:
+            ...
+        RodCount:
+            ...
+        AlignmentFraction:
             ...
 
         Return (None):
             ...
         """
 
-        self._LogWriter = LogWriter
+        self.MeanAngles = np.append(self.MeanAngles, AlignmentAngle)
+        self.AngularStDevs = np.append(self.AngularStDevs, AngularStDev)
+        self.RodCounts = np.append(self.RodCounts, RodCount)
+        self.AlignmentFractions = np.append(self.AlignmentFractions, AlignmentFraction)
+
+        self.UpdateFigures(Orientations, Headless)
 
         #   ...
 
-        return None
+        return
 
-    def ConfigurePIVSettings(self: PIVAnalyzer, InterFrameDuration: float, PixelSize: int, WindowSize: int = 32, WindowOverlap: int = 16, SNRThreshold: float = 1.0, SmoothingStDevThreshold: float = 3.0, SmoothingKernelSize: int = 7, SmoothingIterations: int = 3) -> PIVAnalyzer:
+    def UpdateFigures(self: AngleTracker, Orientations: np.ndarray, Headless: bool = False) -> None:
         """
-        ConfigurePIVSettings
+        UpdateFigures
 
         This function...
 
-        InterFrameDuration:
+        Orientations:
             ...
-        PixelSize:
-            ...
-        WindowSize:
-            ...
-        WindowOverlap:
-            ...
-        SNRThreshold:
-            ...
-        SmoothingStDevThreshold:
-            ...
-        SmoothingKernelSize:
-            ...
-        SmoothingIterations:
+        Headless:
             ...
 
-        Return (PIVAnalyzer):
+        Return (None):
             ...
         """
 
-        self.InterFrameDuration      = InterFrameDuration
-        self.PixelSize               = PixelSize
-        self.WindowSize              = WindowSize
-        self.WindowOverlap           = WindowOverlap
-        self.SNRThreshold            = SNRThreshold
-        self.SmoothingStDevThreshold = SmoothingStDevThreshold
-        self.SmoothingKernelSize     = SmoothingKernelSize
-        self.SmoothingIterations     = SmoothingIterations
+        #   Update each of the figures, showing alignment within a single frame, and the alignment fraction as a function of time.
+        self._UpdateIntraFrameAlignmentFigure(Orientations, Headless)
+        self._UpdateAlignmentFractionFigure(Headless)
 
-        return self
+        return
 
-    def ComputeVelocityField(self: PIVAnalyzer, CurrentFrame: np.ndarray) -> np.ndarray:
+    def _UpdateIntraFrameAlignmentFigure(self: AngleTracker, Orientations: np.ndarray, Headless: bool = False) -> None:
         """
-        ComputeVelocityField
+        _UpdateIntraFrameAlignmentFigure
 
         This function...
 
-        CurrentFrame:
+        Orientations:
+            ...
+        Headless:
             ...
 
-        Return (np.ndarray):
+        Return (None):
             ...
         """
 
-        #   ...
+        HistogramBinSizing: int = 1 #   Degrees per bin
 
-        return None
+        F: Figure = self.IntraframeAlignmentFigure
+        F.clear()
 
-    def _DoPIV(self: PIVAnalyzer, PreviousFrame: np.ndarray, CurrentFrame: np.ndarray) -> np.ndarray:
+        A: Axes = F.gca()
+
+        A.hist(Orientations, bins=(180 / HistogramBinSizing), range=(-90,90), density=True, histtype="step")
+        A.set_xlabel(f"Rod Orientation Angles (degrees)")
+        # A.
+
+        return
+
+    def _UpdateAlignmentFractionFigure(self: AngleTracker, Headless: bool = False) -> None:
         """
-        _DoPIV
+        _UpdateAlignmentFractionFigure
 
         This function...
 
-        PreviousFrame:
-            ...
-        CurrentFrame:
+        Headless:
             ...
 
-        Return (np.ndarray):
+        Return (None):
             ...
         """
 
-        #   ...
-
-        return None
+        return
 
 #   Define the globals to set by the command-line arguments
 LogWriter: Logger = Logger()
 Config: Configuration = Configuration(LogWriter=LogWriter)
-VelocimetryAnalyzer: PIVAnalyzer = PIVAnalyzer(LogWriter=LogWriter)
 
 def ComputeAlignmentMetric(Orientatons: np.ndarray) -> typing.Tuple[int, float, float, float]:
     """
@@ -322,10 +335,9 @@ def ComputeAlignmentMetric(Orientatons: np.ndarray) -> typing.Tuple[int, float, 
 
     #   Find the count of rods with angles within 1 standard deviation of the mean orientation, and divide by the total number of rods
     #   to get an alignment fraction value
-    AlignmentFraction: float = float(len(ShiftedOrientations[abs(ShiftedOrientations) < AngularStDev]) / RodCount)
+    AlignmentFraction: float = float(len(ShiftedOrientations[abs(ShiftedOrientations) <= AngularStDev]) / RodCount)
 
     Results = (RodCount, AlignmentFraction, AngularMean, AngularStDev)
-    LogWriter.Println(f"{RodCount=:}, {AlignmentFraction=:.4f}, {AngularMean=:.4f}, {AngularStDev=:.4f}")
 
     return Results
 
@@ -344,15 +356,14 @@ def RodsAdaptiveThreshold(Image: np.ndarray) -> np.ndarray:
     """
 
     #   Define the parameters of this operation
-    GaussianBlurKernelSize: int = 3
     AdaptiveThresholdKernelSize: int = 9
-    AdaptiveThresholdConstant: int = 5
+    AdaptiveThresholdConstant: int = 6
 
     #   Assert that the image is in greyscale, single-channel format
     Image = MyUtils.BGRToGreyscale(Image)
 
-    #   Apply a Gaussian blur to try to remove the speckling shot-noise from the image
-    # Image = cv2.GaussianBlur(Image, (GaussianBlurKernelSize, GaussianBlurKernelSize) ,0)
+    #   Contrast-Enhance the image to always be full-scale
+    Image = MyUtils.GammaCorrection(Image, Minimum=0, Maximum=255)
 
     #   Apply an adaptive threshold to the image, to extract the (foreground) rods from the (background) gel.
     Image = cv2.adaptiveThreshold(Image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, AdaptiveThresholdKernelSize, AdaptiveThresholdConstant)
@@ -377,8 +388,7 @@ def RodSegmentation(Image: np.ndarray) -> typing.Tuple[np.ndarray, typing.List[i
 
     #   Define the parameters of this operation
     ComponentConnectivity: int = 8
-    MinimumComponentArea: int = 10
-    MaximumComponentArea: int = 50
+    ComponentAreaBounds: typing.Tuple[int, int] = (10, 100)
 
     #   Actually extract out the set of components from the image we're interested in working with
     NumberOfComponents, LabelledImage, Stats, _ = cv2.connectedComponentsWithStats(Image, connectivity=ComponentConnectivity)
@@ -389,7 +399,7 @@ def RodSegmentation(Image: np.ndarray) -> typing.Tuple[np.ndarray, typing.List[i
 
         Area = Stats[ComponentId, cv2.CC_STAT_AREA]
 
-        if not ( MinimumComponentArea <= Area <= MaximumComponentArea ):
+        if not ( ComponentAreaBounds[0] <= Area <= ComponentAreaBounds[1] ):
             #   If the area is too big or too small, ignore this component
             LabelledImage[LabelledImage == ComponentId] = 0
             continue
@@ -418,8 +428,8 @@ def EllipseContourOrientations(OriginalImage: np.ndarray, Components: np.ndarray
             Orientations
     """
 
-    EllipseAreaBounds: typing.Tuple[int, int] = (10, 60)
-    EllipseAxisLengthBounds: typing.Tuple[int, int] = (1, 40)
+    EllipseAreaBounds: typing.Tuple[int, int] = (10, 100)
+    EllipseAxisLengthBounds: typing.Tuple[int, int] = (1, 50)
 
     Orientations: np.ndarray = np.array([])
 
@@ -485,14 +495,24 @@ def _ComputeAlignmentFraction(Image: np.ndarray, Arguments: typing.List[typing.A
 
     #   You can apply any transformations or operations on "Image" here 260-283
     #   ...
-    AlignmentMethod = Arguments[0]
-    if ( AlignmentMethod == "sobel" ):
+    AlignmentType: int = Arguments[0]
+
+    if ( AlignmentType == ANALYSIS_METHOD_SOBEL):
         Image = SobelAlignmentMethod(Image, Arguments)
-    else:
+    elif ( AlignmentType == ANALYSIS_METHOD_COMPONENT):
         Image = ComponentAlignmentMethod(Image, Arguments)
+    elif ( AlignmentType == ANALYSIS_METHOD_HOUGH):
+        Image = HoughAlignmentMethod(Image, Arguments)
+
     return Image, True
 
-def ComponentAlignmentMethod(Image, Arguments):
+def HoughAlignmentMethod(Image, Arguments) -> np.ndarray:
+
+
+
+    return Image
+
+def ComponentAlignmentMethod (Image, Arguments):
 
     #   Extract out the class instance used to track and record the angular information of the rods per frame...
     Angles: AngleTracker = Arguments[1]
@@ -512,17 +532,8 @@ def ComponentAlignmentMethod(Image, Arguments):
     #   Compute the alignment metrics we actually care about.
     RodCount, AlignmentFraction, MeanAngle, AngularStDev = ComputeAlignmentMetric(Orientations)
 
-    if ( len(Angles.MeanAngles) == 0 ):
-        Angles.MeanAngles = np.array([MeanAngle])
-        Angles.AngularStDevs = np.array([AngularStDev])
-    else:
-        Angles.MeanAngles = np.append(Angles.MeanAngles, MeanAngle)
-        Angles.AngularStDevs = np.append(Angles.AngularStDevs, AngularStDev)
-
-    plt.clf()
-    plt.hist(Orientations, bins=180, density=True)
-    plt.show(block=False)
-    plt.waitforbuttonpress(0.01)
+    #   Record the alignment status data for the current frame.
+    Angles.Update(Orientations, MeanAngle, AngularStDev, RodCount, AlignmentFraction)
 
     return AnnotatedImage
 
@@ -539,18 +550,21 @@ def SobelAlignmentMethod(Image:  np.ndarray, Arguments: typing.List[typing.Any])
         ...
     """
 
-    ScaleFactor = 1.0
-    Image = MyUtils.UniformRescaleImage(MyUtils.BGRToGreyscale(Image), ScaleFactor)
-
-    Altered_Image = MyUtils.GammaCorrection(Image, Gamma=1, Minimum=0, Maximum=255)
-    Altered_Image = cv2.GaussianBlur(Altered_Image,(3,3),0)
-    Altered_Image = cv2.adaptiveThreshold(Altered_Image,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV,9,5)
-    Altered_Image = cv2.morphologyEx(Altered_Image, cv2.MORPH_DILATE, cv2.getStructuringElement(cv2.MORPH_RECT, (7,7)))
-
-    ForegroundMask = MyUtils.GammaCorrection(Altered_Image.copy(), Gamma=1, Minimum=0, Maximum=1)
-    Altered_Image = ForegroundMask * Image
-
+    Angles: AngleTracker = Arguments[1]
     SobelBlockSize = 3
+
+    ScaleFactor = 1.0
+    Image = MyUtils.UniformRescaleImage(Image, ScaleFactor)
+
+    #   Apply adaptive thresholding to identify the rods from the background
+    ThresholdedImage: np.ndarray = RodsAdaptiveThreshold(Image)
+
+    #   Apply a morphological transform to dilate the image and get the rods as larger structures.
+    DilatedImage: np.ndarray = cv2.morphologyEx(ThresholdedImage, cv2.MORPH_DILATE, cv2.getStructuringElement(cv2.MORPH_RECT, (7,7)))
+
+    #   Compute a foreground mask to extract out the original pixels from the image
+    Altered_Image = cv2.bitwise_and(DilatedImage, Image)
+
     Altered_Image = Altered_Image.astype(np.int16)
     Gx = cv2.Sobel(Altered_Image, cv2.CV_16S, 0, 1, None, ksize=SobelBlockSize)
     Gy = cv2.Sobel(Altered_Image, cv2.CV_16S, 1, 0, None, ksize=SobelBlockSize)
@@ -563,13 +577,12 @@ def SobelAlignmentMethod(Image:  np.ndarray, Arguments: typing.List[typing.Any])
     Gradient[:,:,2] = MyUtils.ConvertTo8Bit(np.hypot(Gx, Gy))
     Gradient = cv2.cvtColor(Gradient, cv2.COLOR_HSV2BGR)
 
-    EdgeDirection[Gx == 0] = np.NaN
-    EdgeDirection[Gy == 0] = np.NaN
+    EdgeDirection[Gx == 0 & Gy == 0] = np.NaN
 
-    ax = plt.subplot(1,1,1)
-    ax.hist(EdgeDirection.flatten() * (180 / np.pi), bins=72, density=True)
-    plt.waitforbuttonpress(0.01)
-    plt.clf()
+    MeanAngle: float = scipy.stats.circmean(EdgeDirection.flatten())
+    AngularStDev: float = scipy.stats.circstd(EdgeDirection.flatten())
+    AlignmentFraction: float = np.sum([1 if abs(x) <= AngularStDev else 0 for x in (EdgeDirection.copy().flatten() - MeanAngle) ]) / len(EdgeDirection.flatten())
+    Angles.Update(EdgeDirection.flatten(), MeanAngle, AngularStDev, RodCount=0, AlignmentFraction=AlignmentFraction)
 
     Gradient = MyUtils.UniformRescaleImage(Gradient, 1.0 / ScaleFactor)
     return Gradient
@@ -580,16 +593,15 @@ def main() -> None:
 
     if ( Config.VideoFilename is not None ):
 
-        Video: vwr.VideoReadWriter = vwr.VideoReadWriter(readFile=Config.VideoFilename, logger=LogWriter)
+        Video: vwr.VideoReadWriter = vwr.VideoReadWriter(readFile=Config.VideoFilename, writeFile=Config.GetOutputFilename(), logger=LogWriter, progress=(not LogWriter.WritesToFile()))
 
         FrameCount: int = (Video.EndFrameIndex - Video.StartFrameIndex)
         Tracker: AngleTracker = AngleTracker()
         Tracker.Times = np.linspace(Video.StartFrameIndex / Config.VideoFrameRate, (Video.EndFrameIndex-1) / Config.VideoFrameRate, FrameCount)
-        # Video.PrepareWriter(None, FrameRate=50, Resolution=(480, 720), TopLeft=(500, 0))
-        Video.ProcessVideo(PlaybackMode=vwr.PlaybackMode_NoDelay, Callback=_ComputeAlignmentFraction, CallbackArgs=[Config.AlignmentMethod, Tracker])
-        #   ...
-        plt.close()
 
+        Video.ProcessVideo(PlaybackMode=Config.PlaybackMode, Callback=_ComputeAlignmentFraction, CallbackArgs=[Config.AnalysisType, Tracker])
+
+        plt.close()
         plt.errorbar(x=Tracker.Times, y=Tracker.MeanAngles, yerr=Tracker.AngularStDevs, capsize=2, capthick=1, ecolor='r', elinewidth=0)
         plt.xlabel(f"Time (s)")
         plt.ylabel(f"Mean Rod Orientation Angle (degrees)")
@@ -622,6 +634,7 @@ def HandleArguments() -> bool:
     Flags.add_argument("--video", dest="IsVideo", action='store_true', default=False, help="")
     Flags.add_argument("--frame-rate", dest="FrameRate", metavar="per-second", type=float, required=False, default=-1, help="The frame-rate of the video file to process. Only checked if --video flag is set.")
     Flags.add_argument("--image", dest="IsImage", action='store_true', default=False, help="")
+    Flags.add_argument("--method", dest="AnalysisMethod", metavar="<sobel|component|hough>", type=str, required=False, default="component", help="The rod segmentation and identification method to use.")
     #   ...
 
             #   Add in flags for manipulating the logging functionality of the script.
