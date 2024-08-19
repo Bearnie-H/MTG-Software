@@ -759,7 +759,7 @@ def main() -> None:
     Video.ProcessVideo(PlaybackMode=Config.PlaybackMode, Callback=_ComputeAlignmentFraction, CallbackArgs=[Config.AnalysisType, Tracker])
 
     #   If there were only a few frames to process, print the data to the terminal, otherwise only try printing it to a file.
-    if ( len(Tracker.Times) < 10 ):
+    if ( len(Tracker.Times) < 10 ) or ( Config.DryRun ):
         LogWriter.Write("".join(Tracker.FormatCSV()))
 
     #   Save the rod alignment data to a file.
