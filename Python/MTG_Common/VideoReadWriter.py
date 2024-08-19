@@ -158,11 +158,10 @@ class VideoReadWriter(Iterator):
         if ( self._SourceFilename is not None ):
             if ( not self._openSourceVideo() ):
                 raise AttributeError(f"Failed to initialize VideoReadWriter; could not open source video file [ {readFile} ].")
+            self.SetFrameRange()
 
         if ( self._OutputFilename is not None ):
             self.PrepareWriter(OutputFilename=writeFile)
-
-        self.SetFrameRange()
 
         return
 
@@ -332,14 +331,17 @@ class VideoReadWriter(Iterator):
 
         #   Create the video capture wrapper object from OpenCV we actually
         #   operate on.
-        self._SourceVideo = cv2.VideoCapture(self._SourceFilename)
+        self._SourceVideo = cv2.VideoCapture(self._SourceFilename, cv2.CAP_ANY)
 
         #   Extract a handful of helpful properties from the source video file
         self.SourceFrameRate    =   self._SourceVideo.get(cv2.CAP_PROP_FPS)
+        self.SourceNumFrames    =   int(self._SourceVideo.get(cv2.CAP_PROP_FRAME_COUNT))
         self.SourceHeight       =   int(self._SourceVideo.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.SourceWidth        =   int(self._SourceVideo.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.SourceNumFrames    =   int(self._SourceVideo.get(cv2.CAP_PROP_FRAME_COUNT))
         self.SourceFrameIndex   =   0
+
+        if ( self.SourceNumFrames < 0 ):
+            self.SourceNumFrames = 1
 
         self._LogWriter.Println(f"Successfully opened video file [ {self._SourceFilename} ] for reading.")
 
@@ -400,7 +402,6 @@ class VideoReadWriter(Iterator):
         self._OutputVideo = cv2.VideoWriter(self._OutputFilename, cv2.VideoWriter_fourcc(*self.OutputFourCC), self.OutputFrameRate, (int(self.OutputWidth), int(self.OutputHeight)))
         if ( not self._OutputVideo.isOpened() ):
             self._LogWriter.Errorln(f"Failed to open video file [ {self._OutputFilename} ] for writing.")
-            self._closeOutputVideo()
             return False
 
         self._OutputVideo.set(cv2.VIDEOWRITER_PROP_QUALITY, 100)
@@ -789,13 +790,13 @@ class VideoReadWriter(Iterator):
 
         if ( EndFrameIndex is not None ):
             if ( EndFrameIndex >= self.SourceNumFrames ):
-                EndFrameIndex = self.SourceNumFrames - 1
+                EndFrameIndex = self.SourceNumFrames
             self.EndFrameIndex = EndFrameIndex
         elif ( self.EndFrameIndex is None ):
-            self.EndFrameIndex = self.SourceNumFrames - 1
+            self.EndFrameIndex = self.SourceNumFrames
 
         if ( self.EndFrameIndex < 0 ):
-            self.EndFrameIndex = self.SourceNumFrames - 1
+            self.EndFrameIndex = self.SourceNumFrames
 
         if ( self.StartFrameIndex >= self.EndFrameIndex ):
             raise RuntimeError(f"Error: StartFrameIndex must be strictly less than EndFrameIndex!")
@@ -1293,7 +1294,7 @@ class VideoReadWriter(Iterator):
 
         return self
 
-    def PrepareWriter(self, OutputFilename: str = None, FrameRate: float = -1, FourCC: str = "avc1", Resolution: Tuple[int, int] = (-1, -1), TopLeft: Tuple[int, int] = (0,0)) -> VideoReadWriter:
+    def PrepareWriter(self, OutputFilename: str = None, FrameRate: float = 30, FourCC: str = "avc1", Resolution: Tuple[int, int] = (-1, -1), TopLeft: Tuple[int, int] = (0,0)) -> VideoReadWriter:
         """
         PrepareWriter:
 

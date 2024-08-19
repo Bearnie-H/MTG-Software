@@ -355,7 +355,7 @@ def PrepareFigure(FigureDPI: int = 96, FigureSizeIn: typing.Tuple[float, float] 
         FigureSizeIn = (FigureSizePx[0] / float(FigureDPI), FigureSizePx[1] / float(FigureDPI))
 
     if ( Interactive ):
-        plt.figure(figsize = FigureSizeIn, dpi = FigureDPI)
+        return plt.figure(figsize = FigureSizeIn, dpi = FigureDPI)
     else:
         return Figure(figsize = FigureSizeIn, dpi = FigureDPI)
 
