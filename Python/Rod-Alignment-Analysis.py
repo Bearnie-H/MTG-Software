@@ -491,6 +491,8 @@ def RodsAdaptiveThreshold(Image: np.ndarray) -> np.ndarray:
     #   Contrast-Enhance the image to always be full-scale
     Image = MyUtils.GammaCorrection(Image, Minimum=0, Maximum=255)
 
+    #   Try using an unsharp mask to reduce blurring, low-frequency components?
+
     #   Apply an adaptive threshold to the image, to extract the (foreground) rods from the (background) gel.
     Image = cv2.adaptiveThreshold(Image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, AdaptiveThresholdKernelSize, AdaptiveThresholdConstant)
 
@@ -786,6 +788,9 @@ def HandleArguments() -> bool:
     Flags.add_argument("--frame-rate", dest="FrameRate", metavar="per-second", type=float, required=False, default=-1, help="The frame-rate of the video file to process. Only checked if --video flag is set.")
     Flags.add_argument("--image", dest="IsImage", action='store_true', default=False, help="")
     Flags.add_argument("--method", dest="AnalysisMethod", metavar="<sobel|component|hough|matlab>", type=str, required=False, default="component", help="The rod segmentation and identification method to use.")
+
+    #   Add in argument for brightfield versus fluorescent imaging.
+    #   Add in handling for Z-stack images.
     #   ...
 
             #   Add in flags for manipulating the logging functionality of the script.
