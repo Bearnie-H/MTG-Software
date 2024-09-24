@@ -60,6 +60,16 @@ class Configuration():
     AnalysisType: int
     PlaybackMode: int
 
+    #   Elliptical Filter parameters
+    BackgroundRemovalKernelSize: int
+    BackgroundRemovalSigma: float
+    ForegroundSmoothingKernelSize: int
+    ForegroundSmoothingSigma: float
+    EllipticalFilterKernelSize: int
+    EllipticalFilterMinSigma: float
+    EllipticalFilterSigma: float
+    EllipticalFilterScaleFactor: float
+
     _LogWriter: Logger
     _OutputFolder: str
 
@@ -149,6 +159,16 @@ class Configuration():
         elif ( Arguments.IsImage ):
             self.IsImage = True
 
+        #   Extract out the elliptical filtering parameters (which may or may not be used)
+        self.BackgroundRemovalKernelSize = Arguments.BackgroundRemovalKernelSize
+        self.BackgroundRemovalSigma = Arguments.BackgroundRemovalSigma
+        self.ForegroundSmoothingKernelSize = Arguments.ForegroundSmoothingKernelSize
+        self.ForegroundSmoothingSigma = Arguments.ForegroundSmoothingSigma
+        self.EllipticalFilterKernelSize = Arguments.EllipticalFilterKernelSize
+        self.EllipticalFilterMinSigma = Arguments.EllipticalFilterMinSigma
+        self.EllipticalFilterSigma = Arguments.EllipticalFilterSigma
+        self.EllipticalFilterScaleFactor = Arguments.EllipticalFilterScaleFactor
+
         self.DryRun = Arguments.DryRun
         self.Validate = Arguments.Validate
         self.Headless = Arguments.Headless
@@ -182,6 +202,32 @@ class Configuration():
             case "ellipse":
                 self.AnalysisMethod = "Elliptical Filtering"
                 self.AnalysisType = ANALYSIS_METHOD_ELLIPSE
+
+                if ( self.BackgroundRemovalKernelSize <= 1 ) or (( self.BackgroundRemovalKernelSize % 2 ) == 0 ):
+                    self._LogWriter.Errorln(f"Invalid value for BackgroundRemovalKernelSize: {self.BackgroundRemovalKernelSize}. Must be odd and greater than 1.")
+                    Validated = False
+                if ( self.ForegroundSmoothingKernelSize <= 1 ) or (( self.ForegroundSmoothingKernelSize % 2 ) == 0 ):
+                    self._LogWriter.Errorln(f"Invalid value for ForegroundSmoothingKernelSize: {self.ForegroundSmoothingKernelSize}. Must be odd and greater than 1.")
+                    Validated = False
+                if ( self.EllipticalFilterKernelSize <= 1 ) or (( self.EllipticalFilterKernelSize % 2 ) == 0 ):
+                    self._LogWriter.Errorln(f"Invalid value for EllipticalFilterKernelSize: {self.EllipticalFilterKernelSize}. Must be odd and greater than 1.")
+                    Validated = False
+
+                if ( self.BackgroundRemovalSigma <= 0 ):
+                    self._LogWriter.Warnln(f"Zero-value identified for BackgroundRemovalKernelSize. This will cause a default to be chosen for you.")
+                if ( self.ForegroundSmoothingSigma <= 0 ):
+                    self._LogWriter.Warnln(f"Zero-value identified for ForegroundSmoothingKernelSize. This will cause a default to be chosen for you.")
+                if ( self.EllipticalFilterSigma <= 0 ):
+                    self._LogWriter.Warnln(f"Zero-value identified for EllipticalFilterKernelSize. This will cause a default to be chosen for you.")
+
+                if ( self.EllipticalFilterMinSigma <= 0 ) or ( self.EllipticalFilterMinSigma >= self.EllipticalFilterSigma ):
+                    self._LogWriter.Errorln(f"Invalid value for EllipticalFilterMinSigma: {self.EllipticalFilterMinSigma}. Must be at least greater than EllipticalFilterSigma ({self.EllipticalFilterSigma}).")
+                    Validated = False
+
+                if ( self.EllipticalFilterScaleFactor <= 0 ):
+                    self._LogWriter.Errorln(f"Invalid value for EllipticalFilterScaleFactor: {self.EllipticalFilterScaleFactor}. Must be a positive real number.")
+                    Validated = False
+
             case _:
                 self._LogWriter.Errorln(f"Invalid analysis method [ {self.AnalysisMethod} ]. Must be one of 'sobel', 'component', or 'hough'.")
                 Validated = False
@@ -231,6 +277,8 @@ class AngleTracker():
         self.AlignmentFractions = np.array([])
         self.MeanAngles         = np.array([])
         self.AngularStDevs      = np.array([])
+
+        self.HistogramBinSize: float = 5.0
 
         #   Prepare the resources in order to also prepare and display the live videos of how the alignment statistics vary over time.
         self.IntraframeAlignmentFigure = MyUtils.PrepareFigure(Interactive=False)
@@ -364,7 +412,7 @@ class AngleTracker():
             ...
         """
 
-        HistogramBinSizing: int = 5 #   Degrees per bin
+        HistogramBinSizing: int = self.HistogramBinSize #   Degrees per bin
 
         F: Figure = self.IntraframeAlignmentFigure
         F.clear()
@@ -652,93 +700,151 @@ def _ComputeAlignmentFraction(Image: np.ndarray, Arguments: typing.List[typing.A
 def EllipticalFilteringAlignmentMethod(Image, Arguments) -> np.ndarray:
 
     Angles: AngleTracker = Arguments[1]
+    BackgroundRemovalKernelSize: int = Config.BackgroundRemovalKernelSize
+    BackgroundRemovalSigma: float = Config.BackgroundRemovalSigma
+    ForegroundSmoothingKernelSize: int = Config.ForegroundSmoothingKernelSize
+    ForegroundSmoothingSigma: float = Config.ForegroundSmoothingSigma
+    DistinctOrientations: int = Angles.HistogramBinSize
+    EllipticalFilterKernelSize: int = Config.EllipticalFilterKernelSize
+    EllipticalFilterMinSigma: float = Config.EllipticalFilterMinSigma
+    EllipticalFilterSigma: float = Config.EllipticalFilterSigma
+    EllipticalFilterScaleFactor: float = Config.EllipticalFilterScaleFactor
 
-    #   Convert the image to grayscale for faster processing
-    Image = MyUtils.BGRToGreyscale(Image)
+    #   Pre-process the image to get it into a standardized and expected format.
+    PreparedImage: np.ndarray = EllipticalFilter_PreprocessImage(Image.copy())
 
-    #   Invert the image, so that the foreground is bright and the background is dark
-    Image = -Image
-    # MyUtils.DisplayImage("Inverted", MyUtils.ConvertTo8Bit(Image), 0, True)
+    #   Actually apply the elliptical filtering to identify the orientation information from the image.
+    Orientations: np.ndarray = EllipticalFilter_IdentifyOrientations(PreparedImage, BackgroundRemovalKernelSize, BackgroundRemovalSigma, ForegroundSmoothingKernelSize, ForegroundSmoothingSigma, DistinctOrientations, EllipticalFilterKernelSize, EllipticalFilterMinSigma, EllipticalFilterSigma, EllipticalFilterScaleFactor)
 
-    #   Remove background by subtracting a large-window Gaussian blurred image
-    Background: np.ndarray = cv2.GaussianBlur(Image, ksize=(81, 81), sigmaX=15)
-    # MyUtils.DisplayImage("Background", MyUtils.ConvertTo8Bit(Background), 0, True)
-    Foreground: np.ndarray = Image.copy().astype(np.int16) - Background.astype(np.int16)
-    # MyUtils.DisplayImage("Foreground", MyUtils.ConvertTo8Bit(Foreground), 0, True)
+    Count, AlignmentFraction, AngularMean, AngularStDev, Orientations = ComputeAlignmentMetric(Orientations=Orientations)
 
-
-    #   Set negative pixels to 0
-    Foreground[Foreground < 0] = 0
-    # MyUtils.DisplayImage("Truncated Foreground", MyUtils.ConvertTo8Bit(Foreground), 0, True)
-
-    #   Smooth image again, using a smaller-window Gaussian blur
-    SmoothedForeground: np.ndarray = cv2.GaussianBlur(Foreground, ksize=(11, 11), sigmaX=2)
-    SmoothedForeground = MyUtils.GammaCorrection(SmoothedForeground, Minimum=0, Maximum=255)
-    # MyUtils.DisplayImage("Smoothed Foreground", MyUtils.ConvertTo8Bit(SmoothedForeground), 0, True)
-
-    #   Apply the Mexican hat filter to the image for a set of 20 different angles,
-    #   storing each result as a layer in a new "z-stack".
-    NumAngles: int = 40
-    AngleStack: np.ndarray = np.zeros((NumAngles, *Image.shape))
-
-    KernelSize: int = 31
-    MinSigma: float = 1
-    Sigma: float = 20
-    SigmaScaleFactor: float = 4
-    Kernel1_X: np.ndarray = cv2.getGaussianKernel(KernelSize, Sigma)
-    Kernel1_Y: np.ndarray = cv2.getGaussianKernel(KernelSize, MinSigma)
-    Kernel1: np.ndarray = Kernel1_X * Kernel1_Y.T
-    Kernel2_X: np.ndarray = cv2.getGaussianKernel(KernelSize, SigmaScaleFactor*Sigma)
-    Kernel2_Y: np.ndarray = cv2.getGaussianKernel(KernelSize, SigmaScaleFactor*MinSigma)
-    Kernel2: np.ndarray = Kernel2_X * Kernel2_Y.T
-    for Index, Angle in enumerate(np.linspace(-np.pi/2, np.pi/2, NumAngles, endpoint=True)):
-
-        K1: np.ndarray = MyUtils.RotateFrame(Kernel1, Theta=np.rad2deg(Angle))
-        K2: np.ndarray = MyUtils.RotateFrame(Kernel2, Theta=np.rad2deg(Angle))
-        K: np.ndarray = K1 - K2
-
-        # MyUtils.DisplayImages([
-        #         ("K1", MyUtils.ConvertTo8Bit(K1)),
-        #         ("K2", MyUtils.ConvertTo8Bit(K2)),
-        #         ("K", MyUtils.ConvertTo8Bit(K)),
-        #     ],
-        #     HoldTime=2,
-        #     Topmost=True
-        # )
-
-        G = cv2.filter2D(SmoothedForeground, ddepth=cv2.CV_32F, kernel=K)
-        # MyUtils.DisplayImage(f"Mexican Hat: Angle = {np.rad2deg(Angle):.3f}deg", MyUtils.ConvertTo8Bit(G), 2, True)
-        G[G <= 0] = 0
-
-        AngleStack[Index,:] = G
-
-    #   With the results of the elliptical filter in a "Z-Stack", construct the resulting "angle image",
-    #   by taking the maximum intensity pixel (and the angle of the filter it corresponds to) from the Z-stack.
-    MaxPixels: np.ndarray = np.max(AngleStack, axis=0)
-    MaxAngles: np.ndarray = np.argmax(AngleStack, axis=0).astype(np.float64)
-
-    _, MaxPixels = cv2.threshold(MyUtils.ConvertTo8Bit(MaxPixels), 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY)
-    MaxAngles = MaxAngles[MaxPixels != 0].flatten()
-    MaxAngles -= (NumAngles / 2)
-    MaxAngles *= (180.0 / NumAngles)
-
-    Count, AlignmentFraction, AngularMean, AngularStDev, Orientations = ComputeAlignmentMetric(Orientations=MaxAngles)
-
-    Angles.Update(Orientations=Orientations, AlignmentAngle=AngularMean, AngularStDev=AngularStDev, RodCount=Count, AlignmentFraction=AlignmentFraction)
-
-    # plt.hist(MaxAngles)
-    # plt.waitforbuttonpress()
-
-    # MyUtils.DisplayImage("Filtered Max Angles", MyUtils.ConvertTo8Bit(MaxAngles), 0, True)
-
-
-
-
-    #   ...
-
-
+    Angles.Update(Orientations=Orientations, AlignmentAngle=AngularMean, AngularStDev=AngularStDev, RodCount=Count, AlignmentFraction=AlignmentFraction, Headless=Config.Headless)
 
     return Image
+
+def EllipticalFilter_PreprocessImage(Image: np.ndarray) -> np.ndarray:
+    """
+    EllipticalFilter_PreprocessImage
+
+    This function...
+
+    Image:
+        ...
+
+    Return (np.ndarray):
+        ...
+    """
+
+    #   Convert to greyscale, as we don't need colour information for this process
+    Image = MyUtils.BGRToGreyscale(Image)
+
+    #   Linearly scale the brightness of the image to cover the full 8-bit range
+    Image = MyUtils.ConvertTo8Bit(Image)
+
+    #   Check the median pixel of the image to see the foreground is bright or dark
+    MedianPixelIntensity: int = np.median(Image)
+
+    #   Apply Otsu to the image to determine the threshold between foreground and background
+    Threshold, _ = cv2.threshold(Image, 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY)
+
+    #   If the median pixel is brighter than the threshold, then this implies the background is bright and foreground is dark.
+    if ( MedianPixelIntensity >= Threshold ):
+        Image = -Image
+
+    return Image
+
+def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKernelSize: int, BackgroundRemovalSigma: float, ForegroundSmoothingKernelSize: int, ForegroundSmoothingSigma: float, DistinctOrientations: int, EllipticalFilterKernelSize: int, EllipticalFilterMinSigma: float, EllipticalFilterSigma: float, EllipticalFilterScaleFactor: float) -> np.ndarray:
+    """
+    EllipticalFilter_IdentifyOrientations
+
+    This function...
+
+    BackgroundRemovalKernelSize:
+        ...
+    BackgroundRemovalSigma:
+        ...
+    ForegroundSmoothingKernelSize:
+        ...
+    ForegroundSmoothingSigma:
+        ...
+    DistinctOrientations:
+        ...
+    EllipticalFilterKernelSize:
+        ...
+    EllipticalFilterMinSigma:
+        ...
+    EllipticalFilterSigma:
+        ...
+    EllipticalFilterScaleFactor:
+        ...
+
+    Return (np.ndarray):
+        ...
+    """
+
+    #   Remove background by subtracting a large-window Gaussian blurred image
+    Background: np.ndarray = cv2.GaussianBlur(Image, ksize=(BackgroundRemovalKernelSize, BackgroundRemovalKernelSize), sigmaX=BackgroundRemovalSigma)
+    Foreground: np.ndarray = Image.astype(np.int16) - Background.astype(np.int16)
+
+    #   Truncate negative pixels to 0
+    Foreground[Foreground < 0] = 0
+
+    #   Smooth the image again, using a smaller-window Gaussian blur
+    SmoothedForeground: np.ndarray = cv2.GaussianBlur(Foreground, ksize=(ForegroundSmoothingKernelSize, ForegroundSmoothingKernelSize), sigmaX=ForegroundSmoothingSigma)
+
+    #   Linearly rescale the image contrast back to the full 8-bit range
+    SmoothedForeground = MyUtils.GammaCorrection(SmoothedForeground, Minimum=0, Maximum=255)
+
+    #   Apply the Mexican hat filter to the image for a set of N different angles,
+    #   storing each result as a layer in a new "z-stack".
+    AngleStack: np.ndarray = np.zeros((DistinctOrientations, *Image.shape))
+
+    #   Prepare the two asymmetric kernels to use to construct a Difference of Gaussians approximation to a Mexican Hat filter
+    #   Kernel 2 must have larger sigma than Kernel 1
+    Kernel1_X: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterSigma)
+    Kernel1_Y: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterMinSigma)
+    Kernel1: np.ndarray = Kernel1_X * Kernel1_Y.T
+
+    Kernel2_X: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterScaleFactor*EllipticalFilterSigma)
+    Kernel2_Y: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterScaleFactor*EllipticalFilterMinSigma)
+    Kernel2: np.ndarray = Kernel2_X * Kernel2_Y.T
+
+    if ( EllipticalFilterScaleFactor < 1 ):
+        Kernel1, Kernel2 = Kernel2, Kernel1
+
+    #   For each of the orientations of interest, iterate over the half-open range of angles [-90,90)
+    for Index, Angle in enumerate(np.linspace(-np.pi/2, np.pi/2, DistinctOrientations)):
+
+        #   Construct the rotated Difference of Gaussian kernel to apply
+        K: np.ndarray = MyUtils.RotateFrame(Kernel1 - Kernel2, Theta=np.rad2deg(Angle), Clockwise=True)
+
+        #   Apply the kernel over the image
+        G = cv2.filter2D(SmoothedForeground, ddepth=cv2.CV_32F, kernel=K)
+
+        #   Truncate any pixels which end up negative
+        G[G <= 0] = 0
+
+        #   Store this result in the corresponding slice of the angle-image Z-stack
+        AngleStack[Index,:] = G
+
+    #   With the results of the elliptical filter in a "Z-Stack", construct the
+    #   resulting "angle image", by taking the maximum intensity pixel (and the
+    #   angle of the filter it corresponds to) from the Z-stack.
+    MaximumPixels: np.ndarray = np.max(AngleStack, axis=0)
+    MaximumPixelAngles: np.ndarray = np.argmax(AngleStack, axis=0).astype(np.float64)
+
+    #   Apply a threshold to the maximum intensity pixels across the Z-stack, to
+    #   isolate only those regions of the image where the correlation to the
+    #   elliptical filter is strongest. Use this to mask away all of the
+    #   orientation pixels which don't correspond to rods.
+    _, MaximumPixels = cv2.threshold(MyUtils.ConvertTo8Bit(MaximumPixels), 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY)
+    MaximumPixelAngles = MaximumPixelAngles[MaximumPixels != 0].flatten()
+
+    #   Finally, scale the angles from the indices of the angle stack to the actual values (in degrees) each slice corresponds to.
+    MaximumPixelAngles -= (DistinctOrientations / 2)
+    MaximumPixelAngles *= (180.0 / DistinctOrientations)
+
+    return MaximumPixelAngles
 
 def HoughAlignmentMethod(Image, Arguments) -> np.ndarray:
 
@@ -878,6 +984,16 @@ def HandleArguments() -> bool:
     #   Add in argument for brightfield versus fluorescent imaging.
     #   Add in handling for Z-stack images.
     #   ...
+
+    #   Add in the arguments for the elliptical filtering analysis method
+    Flags.add_argument("--ellipse-background-kernel", dest="BackgroundRemovalKernelSize", metavar="kernel-size", type=int, required=False, default=81, help="The size of the kernel used for background subtraction.")
+    Flags.add_argument("--ellipse-background-sigma", dest="BackgroundRemovalSigma", metavar="sigma", type=float, required=False, default=15, help="The standard deviation of the Gaussian blur used for background subtraction.")
+    Flags.add_argument("--ellipse-smoothing-kernel", dest="ForegroundSmoothingKernelSize", metavar="kernel-size", type=int, required=False, default=11, help="The size of the kernel used for foreground smoothing.")
+    Flags.add_argument("--ellipse-smoothing-sigma", dest="ForegroundSmoothingSigma", metavar="sigma", type=float, required=False, default=2, help="The standard deviation of the Gaussian blur used for foreground smoothing.")
+    Flags.add_argument("--ellipse-kernel", dest="EllipticalFilterKernelSize", metavar="kernel-size", type=int, required=False, default=31, help="The size of the kernel used for the Mexican Hat filtering.")
+    Flags.add_argument("--ellipse-min-sigma", dest="EllipticalFilterMinSigma", metavar="sigma", type=float, required=False, default=1, help="The standard deviation of the short axis of the Mexican Hat filter.")
+    Flags.add_argument("--ellipse-sigma", dest="EllipticalFilterSigma", metavar="sigma", type=float, required=False, default=15, help="The standard deviation of the long axis of the Mexican Hat filter.")
+    Flags.add_argument("--ellipse-scale-factor", dest="EllipticalFilterScaleFactor", metavar="s", type=float, required=False, default=4, help="The scale factor for the standard deviations of the Gaussian kernels used to approximate a Mexican Hat by a Difference of Gaussians.")
 
             #   Add in flags for manipulating the logging functionality of the script.
     Flags.add_argument("--log-file", dest="LogFile", metavar="file-path", type=str, required=False, default="-", help="File path to the file to write all log messages of this program to.")

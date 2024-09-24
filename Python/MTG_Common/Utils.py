@@ -291,7 +291,7 @@ def ConvertTo8Bit(Image: np.ndarray) -> np.ndarray:
 
     return GammaCorrection(Image=Image.copy(), Gamma=1, Minimum=0, Maximum=255).astype(np.uint8)
 
-def RotateFrame(Frame: np.ndarray = None, Theta: float = 0.0) -> np.ndarray:
+def RotateFrame(Frame: np.ndarray = None, Theta: float = 0.0, Clockwise: bool = False) -> np.ndarray:
     """
     RotateFrame
 
@@ -319,6 +319,10 @@ def RotateFrame(Frame: np.ndarray = None, Theta: float = 0.0) -> np.ndarray:
     #   Determine the pixel location of the centre of the frame.
     FrameHeight, FrameWidth = Frame.shape[0], Frame.shape[1]
     Centre = (FrameWidth / 2.0, FrameHeight / 2.0)
+
+    #   If the rotation is clockwise, negate Theta
+    if ( Clockwise ):
+        Theta = -Theta
 
     #   Compute the rotation matrix for a counter-clockwise rotation of 'Theta' degrees.
     #   This same matirx can also apply a scaling, either expanding or contracting the image,
