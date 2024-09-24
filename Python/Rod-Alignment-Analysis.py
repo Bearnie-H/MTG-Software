@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
+import matplotlib.pyplot as plt
 import scipy.stats
 
 #   ...
@@ -36,7 +37,7 @@ from MTG_Common import Utils as MyUtils
 ANALYSIS_METHOD_SOBEL:      int = 1
 ANALYSIS_METHOD_COMPONENT:  int = 2
 ANALYSIS_METHOD_HOUGH:      int = 3
-ANALYSIS_METHOD_MATLAB:     int = 4
+ANALYSIS_METHOD_ELLIPSE:     int = 4
 
 class Configuration():
     """
@@ -117,7 +118,7 @@ class Configuration():
 
         Timecode: str = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
         BaseFolder: str = os.path.dirname(self.SourceFilename)
-        OutputFolder: str = f"{os.path.splitext(os.path.basename(self.SourceFilename))[0]} - Alignment Quantification - {Timecode}"
+        OutputFolder: str = f"{os.path.splitext(os.path.basename(self.SourceFilename))[0]} - Alignment Quantification ({self.AnalysisMethod.title()}) - {Timecode}"
 
         self._OutputFolder = os.path.join(BaseFolder, OutputFolder)
 
@@ -178,9 +179,9 @@ class Configuration():
             case "hough":
                 self.AnalysisMethod = "Hough Line Transform"
                 self.AnalysisType = ANALYSIS_METHOD_HOUGH
-            case "matlab":
-                self.AnalysisMethod = "MATLAB Translation"
-                self.AnalysisType = ANALYSIS_METHOD_MATLAB
+            case "ellipse":
+                self.AnalysisMethod = "Elliptical Filtering"
+                self.AnalysisType = ANALYSIS_METHOD_ELLIPSE
             case _:
                 self._LogWriter.Errorln(f"Invalid analysis method [ {self.AnalysisMethod} ]. Must be one of 'sobel', 'component', or 'hough'.")
                 Validated = False
@@ -643,14 +644,99 @@ def _ComputeAlignmentFraction(Image: np.ndarray, Arguments: typing.List[typing.A
         Image = ComponentAlignmentMethod(Image, Arguments)
     elif ( AnalysisMethod == ANALYSIS_METHOD_HOUGH):
         Image = HoughAlignmentMethod(Image, Arguments)
-    elif ( AnalysisMethod == ANALYSIS_METHOD_MATLAB ):
-        Image = MATLABAlignmentMethod(Image, Arguments)
+    elif ( AnalysisMethod == ANALYSIS_METHOD_ELLIPSE ):
+        Image = EllipticalFilteringAlignmentMethod(Image, Arguments)
 
     return Image, True
 
-def MATLABAlignmentMethod(Image, Arguments) -> np.ndarray:
+def EllipticalFilteringAlignmentMethod(Image, Arguments) -> np.ndarray:
 
-    raise NotImplementedError(f"MATLABAlignmentMethod has not yet been implemented!")
+    Angles: AngleTracker = Arguments[1]
+
+    #   Convert the image to grayscale for faster processing
+    Image = MyUtils.BGRToGreyscale(Image)
+
+    #   Invert the image, so that the foreground is bright and the background is dark
+    Image = -Image
+    # MyUtils.DisplayImage("Inverted", MyUtils.ConvertTo8Bit(Image), 0, True)
+
+    #   Remove background by subtracting a large-window Gaussian blurred image
+    Background: np.ndarray = cv2.GaussianBlur(Image, ksize=(81, 81), sigmaX=15)
+    # MyUtils.DisplayImage("Background", MyUtils.ConvertTo8Bit(Background), 0, True)
+    Foreground: np.ndarray = Image.copy().astype(np.int16) - Background.astype(np.int16)
+    # MyUtils.DisplayImage("Foreground", MyUtils.ConvertTo8Bit(Foreground), 0, True)
+
+
+    #   Set negative pixels to 0
+    Foreground[Foreground < 0] = 0
+    # MyUtils.DisplayImage("Truncated Foreground", MyUtils.ConvertTo8Bit(Foreground), 0, True)
+
+    #   Smooth image again, using a smaller-window Gaussian blur
+    SmoothedForeground: np.ndarray = cv2.GaussianBlur(Foreground, ksize=(11, 11), sigmaX=2)
+    SmoothedForeground = MyUtils.GammaCorrection(SmoothedForeground, Minimum=0, Maximum=255)
+    # MyUtils.DisplayImage("Smoothed Foreground", MyUtils.ConvertTo8Bit(SmoothedForeground), 0, True)
+
+    #   Apply the Mexican hat filter to the image for a set of 20 different angles,
+    #   storing each result as a layer in a new "z-stack".
+    NumAngles: int = 40
+    AngleStack: np.ndarray = np.zeros((NumAngles, *Image.shape))
+
+    KernelSize: int = 31
+    MinSigma: float = 1
+    Sigma: float = 20
+    SigmaScaleFactor: float = 4
+    Kernel1_X: np.ndarray = cv2.getGaussianKernel(KernelSize, Sigma)
+    Kernel1_Y: np.ndarray = cv2.getGaussianKernel(KernelSize, MinSigma)
+    Kernel1: np.ndarray = Kernel1_X * Kernel1_Y.T
+    Kernel2_X: np.ndarray = cv2.getGaussianKernel(KernelSize, SigmaScaleFactor*Sigma)
+    Kernel2_Y: np.ndarray = cv2.getGaussianKernel(KernelSize, SigmaScaleFactor*MinSigma)
+    Kernel2: np.ndarray = Kernel2_X * Kernel2_Y.T
+    for Index, Angle in enumerate(np.linspace(-np.pi/2, np.pi/2, NumAngles, endpoint=True)):
+
+        K1: np.ndarray = MyUtils.RotateFrame(Kernel1, Theta=np.rad2deg(Angle))
+        K2: np.ndarray = MyUtils.RotateFrame(Kernel2, Theta=np.rad2deg(Angle))
+        K: np.ndarray = K1 - K2
+
+        # MyUtils.DisplayImages([
+        #         ("K1", MyUtils.ConvertTo8Bit(K1)),
+        #         ("K2", MyUtils.ConvertTo8Bit(K2)),
+        #         ("K", MyUtils.ConvertTo8Bit(K)),
+        #     ],
+        #     HoldTime=2,
+        #     Topmost=True
+        # )
+
+        G = cv2.filter2D(SmoothedForeground, ddepth=cv2.CV_32F, kernel=K)
+        # MyUtils.DisplayImage(f"Mexican Hat: Angle = {np.rad2deg(Angle):.3f}deg", MyUtils.ConvertTo8Bit(G), 2, True)
+        G[G <= 0] = 0
+
+        AngleStack[Index,:] = G
+
+    #   With the results of the elliptical filter in a "Z-Stack", construct the resulting "angle image",
+    #   by taking the maximum intensity pixel (and the angle of the filter it corresponds to) from the Z-stack.
+    MaxPixels: np.ndarray = np.max(AngleStack, axis=0)
+    MaxAngles: np.ndarray = np.argmax(AngleStack, axis=0).astype(np.float64)
+
+    _, MaxPixels = cv2.threshold(MyUtils.ConvertTo8Bit(MaxPixels), 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY)
+    MaxAngles = MaxAngles[MaxPixels != 0].flatten()
+    MaxAngles -= (NumAngles / 2)
+    MaxAngles *= (180.0 / NumAngles)
+
+    Count, AlignmentFraction, AngularMean, AngularStDev, Orientations = ComputeAlignmentMetric(Orientations=MaxAngles)
+
+    Angles.Update(Orientations=Orientations, AlignmentAngle=AngularMean, AngularStDev=AngularStDev, RodCount=Count, AlignmentFraction=AlignmentFraction)
+
+    # plt.hist(MaxAngles)
+    # plt.waitforbuttonpress()
+
+    # MyUtils.DisplayImage("Filtered Max Angles", MyUtils.ConvertTo8Bit(MaxAngles), 0, True)
+
+
+
+
+    #   ...
+
+
 
     return Image
 
@@ -787,7 +873,7 @@ def HandleArguments() -> bool:
     Flags.add_argument("--video", dest="IsVideo", action='store_true', default=False, help="")
     Flags.add_argument("--frame-rate", dest="FrameRate", metavar="per-second", type=float, required=False, default=-1, help="The frame-rate of the video file to process. Only checked if --video flag is set.")
     Flags.add_argument("--image", dest="IsImage", action='store_true', default=False, help="")
-    Flags.add_argument("--method", dest="AnalysisMethod", metavar="<sobel|component|hough|matlab>", type=str, required=False, default="component", help="The rod segmentation and identification method to use.")
+    Flags.add_argument("--method", dest="AnalysisMethod", metavar="<sobel|component|hough|ellipse>", type=str, required=False, default="component", help="The rod segmentation and identification method to use.")
 
     #   Add in argument for brightfield versus fluorescent imaging.
     #   Add in handling for Z-stack images.
