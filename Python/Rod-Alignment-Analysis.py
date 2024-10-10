@@ -1048,7 +1048,6 @@ def main() -> None:
     else:
         Video = vwr.VideoReadWriter(readFile=Config.SourceFilename, writeFile=os.path.join(Config.GetOutputDirectory(), f"{Config.AnalysisMethod.title()} Method.mp4"), logger=LogWriter, progress=(not LogWriter.WritesToFile()))
 
-
     #   Prepare the timing information for the angle statistics...
     FrameCount: int = (Video.EndFrameIndex - Video.StartFrameIndex) + 1
     Tracker.Times = np.linspace(Video.StartFrameIndex / Config.VideoFrameRate, (Video.EndFrameIndex-1) / Config.VideoFrameRate, FrameCount)

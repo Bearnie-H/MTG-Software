@@ -302,10 +302,14 @@ class Configuration():
         """
         self._LogWriter.Println(f"Attempting to open image-stack file [ {ImageStackFilename} ]...")
 
-        ImageStack: ZStack = ZStack(LogWriter=LogWriter)
-        if ( ImageStack.OpenFile(ImageStackFilename, ClearingAlgorithm) ):
-            self._LogWriter.Println(f"Successfully opened and extraced Z-Stack image from file [ {ImageStackFilename} ].")
-            return True
+        Success, ImageStack = OpenLIFFile(ImageStackFilename, ClearingAlgorithm)
+        if ( Success ):
+            return ImageStackFilename
+
+        # ImageStack: ZStack = ZStack(LogWriter=LogWriter)
+        # if ( ImageStack.OpenFile(ImageStackFilename, ClearingAlgorithm) ):
+        #     self._LogWriter.Println(f"Successfully opened and extraced Z-Stack image from file [ {ImageStackFilename} ].")
+        #     return True
 
         self._LogWriter.Errorln(f"Failed to open file [ {ImageStackFilename} ] as either *.LIF or *.TIFF file to read Z-Stack image data!")
         return False
