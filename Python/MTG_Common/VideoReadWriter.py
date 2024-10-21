@@ -798,8 +798,8 @@ class VideoReadWriter(Iterator):
         if ( self.EndFrameIndex < 0 ):
             self.EndFrameIndex = self.SourceNumFrames
 
-        if ( self.StartFrameIndex >= self.EndFrameIndex ):
-            raise RuntimeError(f"Error: StartFrameIndex must be strictly less than EndFrameIndex!")
+        if ( self.StartFrameIndex > self.EndFrameIndex ):
+            raise RuntimeError(f"Error: StartFrameIndex must be less than or equal to EndFrameIndex!")
 
         self.Seek(self.StartFrameIndex)
         return self

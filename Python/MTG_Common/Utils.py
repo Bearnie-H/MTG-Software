@@ -118,7 +118,7 @@ def DisplayImages(Images: typing.List[typing.Tuple[str, np.ndarray]] = ["", None
             UnmanagedDescriptions.append(Description)
 
         if ( XPos != 0 ) and ( XPos + Image.shape[1] >= 1440 ):
-            YPos += Image.shape[0]
+            YPos += Images[Index-1][1].shape[0]
             XPos = 0
 
         cv2.namedWindow(Description, WindowFlags)

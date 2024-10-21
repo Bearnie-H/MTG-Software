@@ -52,6 +52,8 @@ class Configuration():
     IsImage: bool
     VideoFrameRate: float
 
+    InvertImage: bool
+
     DryRun: bool
     Headless: bool
     ValidateOnly: bool
@@ -279,7 +281,6 @@ class AngleTracker():
 
     IsVideo: bool
 
-
     def __init__(self: AngleTracker, LogWriter: Logger = Logger(Prefix="AngleTracker"), RodVideo: vwr.VideoReadWriter = None, OutputDirectory: str = ".", Video: bool = True) -> None:
         """
         Constructor
@@ -459,31 +460,40 @@ class AngleTracker():
         F: Figure = self.IntraframeAlignmentFigure
         F.clear()
 
-        A: Axes = None
+        OrientationPDFAxes: Axes = None
+        OrientationCDFAxes: Axes = None
         if ( len(F.axes) == 0 ):
-            A = F.add_subplot(111, polar=True)
-            A.set_thetamin(-90)
-            A.set_thetamax(90)
+            OrientationPDFAxes = F.add_subplot(121, polar=True)
+            OrientationPDFAxes.set_thetamin(-90)
+            OrientationPDFAxes.set_thetamax(90)
+
+            OrientationCDFAxes = F.add_subplot(122)
+            OrientationCDFAxes.set_xlim((-90, 90))
         else:
-            A: Axes = F.gca()
+            OrientationPDFAxes: Axes = F.axes[0]
+            OrientationCDFAxes: Axes = F.axes[1]
 
-        UpperStDev, LowerStDev = (self.MeanAngles[-1] + self.AngularStDevs[-1]), (self.MeanAngles[-1] - self.AngularStDevs[-1])
-        UpperStDev = UpperStDev if UpperStDev < 90 else UpperStDev - 180
-        LowerStDev = LowerStDev if LowerStDev > -90 else LowerStDev + 180
+        #   Shift so that the mean angle is at 0 degrees for this plot
+        NormalizedOrientations: np.ndarray = Orientations - self.MeanAngles[-1]
+        NormalizedOrientations[NormalizedOrientations > 90] = NormalizedOrientations[NormalizedOrientations > 90] - 180
+        NormalizedOrientations[NormalizedOrientations < -90] = NormalizedOrientations[NormalizedOrientations < -90] + 180
+        UpperStDev, LowerStDev = self.AngularStDevs[-1], -self.AngularStDevs[-1]
 
-        n, bins = np.histogram(np.deg2rad(Orientations), bins=int(round(180.0 / HistogramBinSizing)), range=(-np.pi/2, np.pi/2), density=True)
-        n = np.append(n, n[0])
+        #   Plot the PDF of orientations as a polar antenna plot.
+        n, bins = np.histogram(np.deg2rad(NormalizedOrientations), bins=int(round(180.0 / HistogramBinSizing)), range=(-np.pi/2, np.pi/2), density=True)
+        OrientationPDFAxes.plot(bins[:-1], n)
+        OrientationPDFAxes.vlines(np.deg2rad(LowerStDev), 0, np.max(n), colors='k', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees (Left)")
+        OrientationPDFAxes.vlines(np.deg2rad(UpperStDev), 0, np.max(n), colors='b', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees (Right)")
+        OrientationPDFAxes.set_title(f"Rod Orientation Angular Distribution\nMeasurement Count = {self.RodCounts[-1]}\nAlignment Fraction = {self.AlignmentFractions[-1]:.3f}")
+        OrientationPDFAxes.set_xlabel(f"Rod Orientation Angles (degrees)")
+        OrientationPDFAxes.set_ylabel(f"Probability Density (n.d.)")
+        OrientationPDFAxes.minorticks_on()
+        OrientationPDFAxes.legend()
 
-        A.plot(bins, n)
-        # n = A.hist(Orientations, bins=int(180 / HistogramBinSizing), range=(-90,90), density=True, histtype="step")[0]
-        A.vlines(np.deg2rad(self.MeanAngles[-1]), 0, np.max(n), colors='g', label=f"Mean Orientation = {self.MeanAngles[-1]:.3f} degrees")
-        A.vlines(np.deg2rad(LowerStDev), 0, np.max(n), colors='k', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees (Left)")
-        A.vlines(np.deg2rad(UpperStDev), 0, np.max(n), colors='b', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees (Right)")
-        A.set_title(f"Rod Orientation Angular Distribution\nMeasurement Count = {self.RodCounts[-1]}\nAlignment Fraction = {self.AlignmentFractions[-1]:.3f}")
-        A.set_xlabel(f"Rod Orientation Angles (degrees)")
-        A.set_ylabel(f"Probability Density (n.d.)")
-        A.minorticks_on()
-        A.legend()
+        #   Plot the CDF of rods within a given angular deviation from the mean
+        #   angle. This gives a measure of how tightly aligned to the mean angle
+        #   the rods are.
+
 
         F.tight_layout()
 
@@ -560,6 +570,8 @@ def ComputeAlignmentMetric(Orientations: np.ndarray) -> typing.Tuple[int, float,
 
     #   Subtract the mean orientation angle, to get a copy of the orientations with mean angle at 0
     ShiftedOrientations: np.ndarray = Orientations.copy() - AngularMean
+    ShiftedOrientations[ShiftedOrientations > 90] = ShiftedOrientations[ShiftedOrientations > 90] - 180
+    ShiftedOrientations[ShiftedOrientations < -90] = ShiftedOrientations[ShiftedOrientations < -90] + 180
 
     #   Find the count of orientations with angles within 1 standard deviation of the mean orientation, and divide by the total number of measurements
     #   to get an alignment fraction value
@@ -804,9 +816,11 @@ def EllipticalFilter_PreprocessImage(Image: np.ndarray) -> np.ndarray:
     #   Convert to greyscale, as we don't need colour information for this
     #   process
     Image = MyUtils.BGRToGreyscale(Image)
+    MyUtils.DisplayImage("Greyscale Original Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=2, Topmost=True, ShowOverride=(not Config.Headless))
 
     #   Linearly scale the brightness of the image to cover the full 8-bit range
     Image = MyUtils.ConvertTo8Bit(Image)
+    MyUtils.DisplayImage("8-Bit Greyscale Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=2, Topmost=True, ShowOverride=(not Config.Headless))
 
     #   Check the median pixel of the image to see the foreground is bright or
     #   dark
@@ -820,7 +834,11 @@ def EllipticalFilter_PreprocessImage(Image: np.ndarray) -> np.ndarray:
     #   the background is bright and foreground is dark.
     if ( MedianPixelIntensity >= Threshold ):
         Image = -Image
+        Config.InvertImage = True
+    else:
+        Config.InvertImage = False
 
+    MyUtils.DisplayImage("8-Bit Greyscale Image with Dark Background", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=2, Topmost=True, ShowOverride=(not Config.Headless))
     return Image
 
 def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKernelSize: int, BackgroundRemovalSigma: float, ForegroundSmoothingKernelSize: int, ForegroundSmoothingSigma: float, DistinctOrientations: int, EllipticalFilterKernelSize: int, EllipticalFilterMinSigma: float, EllipticalFilterSigma: float, EllipticalFilterScaleFactor: float) -> typing.Tuple[np.ndarray, np.ndarray]:
@@ -875,16 +893,22 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
 
     #   Remove background by subtracting a large-window Gaussian blurred image
     Background: np.ndarray = cv2.GaussianBlur(Image, ksize=(BackgroundRemovalKernelSize, BackgroundRemovalKernelSize), sigmaX=BackgroundRemovalSigma)
+    MyUtils.DisplayImage("Blurred Background Image", MyUtils.ConvertTo8Bit(Background), 2, True, (not Config.Headless))
+
     Foreground: np.ndarray = Image.astype(np.int16) - Background.astype(np.int16)
+    MyUtils.DisplayImage("Foreground Image", MyUtils.ConvertTo8Bit(Foreground), 2, True, (not Config.Headless))
 
     #   Truncate negative pixels to 0
     Foreground[Foreground < 0] = 0
+    MyUtils.DisplayImage("Truncated Foreground Image", MyUtils.ConvertTo8Bit(Foreground), 2, True, (not Config.Headless))
 
     #   Smooth the image again, using a smaller-window Gaussian blur
     SmoothedForeground: np.ndarray = cv2.GaussianBlur(Foreground, ksize=(ForegroundSmoothingKernelSize, ForegroundSmoothingKernelSize), sigmaX=ForegroundSmoothingSigma)
+    MyUtils.DisplayImage("Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), 2, True, (not Config.Headless))
 
     #   Linearly rescale the image contrast back to the full 8-bit range
     SmoothedForeground = MyUtils.GammaCorrection(SmoothedForeground, Minimum=0, Maximum=255)
+    MyUtils.DisplayImage("Full-Range Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), 2, True, (not Config.Headless))
 
     #   Apply the Mexican hat filter to the image for a set of N different angles,
     #   storing each result as a layer in a new "z-stack".
@@ -916,6 +940,16 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
         #   Truncate any pixels which end up negative
         G[G <= 0] = 0
 
+        MyUtils.DisplayImages(
+            Images=[
+                (f"Elliptical Kernel: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(K)),
+                (f"Elliptical Features: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(G)),
+            ],
+            HoldTime=2,
+            Topmost=True,
+            ShowOverride=(not Config.Headless)
+        )
+
         #   Store this result in the corresponding slice of the angle-image Z-stack
         AngleStack[Index,:] = G
 
@@ -940,7 +974,10 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
     OutputImage = cv2.cvtColor(OutputImage, cv2.COLOR_HSV2BGR)
 
     OriginalPixelsMask = MyUtils.GreyscaleToBGR(MaximumPixels)
-    OutputImage[OriginalPixelsMask == 0] = MyUtils.GreyscaleToBGR(-Image)[OriginalPixelsMask == 0]
+    if ( Config.InvertImage ):
+        OutputImage[OriginalPixelsMask == 0] = MyUtils.GreyscaleToBGR(-Image)[OriginalPixelsMask == 0]
+    else:
+        OutputImage[OriginalPixelsMask == 0] = MyUtils.GreyscaleToBGR(Image)[OriginalPixelsMask == 0]
 
     MaximumPixelAngles = MaximumPixelAngles[MaximumPixels != 0].flatten()
 
@@ -1052,7 +1089,7 @@ def main() -> None:
     FrameCount: int = (Video.EndFrameIndex - Video.StartFrameIndex) + 1
     Tracker.Times = np.linspace(Video.StartFrameIndex / Config.VideoFrameRate, (Video.EndFrameIndex-1) / Config.VideoFrameRate, FrameCount)
     # Video.PrepareWriter(FrameRate=Config.VideoFrameRate)
-    Video.PrepareWriter(FrameRate=Config.VideoFrameRate, Resolution=(640, 400), TopLeft=(0, 120))
+    # Video.PrepareWriter(FrameRate=Config.VideoFrameRate, Resolution=(350, 350), TopLeft=(25, 150))
 
     #   Actually go ahead and process the provided file, calling the _ComputeAlignmentFraction callback on each frame.
     Video.ProcessVideo(PlaybackMode=Config.PlaybackMode, Callback=_ComputeAlignmentFraction, CallbackArgs=[Config.AnalysisType, Tracker])
@@ -1093,14 +1130,14 @@ def HandleArguments() -> bool:
     #   ...
 
     #   Add in the arguments for the elliptical filtering analysis method
-    Flags.add_argument("--ellipse-background-kernel", dest="BackgroundRemovalKernelSize", metavar="kernel-size", type=int, required=False, default=81, help="The size of the kernel used for background subtraction.")
-    Flags.add_argument("--ellipse-background-sigma", dest="BackgroundRemovalSigma", metavar="sigma", type=float, required=False, default=15, help="The standard deviation of the Gaussian blur used for background subtraction.")
-    Flags.add_argument("--ellipse-smoothing-kernel", dest="ForegroundSmoothingKernelSize", metavar="kernel-size", type=int, required=False, default=11, help="The size of the kernel used for foreground smoothing.")
-    Flags.add_argument("--ellipse-smoothing-sigma", dest="ForegroundSmoothingSigma", metavar="sigma", type=float, required=False, default=2, help="The standard deviation of the Gaussian blur used for foreground smoothing.")
-    Flags.add_argument("--ellipse-kernel", dest="EllipticalFilterKernelSize", metavar="kernel-size", type=int, required=False, default=31, help="The size of the kernel used for the Mexican Hat filtering.")
-    Flags.add_argument("--ellipse-min-sigma", dest="EllipticalFilterMinSigma", metavar="sigma", type=float, required=False, default=1, help="The standard deviation of the short axis of the Mexican Hat filter.")
-    Flags.add_argument("--ellipse-sigma", dest="EllipticalFilterSigma", metavar="sigma", type=float, required=False, default=15, help="The standard deviation of the long axis of the Mexican Hat filter.")
-    Flags.add_argument("--ellipse-scale-factor", dest="EllipticalFilterScaleFactor", metavar="s", type=float, required=False, default=4, help="The scale factor for the standard deviations of the Gaussian kernels used to approximate a Mexican Hat by a Difference of Gaussians.")
+    Flags.add_argument("--ellipse-background-kernel", dest="BackgroundRemovalKernelSize",   metavar="kernel-size", type=int,   required=False, default=81, help="The size of the kernel used for background subtraction.")
+    Flags.add_argument("--ellipse-background-sigma",  dest="BackgroundRemovalSigma",        metavar="sigma",       type=float, required=False, default=15, help="The standard deviation of the Gaussian blur used for background subtraction.")
+    Flags.add_argument("--ellipse-smoothing-kernel",  dest="ForegroundSmoothingKernelSize", metavar="kernel-size", type=int,   required=False, default=11, help="The size of the kernel used for foreground smoothing.")
+    Flags.add_argument("--ellipse-smoothing-sigma",   dest="ForegroundSmoothingSigma",      metavar="sigma",       type=float, required=False, default=2,  help="The standard deviation of the Gaussian blur used for foreground smoothing.")
+    Flags.add_argument("--ellipse-kernel",            dest="EllipticalFilterKernelSize",    metavar="kernel-size", type=int,   required=False, default=81, help="The size of the kernel used for the Mexican Hat filtering.")
+    Flags.add_argument("--ellipse-min-sigma",         dest="EllipticalFilterMinSigma",      metavar="sigma",       type=float, required=False, default=1,  help="The standard deviation of the short axis of the Mexican Hat filter.")
+    Flags.add_argument("--ellipse-sigma",             dest="EllipticalFilterSigma",         metavar="sigma",       type=float, required=False, default=10, help="The standard deviation of the long axis of the Mexican Hat filter.")
+    Flags.add_argument("--ellipse-scale-factor",      dest="EllipticalFilterScaleFactor",   metavar="s",           type=float, required=False, default=4,  help="The scale factor for the standard deviations of the Gaussian kernels used to approximate a Mexican Hat by a Difference of Gaussians.")
 
             #   Add in flags for manipulating the logging functionality of the script.
     Flags.add_argument("--log-file", dest="LogFile", metavar="file-path", type=str, required=False, default="-", help="File path to the file to write all log messages of this program to.")
