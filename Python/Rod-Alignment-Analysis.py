@@ -31,6 +31,7 @@ import scipy.stats
 from MTG_Common.Logger import Logger, Discarder
 from MTG_Common import VideoReadWriter as vwr
 from MTG_Common import Utils as MyUtils
+from MTG_Common import ZStack
 #   ...
 
 ANALYSIS_METHOD_SOBEL:      int = 1
@@ -50,6 +51,7 @@ class Configuration():
 
     IsVideo: bool
     IsImage: bool
+    IsZStack: bool
     VideoFrameRate: float
 
     InvertImage: bool
@@ -63,6 +65,8 @@ class Configuration():
     PlaybackMode: int
 
     AngularResolution: float
+
+    LIFClearingAlgorithm: str
 
     #   Elliptical Filter parameters
     BackgroundRemovalKernelSize: int
@@ -94,11 +98,12 @@ class Configuration():
 
         self.PlaybackMode = vwr.PlaybackMode_NoDelay
 
-        self.IsVideo         = False
-        self.IsImage         = False
-        self.DryRun          = False
-        self.Headless        = False
-        self.ValidateOnly    = False
+        self.IsVideo        = False
+        self.IsImage        = False
+        self.IsZStack       = False
+        self.DryRun         = False
+        self.Headless       = False
+        self.ValidateOnly   = False
 
         self._LogWriter = LogWriter
         self._OutputFolder = ""
@@ -161,11 +166,18 @@ class Configuration():
         if ( Arguments.IsVideo ):
             self.IsVideo = True
             self.IsImage = False
+            self.IsZStack = False
             self.VideoFrameRate = Arguments.FrameRate
             self.InterFrameDuration = 1.0 / self.VideoFrameRate
         elif ( Arguments.IsImage ):
             self.IsImage = True
             self.IsVideo = False
+            self.IsZStack = False
+        elif ( Arguments.IsZStack ):
+            self.IsZStack = True
+            self.IsImage = False
+            self.IsVideo = False
+            self.LIFClearingAlgorithm = Arguments.LIFClearingMethod
 
         self.AngularResolution = Arguments.AngularResolution
 
@@ -250,6 +262,9 @@ class Configuration():
             if ( self.Headless ):
                 self.PlaybackMode = vwr.PlaybackMode_NoDisplay
                 self._LogWriter.Println(f"Asserting playback mode [ NoDisplay ] in headless mode.")
+        elif ( self.IsZStack ):
+            Stack: ZStack.ZStack = ZStack.ZStack.FromFile(self.SourceFilename, self.LIFClearingAlgorithm)
+
 
         if ( self.AngularResolution <= 0 ) or ( self.AngularResolution >= 90 ):
             self._LogWriter.Errorln(f"Invalid angular resolution. Must be a real number between (0, 90) degrees: {self.AngularResolution}")
@@ -1125,8 +1140,12 @@ def HandleArguments() -> bool:
 
     Flags.add_argument("--angular-resolution", dest="AngularResolution", metavar="degrees", type=float, required=False, default=9.0, help="The angular resolution of the resulting histogram of rod orientations, in units of degrees.")
 
-    #   Add in argument for brightfield versus fluorescent imaging.
+    #   Add in argument(s) for brightfield versus fluorescent imaging.
+    #   ...
+
     #   Add in handling for Z-stack images.
+    Flags.add_argument("--z-stack", dest="IsZStack", action='store_true', default=False, help="")
+    Flags.add_argument("--lif-clearing-method", dest="LIFClearingMethod", metavar='clearing-algorithm', type=str, required=False, default='LVCC', help="")
     #   ...
 
     #   Add in the arguments for the elliptical filtering analysis method

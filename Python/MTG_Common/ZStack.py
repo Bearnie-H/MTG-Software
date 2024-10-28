@@ -29,12 +29,16 @@ from __future__ import annotations
 
 #   Standard Library Imports
 import math
+import os
+import traceback
 import typing
 
 #   3rd Party Imports
 import cv2
 import numpy as np
+import readlif
 from readlif.reader import LifFile, LifImage
+import czifile
 #   ...
 
 #   Custom Local Imports
@@ -54,10 +58,10 @@ class ZStack():
 
     ##  Public Member Variables
     Name: str
+    Pixels: np.ndarray
     #   ...
 
     ##  Private Member Variables
-    _Pixels: np.ndarray
     _LogWriter: Logger.Logger
     #   ...
 
@@ -74,14 +78,14 @@ class ZStack():
 
         self.Name = None
 
-        self._Pixels = np.ndarray([])
+        self.Pixels = np.ndarray([])
         self._LogWriter = LogWriter
 
         return
 
     ### Static Class Methods
     @staticmethod
-    def FromFile(Filename: str, SeriesName: str = "") -> ZStack:
+    def FromFile(Filename: str, *args) -> ZStack:
         """
         FromFile
 
@@ -89,19 +93,22 @@ class ZStack():
 
         Filename:
             ...
-        SeriesName:
+        args:
             ...
 
         Return (ZStack):
             ...
         """
 
-        if ( Filename.lower().endswith("lif") ):
-            return ZStack.FromLIF(Filename, SeriesName)
-        elif ( Filename.lower().endswith("tif") ) or ( Filename.lower().endswith("tiff") ):
-            return ZStack.FromTIF(Filename)
-        else:
-            return None
+        match os.path.splitext(Filename)[1].lower():
+            case ".lif":
+                return ZStack.FromLIF(Filename, *args)
+            case ".tif", ".tiff":
+                return ZStack.FromTIF(Filename)
+            case ".czi":
+                return ZStack.FromCZI(Filename)
+            case _:
+                raise NotImplementedError(f"Z-Stacks from [ {os.path.splitext(Filename)[1].lower()} ] files is not yet supported!")
 
     @staticmethod
     def FromLIF(Filename: str, SeriesName: str) -> ZStack:
@@ -152,6 +159,28 @@ class ZStack():
 
     #   ...
 
+    @staticmethod
+    def FromCZI(Filename: str) -> ZStack:
+        """
+        FromCZI
+
+        This function...
+
+        Filename:
+            ...
+
+        Return (ZStack):
+            ...
+        """
+
+        Stack: ZStack = ZStack()
+
+        Success: bool = Stack.OpenCZIFile(Filename)
+        if ( Success ):
+            return Stack
+
+        return None
+
     ### Public Methods
     def Display(self: ZStack) -> None:
         """
@@ -163,7 +192,7 @@ class ZStack():
             ...
         """
 
-        if ( self._Pixels is None ):
+        if ( self.Pixels is None ):
             return 0
 
         CurrentLayer: int = 0
@@ -171,43 +200,21 @@ class ZStack():
         while ( Key not in [ord(x) for x in "qQ"] ):
 
             Key = Utils.DisplayImage(
-                Description=f"Z-Stack {self.Name} - Layer {CurrentLayer}/{self._Pixels.shape[0]}",
-                Image=Utils.GammaCorrection(self._Pixels[CurrentLayer,:]),
+                Description=f"Z-Stack {self.Name} - Layer {CurrentLayer}/{self.Pixels.shape[0]}",
+                Image=Utils.GammaCorrection(self.Pixels[CurrentLayer,:]),
                 HoldTime=0
             )
 
             if ( Key in [ord(x) for x in 'uU'] ):
                 CurrentLayer += 1
-                if ( CurrentLayer >= self._Pixels.shape[0] ):
-                    CurrentLayer = self._Pixels.shape[0] - 1
+                if ( CurrentLayer >= self.Pixels.shape[0] ):
+                    CurrentLayer = self.Pixels.shape[0] - 1
             elif ( Key in [ord(x) for x in 'dD'] ):
                 CurrentLayer -= 1
                 if ( CurrentLayer < 0 ):
                     CurrentLayer = 0
 
         return
-
-    def OpenFile(self: ZStack, Filename: str, SeriesName: str = "") -> bool:
-        """
-        OpenFile
-
-        This function...
-
-        Filename:
-            ...
-        SeriesName:
-            ...
-
-        Return (bool):
-            ...
-        """
-
-        if ( Filename.lower().endswith("lif") ):
-            return self.OpenLIFFile(Filename, SeriesName)
-        elif ( Filename.lower().endswith("tif") ) or ( Filename.lower().endswith("tiff") ):
-            return self.OpenTIFFile(Filename)
-        else:
-            return False
 
     def OpenLIFFile(self: ZStack, Filename: str, SeriesName: str) -> bool:
         """
@@ -263,17 +270,14 @@ class ZStack():
 
                     #   Ensure the pixel array is created with the correct size and bit depth to support the image data...
                     BitDepth = int(math.ceil(BitDepth / 8.0) * 8)
-                    self._Pixels = np.zeros(shape=(Z, X, Y), dtype=f"uint{BitDepth}")
+                    self.Pixels = np.zeros(shape=(Z, X, Y), dtype=f"uint{BitDepth}")
 
                     for Index, Layer in enumerate(Images.get_iter_z()):
-                        self._Pixels[Index,:] = Layer
-
-                    return True
-
+                        self.Pixels[Index,:] = Layer
         except:
             return False
 
-        return False
+        return True
 
     def OpenTIFFile(self: ZStack, Filename: str) -> bool:
         """
@@ -297,10 +301,36 @@ class ZStack():
             if not ( Success ):
                 raise ValueError(f"Image file [ {Filename} ] cannot be parsed by cv2.imreadmulti().")
 
-            self._Pixels = np.array(ImageStack)
-            return True
-
+            self.Pixels = np.array(ImageStack)
         except:
+            return False
+
+        return True
+
+    def OpenCZIFile(self: ZStack, Filename: str) -> bool:
+        """
+        OpenCZIFile
+
+        This function...
+
+        Filename:
+            ...
+
+        Return (bool):
+            ...
+        """
+
+        if ( Filename is None ) or ( Filename == "" ):
+            self._LogWriter.Errorln(f"Failed to open Z-Stack from CZI file, no filename provided.")
+            return False
+
+        try:
+            TIFFilename: str = Filename.replace(".czi", ".tif")
+            self._LogWriter.Println(f"Converting from *.czi file to *.tif file...")
+            czifile.czi2tif(Filename, TIFFilename)
+            return self.OpenTIFFile(TIFFilename)
+        except Exception as e:
+            self._LogWriter.Errorln(f"Exception raised while attempting to open CZI Z-Stack: [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}\n")
             return False
 
     def SetName(self: ZStack, Name: str) -> ZStack:
@@ -318,6 +348,47 @@ class ZStack():
 
         self.Name = Name
         return self
+
+    def MaximumIntensityProjection(self: ZStack, Axis: str = 'z') -> np.ndarray:
+        """
+        MaximumIntensityProjection
+
+        This function computes and prepares the Maximum Intensity Projection from
+        the Z-Stack, returning a single 2D image consiting of the collection of the
+        brightest pixel values from any slice through the stack. This is a commonly
+        used projection method for operating with Z-Stack images as a 'smaller' 2D
+        image, ideally without losing too much information.
+
+        Z_Stack:
+            The current open Z-stack to compute the projection of.
+        Axis:
+            Which axis of the Z-Stack should be collapsed in the MIP.
+
+        Return (np.ndarray):
+            The resulting 2D NumPy array of the MIP image. The pixel values are
+            scaled to the full range of the bit depth of the image.
+        """
+
+        axis: int = 0
+        if ( Axis.lower() == 'z' ):
+            axis = 0
+        elif ( Axis.lower() == 'y' ):
+            axis = 1
+        elif ( Axis.lower() == 'x' ):
+            axis = 2
+        else:
+            raise ValueError(f"Maximum Intensity Projection Axis must be one of [ 'x', 'y', 'z' ]. Got [ '{Axis}' ]")
+
+        #   Given that the Z_Stack has the 0th axis corresponding to each Z-Slice through the stack,
+        #   the maximum intensity projection (MIP) is computed as the maximum pixel value over the
+        #   0th axis of the 3D array.
+        Projection: np.ndarray = np.max(self.Pixels, axis=axis)
+
+        #   Apply Gamma correction to this projection image...
+        Projection = Utils.GammaCorrection(Projection)
+
+        #   Return the projection to the user.
+        return Projection
 
     #   ...
 

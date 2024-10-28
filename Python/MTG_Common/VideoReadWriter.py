@@ -7,10 +7,12 @@
 from __future__ import annotations
 import datetime
 import random
+import tempfile
 import time
 import traceback
 
 from . import Logger
+from . import Utils
 
 #   Import the standard library packages and classes required.
 import os
@@ -642,6 +644,37 @@ class VideoReadWriter(Iterator):
         self._PreviousFrameTimestamps   = []
         return
 
+    ##  Static Class Methods
+    @staticmethod
+    def FromImageSequence(Images: np.ndarray, writeFile: str = None, logger: Logger.Logger = Logger.Logger(Prefix="FromImageSequence"), progress: bool = True) -> VideoReadWriter:
+        """
+        FromImageSequence
+
+        This function...
+
+        Images:
+            ...
+        writeFile:
+            ...
+        logger:
+            ...
+        progress:
+            ...
+
+        Return (VideoReadWriter):
+            ...
+        """
+
+        with tempfile.NamedTemporaryFile() as OutFile:
+            WriteFile: str = OutFile.name + ".avi"
+            V: VideoReadWriter = VideoReadWriter(None, WriteFile, Logger.Logger(Prefix="CZI to Video Converter"), True)
+            V.PrepareWriter(OutputFilename=WriteFile, FourCC='MJPG', Resolution=Images[0].shape)
+            for Image in Images:
+                V.WriteFrame(Utils.GreyscaleToBGR(Image))
+            V._closeOutputVideo()
+
+            return VideoReadWriter(readFile=WriteFile, writeFile=writeFile, logger=logger, progress=progress)
+
     ##  Public Class Methods
     def Play(self, WindowName: str = None) -> bool:
         """
@@ -1130,7 +1163,7 @@ class VideoReadWriter(Iterator):
         FrameNumber = int(FrameNumber)
 
         #   Make sure the requested frame number is in range.
-        if ( 0 > FrameNumber ) or ( FrameNumber >= self.SourceNumFrames ):
+        if ( 0 > FrameNumber ) or ( FrameNumber > self.SourceNumFrames ):
             self._LogWriter.Errorln(f"Requested frame index [ {FrameNumber} ] is out of range of source video file: [ 0, {self.SourceNumFrames - 1} ].")
             raise RuntimeError(f"Requested index [ {FrameNumber} ] is out of range!")
 
