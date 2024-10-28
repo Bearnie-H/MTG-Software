@@ -1294,7 +1294,7 @@ class VideoReadWriter(Iterator):
 
         return self
 
-    def PrepareWriter(self, OutputFilename: str = None, FrameRate: float = 30, FourCC: str = "avc1", Resolution: Tuple[int, int] = (-1, -1), TopLeft: Tuple[int, int] = (0,0)) -> VideoReadWriter:
+    def PrepareWriter(self, OutputFilename: str = None, FrameRate: float = 30, FourCC: str = "mp4v", Resolution: Tuple[int, int] = (-1, -1), TopLeft: Tuple[int, int] = (0,0)) -> VideoReadWriter:
         """
         PrepareWriter:
 
@@ -1309,7 +1309,7 @@ class VideoReadWriter(Iterator):
             The desired frame-rate the output video file should play at.
         FourCC:
             The FourCC (four character code) indicating the video codec to use
-            when writing the output video file. Defaults to avc1, or H.264
+            when writing the output video file. Defaults to mp4v, or Motion JPEG
             encoding.
         Resolution:
             The dimensions (in pixels) of the output video file. A tuple of
@@ -1338,7 +1338,7 @@ class VideoReadWriter(Iterator):
             FrameRate = self.SourceFrameRate
 
         if ( FourCC is None ):
-            FourCC = "avc1"
+            FourCC = "mp4v"
 
         if ( Resolution[0] is None ):
             Resolution = (self.SourceWidth, Resolution[1])

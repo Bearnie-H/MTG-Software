@@ -474,8 +474,7 @@ class AngleTracker():
         n, bins = np.histogram(np.deg2rad(Orientations), bins=int(round(180.0 / HistogramBinSizing)), range=(-np.pi/2, np.pi/2), density=True)
         n = np.append(n, n[0])
 
-        A.plot(bins, n)
-        # n = A.hist(Orientations, bins=int(180 / HistogramBinSizing), range=(-90,90), density=True, histtype="step")[0]
+        A.bar(bins, n, width=1)
         A.vlines(np.deg2rad(self.MeanAngles[-1]), 0, np.max(n), colors='g', label=f"Mean Orientation = {self.MeanAngles[-1]:.3f} degrees")
         A.vlines(np.deg2rad(LowerStDev), 0, np.max(n), colors='k', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees (Left)")
         A.vlines(np.deg2rad(UpperStDev), 0, np.max(n), colors='b', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees (Right)")
@@ -1048,12 +1047,11 @@ def main() -> None:
     else:
         Video = vwr.VideoReadWriter(readFile=Config.SourceFilename, writeFile=os.path.join(Config.GetOutputDirectory(), f"{Config.AnalysisMethod.title()} Method.mp4"), logger=LogWriter, progress=(not LogWriter.WritesToFile()))
 
-
     #   Prepare the timing information for the angle statistics...
     FrameCount: int = (Video.EndFrameIndex - Video.StartFrameIndex) + 1
     Tracker.Times = np.linspace(Video.StartFrameIndex / Config.VideoFrameRate, (Video.EndFrameIndex-1) / Config.VideoFrameRate, FrameCount)
-    # Video.PrepareWriter(FrameRate=Config.VideoFrameRate)
-    Video.PrepareWriter(FrameRate=Config.VideoFrameRate, Resolution=(640, 400), TopLeft=(0, 120))
+    Video.PrepareWriter(FrameRate=Config.VideoFrameRate)
+    # Video.PrepareWriter(FrameRate=Config.VideoFrameRate, Resolution=(350, 350), TopLeft=(25, 150))
 
     #   Actually go ahead and process the provided file, calling the _ComputeAlignmentFraction callback on each frame.
     Video.ProcessVideo(PlaybackMode=Config.PlaybackMode, Callback=_ComputeAlignmentFraction, CallbackArgs=[Config.AnalysisType, Tracker])
@@ -1098,7 +1096,7 @@ def HandleArguments() -> bool:
     Flags.add_argument("--ellipse-background-sigma", dest="BackgroundRemovalSigma", metavar="sigma", type=float, required=False, default=15, help="The standard deviation of the Gaussian blur used for background subtraction.")
     Flags.add_argument("--ellipse-smoothing-kernel", dest="ForegroundSmoothingKernelSize", metavar="kernel-size", type=int, required=False, default=11, help="The size of the kernel used for foreground smoothing.")
     Flags.add_argument("--ellipse-smoothing-sigma", dest="ForegroundSmoothingSigma", metavar="sigma", type=float, required=False, default=2, help="The standard deviation of the Gaussian blur used for foreground smoothing.")
-    Flags.add_argument("--ellipse-kernel", dest="EllipticalFilterKernelSize", metavar="kernel-size", type=int, required=False, default=31, help="The size of the kernel used for the Mexican Hat filtering.")
+    Flags.add_argument("--ellipse-kernel", dest="EllipticalFilterKernelSize", metavar="kernel-size", type=int, required=False, default=25, help="The size of the kernel used for the Mexican Hat filtering.")
     Flags.add_argument("--ellipse-min-sigma", dest="EllipticalFilterMinSigma", metavar="sigma", type=float, required=False, default=1, help="The standard deviation of the short axis of the Mexican Hat filter.")
     Flags.add_argument("--ellipse-sigma", dest="EllipticalFilterSigma", metavar="sigma", type=float, required=False, default=15, help="The standard deviation of the long axis of the Mexican Hat filter.")
     Flags.add_argument("--ellipse-scale-factor", dest="EllipticalFilterScaleFactor", metavar="s", type=float, required=False, default=4, help="The scale factor for the standard deviations of the Gaussian kernels used to approximate a Mexican Hat by a Difference of Gaussians.")
