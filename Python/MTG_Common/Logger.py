@@ -106,7 +106,9 @@ class Logger():
             if ( self._LastWriteRaw ):
                 self._OutputStream.write('\n')
             self._OutputStream.flush()
-            self._OutputStream.close()
+
+            if ( self.WritesToFile() ):
+                self._OutputStream.close()
 
         return
 

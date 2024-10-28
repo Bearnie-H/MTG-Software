@@ -57,11 +57,10 @@
     instrumentation can be turned off.
 */
 #define DEBUG 1
-
 #if defined(NDEBUG)
-#if defined(DEBUG)
-#undef DEBUG
-#endif
+    #if defined(DEBUG)
+        #undef DEBUG
+    #endif
 #endif
 
 /*
@@ -84,7 +83,7 @@
 */
 #define CORRECT_DELAY
 #if defined(NCORRECT_DELAY)
-#undef CORRECT_DELAY
+    #undef CORRECT_DELAY
 #endif
 
 /* +++ Begin Program Macro Definitions +++ */
@@ -328,6 +327,7 @@ typedef enum PWMMode_t: uint8_t {
     PWMMode_FastPWM_8Bit,
 
     // Define further modes below if desired and necessary.
+    // ...
 
 } PWMMode_t;
 
@@ -919,7 +919,7 @@ typedef struct InterruptFrequency_t {
         LastUpdateTimeStamp
 
         This value represents Timestamp_t at which the DeltaT value was last
-        computed.  This is used to reduce the computational overhead associated
+        computed. This is used to reduce the computational overhead associated
         with constantly recomputing this value, only requiring a full
         re-computation once per specified update period.
     */
@@ -930,7 +930,7 @@ typedef struct InterruptFrequency_t {
 
         This value defines how frequently to actually re-compute the DeltaT value.
     */
-    Duration_t UpdatePeriod = 1 * Second;
+    Duration_t UpdatePeriod;
 
     /*
         DeltaT
@@ -2058,7 +2058,7 @@ constexpr Pin_t DeviceInitializedPin = 12;
 
     This pin...
 */
-constexpr Pin_t FieldTrajectoryEnablePin = LED_BUILTIN;
+constexpr Pin_t FieldTrajectoryEnablePin = 13;
 
 /*
     WatchdogResetNotificationPin
@@ -3721,7 +3721,7 @@ void ComputeNextFieldOrientation(void) {
     static constexpr double Alpha = 0.0;  // Hz^2, rotational acceleration
 
     static constexpr double Period = 180.0;
-    static constexpr double OffDelay = 0.0;//Period / Segments;
+    static constexpr double OffDelay = 0.0; //Period / Segments;
 
     if ( t <= Period ) {
         Phi += ((TWO_PI * Omega * dt) + (TWO_PI * 2 * Alpha * t * dt));
@@ -3750,7 +3750,6 @@ void ComputeNextFieldOrientation(void) {
         Emitter.DesiredFieldOrientation = FIELD_ORIENTATION_OFF;
         Pin_TriggerOff(FieldTrajectoryEnablePin);
     }
-
 
     return;
 }

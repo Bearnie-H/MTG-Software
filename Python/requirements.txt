@@ -9,7 +9,6 @@ gitpython==3.1.43
 imageio==2.34.1
 importlib-metadata==7.1.0
 iniconfig==2.0.0
-ipython==8.25.0
 jedi==0.19.1
 kiwisolver==1.4.5
 lazy-loader==0.4

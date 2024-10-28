@@ -27,14 +27,13 @@ import cv2
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import readlif
-from readlif.reader import LifFile, LifImage
+from scipy.signal import correlate
 #   ...
 
 #   Import the desired locally written modules
 from MTG_Common import Logger
 from MTG_Common import Utils
-from MTG_Common.ZStack import ZStack
+from MTG_Common import ZStack
 #   ...
 
 #   Define the classes required by this program.
@@ -85,6 +84,8 @@ class Configuration():
 
         self.MIProjectionFilename: str = ""
         self.ConfigurationDumpFilename: str = ""
+
+        self._Z_Stack: ZStack.ZStack = None
         #   ...
 
         return
@@ -185,7 +186,7 @@ class Configuration():
 
         return self._OutputDirectory
 
-    def GetZStack(self: Configuration) -> np.ndarray:
+    def GetZStack(self: Configuration) -> ZStack.ZStack:
         """
         GetZStack
 
@@ -238,7 +239,8 @@ class Configuration():
             f"NumPy Version:                    {np.version.full_version}",
             f"OpenCV Version:                   {cv2.getVersionString()}",
             f"MatPlotLib Version:               {matplotlib.__version__}",
-            f"ReadLIF Version:                  {readlif.__version__}",
+            f"ReadLIF Version:                  {ZStack.readlif.__version__}",
+            f"czifile Version:                  {ZStack.czifile.__version__}",
             f"...",
             f"---------- Analysis Timing Information ----------",
             f"Analysis Started :                {self._StartTime.strftime(TimeFormat)}",
@@ -255,7 +257,7 @@ class Configuration():
             f"Z-Stack Truncation Threshold:     {self.ZTruncationThreshold if self.EnableZTruncation else 'N/A'}",
             f"...",
             f"---------- Results & Metrics ----------",
-            f"Image Bit Depth:                  {np.iinfo(self._Z_Stack.dtype).bits if self._Z_Stack is not None else 'unknown'} bit",
+            f"Image Bit Depth:                  {np.iinfo(self._Z_Stack.Pixels.dtype).bits if self._Z_Stack is not None else 'unknown'} bit",
             f"...",
             f"---------- Enable/Disable Flags ----------",
             f"Dry-Run Mode:                     {self.EnableDryRun}",
@@ -302,146 +304,28 @@ class Configuration():
         """
         self._LogWriter.Println(f"Attempting to open image-stack file [ {ImageStackFilename} ]...")
 
-        ImageStack: ZStack = ZStack(LogWriter=LogWriter)
-        if ( ImageStack.OpenFile(ImageStackFilename, ClearingAlgorithm) ):
+        self._Z_Stack: ZStack.ZStack = ZStack.ZStack(LogWriter=LogWriter)
+        Success: bool = False
+        match os.path.splitext(ImageStackFilename)[1].lower():
+            case ".lif":
+                Success = self._Z_Stack.OpenLIFFile(ImageStackFilename, ClearingAlgorithm)
+            case ".tif", ".tiff":
+                Success = self._Z_Stack.OpenTIFFile(ImageStackFilename)
+            case ".czi":
+                Success = self._Z_Stack.OpenCZIFile(ImageStackFilename)
+            case _:
+                self._LogWriter.Errorln(f"Unknown Z-Stack file extension for file [ {ImageStackFilename} ]...")
+                return False
+
+        if ( Success ):
             self._LogWriter.Println(f"Successfully opened and extraced Z-Stack image from file [ {ImageStackFilename} ].")
             return True
 
-        self._LogWriter.Errorln(f"Failed to open file [ {ImageStackFilename} ] as either *.LIF or *.TIFF file to read Z-Stack image data!")
+        self._LogWriter.Errorln(f"Unknown error while attempting to open Z-Stack image from file [ {ImageStackFilename} ]...")
         return False
 
+
     ### ----- End Private Methods -----
-
-#   Standalone Helper Functions
-def OpenLIFFile(Filename: str = "", SeriesSubstring: str = "") -> typing.Tuple[bool, np.ndarray]:
-    """
-    OpenLIFFile
-
-    This function attempts to open the provided filename as a *.LIF formatted
-    image file.  If this succeeds, it then attempts to find a "series" within
-    the file with the provided substring as a search token, to use as the
-    Z-Stack image. The Z-Stack pixels are linearly rescaled twice, first to take
-    full advantage of the bit-depth of the NumPy data type of the array, and
-    second to fully cover this range.  This typically implies a scaling from
-    12-bit to 16-bits by multiplying pixels by 16, followed by linearly
-    stretching the pixel values to cover the full range [0,65536).
-
-    Filename:
-        The full path to the file to open and attempt to read as a *.LIF image
-        file.
-    SeriesSubstring:
-        A search token to use to identify which specific "Series" within the
-        *.LIF file corresponds to the Z-stack of interest.
-
-    Return (Tuple[bool, ndarray]):
-        [0] - bool:
-            A boolean indicating whether the image file was opened successfully
-            and the Z-stack extracted.
-        [1] - ndarray:
-            The Z-stack as extracted and initially normalized from the image
-            file, or None on an error.
-    """
-
-    if ( Filename is None ) or ( Filename == "" ):
-        LogWriter.Errorln(f"Missing [ Filename ] for opening *.LIF image file!")
-        return (False, None)
-
-    if ( SeriesSubstring is None ) or ( SeriesSubstring == "" ):
-        LogWriter.Errorln(f"Missing [ SeriesSubstring ] for opening *.LIF image file!")
-        return (False, None)
-
-    LogWriter.Println(f"Attempting to open file [ {Filename} ] as *.LIF image file...")
-
-    try:
-        LifStack: LifFile = LifFile(Filename)
-        LogWriter.Println(f"Successfully opened file [ {Filename} ] as *.LIF file.")
-
-        LogWriter.Println(f"Found a total of [ {LifStack.num_images} ] images and/or series within the file...")
-        LogWriter.Println(f"Searching for a series containing the clearing algorithm [ {SeriesSubstring} ]...")
-
-        #   Prepare an index for the z-stack corresponding to the post-filtered images.
-        ClearedSeriesIndex: int = -1
-        for Index, Image in enumerate(LifStack.image_list, start=1):
-            LogWriter.Println(f"Image/Series [ {Index}/{LifStack.num_images} ] - Name: {Image['name']}")
-            if ( str(Image['name']).lower().find(SeriesSubstring.lower()) >= 0 ):
-                LogWriter.Println(f"Found series using clearing algorithm [ {SeriesSubstring} ] at index [ {Index} ].")
-                Config.LIFSeriesName = Image['name']
-                ClearedSeriesIndex = Index-1
-
-        if ( ClearedSeriesIndex < 0 ):
-            if ( Config.HeadlessMode ):
-                LogWriter.Errorln(f"Failed to identify expected series name for z-stack. Cannot determine the correct series while in headless mode!")
-                raise ValueError(f"Failed to identify expected series name for z-stack!")
-            else:
-                    #   Failed to identify the likely series based off the name.
-                    #   Prompt the user to provide the index of the series.
-                    LogWriter.Warnln(f"Failed to identify expected series name for z-stack...")
-                    ClearedSeriesIndex = int(input("Please enter the index of the image or series to open as the z-stack: "))
-
-        LogWriter.Println(f"Working with series index [ {ClearedSeriesIndex+1} ] as the DRG Z-Stack...")
-        ImageStack: LifImage = LifStack.get_image(ClearedSeriesIndex)
-        LogWriter.Println(f"Image Series has dimensions: x={ImageStack.dims.x}, y={ImageStack.dims.y}, z={ImageStack.dims.z}, t={ImageStack.dims.t}, c={ImageStack.channels}")
-
-        #   Specifically extract out the z-stack...
-        #   Scale up to the full 16-bits, if not already.
-        LogWriter.Println(f"Image Series is [ {ImageStack.bit_depth[0]}bit ] colour depth...")
-        ScaleFactor: int = 1
-        if ( ImageStack.bit_depth[0] != 16 ):
-            LogWriter.Println(f"Converting image stack to 16 bit depth...")
-            ScaleFactor = (16 - ImageStack.bit_depth[0]) ** 2
-
-        LogWriter.Println(f"Reading Z-slices from *.LIF file...")
-        Z_Stack: np.ndarray = np.array([np.uint16(np.array(i) * ScaleFactor) for i in ImageStack.get_iter_z()])
-        LogWriter.Println(f"Finished Reading z-slices from *.LIF file into numpy array!")
-
-        return (True, Z_Stack)
-    except:
-        LogWriter.Warnln(f"File [ {Filename} ] failed to be opened and read as a *.LIF file!")
-
-    return (False, None)
-
-def OpenTIFFFile(Filename: str = None) -> typing.Tuple[bool, np.ndarray]:
-    """
-    OpenTIFFFile
-
-    This function provides the same functionality as OpenLIFFile() above, but
-    for multi-page *.TIFF files.
-
-    Filename:
-        The full path to the *.TIFF file to attempt to open, containing the
-        Z-Stack image.
-
-    Return (Tuple[bool, ndarray]):
-        [0] - bool:
-            A boolean indicating whether the image file was opened successfully
-            and the Z-stack extracted.
-        [1] - ndarray:
-            The Z-stack as extracted and initially normalized from the image
-            file, or None on an error.
-    """
-
-    if ( Filename is None ) or ( Filename == "" ):
-        LogWriter.Errorln(f"Missing [ Filename ] for opening *.TIFF image file!")
-        return (False, None)
-
-    LogWriter.Println(f"Attempting to open file [ {Filename} ] as a multi-page *.TIFF image file...")
-    Config.ClearingAlgorithm = None
-
-    try:
-        Valid, Z_Stack = cv2.imreadmulti(Filename, [], cv2.IMREAD_ANYDEPTH)
-        if ( not Valid ):
-            raise ValueError(f"Image file [ {Filename} ] cannot be read with cv2.imreadmulti()!")
-
-        #   Convert from a list of NumPy arrays to a single large array.
-        Z_Stack = np.array(Z_Stack)
-        LogWriter.Println(f"Successfully read Z-Stack from *.TIFF file [ {Filename} ]...")
-        LogWriter.Println(f"Image Stack has dimensions: x={Z_Stack.shape[1]}, y={Z_Stack.shape[2]}, z={Z_Stack.shape[0]}")
-
-        return (True, Z_Stack)
-    except:
-        LogWriter.Warnln(f"File [ {Filename} ] failed to be opened and read as a multi-page *.TIFF file!")
-
-    return (False, None)
 
 #   Set the logger for this application to be a default-initialized logger
 LogWriter: Logger.Logger = Logger.Logger(Prefix=os.path.basename(sys.argv[0]))
@@ -458,7 +342,7 @@ def main() -> int:
     #   Clean up the Z-Stacks to remove the staining saturation "noise" signals.
     if ( Config.EnableZTruncation ):
         LogWriter.Println(f"Cleaning up Z-Stack to remove regions where the staining oversaturated the fluorescent signal...")
-        RemoveStainSaturation(Config.GetZStack())
+        RemoveStainSaturation(Config.GetZStack().Pixels)
         LogWriter.Println(f"Finished cleaning up Z-Stack!")
 
     #   Segment the Z-Stack into the following four classes:
@@ -473,10 +357,29 @@ def main() -> int:
 
     #   Compute the maximum intensity projection of the Z-Stack.
     LogWriter.Println(f"Computing the Maximum Intensity Projections (MIPs) of the Z-Stack...")
-    X_MIProjection: np.ndarray = MaximumIntensityProjection(Config.GetZStack(), axis='x')
-    Y_MIProjection: np.ndarray = MaximumIntensityProjection(Config.GetZStack(), axis='y')
-    Z_MIProjection: np.ndarray = MaximumIntensityProjection(Config.GetZStack(), axis='z')
+    MIP_Z: np.ndarray = Utils.GammaCorrection(Config.GetZStack().MaximumIntensityProjection(Axis='z'), Gamma=0.5)
+    for Axis in ['x', 'y', 'z']:
+        Projection: np.ndarray = Utils.GammaCorrection(Config.GetZStack().MaximumIntensityProjection(Axis=Axis), Gamma=0.5)
+        Utils.DisplayImage(
+            f"Maximum Intensity Projection ({Axis} Axis)",
+            Projection,
+            10,
+            True,
+            (not Config.HeadlessMode)
+        )
+
+        _, Thresholded = cv2.threshold(Utils.ConvertTo8Bit(Projection), 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+        Utils.DisplayImage("Thresholded Z-MIP", Thresholded, 0, True)
+
+        MedianFiltered: np.ndarray = cv2.medianBlur(Thresholded, ksize=201)
+        Utils.DisplayImage("Median Filtered, Thresholded Z-MIP", MedianFiltered, 0, True)
+
+        CentroidLocation: typing.Tuple[int, int] = EstimateCentroid(MedianFiltered)
+        LogWriter.Println(f"Centroid detected at: {CentroidLocation}...")
+        Utils.DisplayImage("Annotated Centroid", cv2.circle(Utils.GreyscaleToBGR(MedianFiltered), CentroidLocation, 10, (0, 255, 0), -1), 0, True)
+
     LogWriter.Println(f"Successfully computed MIPs of the provided Z-Stack!")
+
 
     #   ...
 
@@ -551,67 +454,91 @@ def RemoveStainSaturation(Z_Stack: np.ndarray) -> None:
 
     return
 
-def MaximumIntensityProjection(Z_Stack: np.ndarray, Axis: str='z') -> np.ndarray:
+def EstimateCentroid(ThresholdedImage: np.ndarray, CorrelationThreshold: float = 0.95, KernelStepSize: int = 10, InitialKernelSize: int = 11, CentroidJitterThreshold: int = 2) -> typing.Tuple[int, int]:
     """
-    MaximumIntensityProjection
+    EstimateCentroid
 
-    This function computes and prepares the Maximum Intensity Projection from
-    the Z-Stack, returning a single 2D image consiting of the collection of the
-    brightest pixel values from any slice through the stack. This is a commonly
-    used projection method for operating with Z-Stack images as a 'smaller' 2D
-    image, ideally without losing too much information.
+    This function estimates the location of the centroid of the DRG within the provided pre-thresholded and binarized image,
+    using an iterative cross-correlation search method to identify the location of the largest and most consistently circular-ish figure
+    within the image.
 
-    In addition to simply computing this projection image, the contrast is
-    non-linearly stretched by the --mip-gamma command-line parameter, the
-    projection is displayed, and the image is saved to the output artefact
-    directory for later review or further processing.
+    ThresholdedImage:
+        ...
+    CorrelationThreshold:
+        ...
+    KernelStepSize:
+        ...
+    InitialKernelSize:
+        ...
+    CentroidJitterThreshold:
+        ...
 
-    Z_Stack:
-        The current open Z-stack of the DRG to compute the projection of.
-    Axis:
-        Which axis of the Z-Stack should be collapsed in the MIP.
-
-    Return (np.ndarray):
-        The resulting 2D NumPy array of the MIP image. The pixel values are
-        scaled to the full range of the bit depth of the image, and the contrast
-        has been stretched based off the --mip-gamma command-line argument
-        (default = 1).
+    Return (Tuple):
+        [0] - int:
+            ...
+        [1] - int:
+            ...
     """
 
-    axis: int = 0
-    if ( Axis.lower() == 'z' ):
-        axis = 0
-    elif ( Axis.lower() == 'y' ):
-        axis = 1
-    elif ( Axis.lower() == 'x' ):
-        axis = 2
-    else:
-        raise ValueError(f"Maximum Intensity Projection Axis must be one of [ 'x', 'y', 'z' ]. Got [ '{Axis}' ]")
+    if ( ThresholdedImage is None ):
+        raise ValueError(f"ThresholdedImage must be provided!")
 
-    #   Given that the Z_Stack has the 0th axis corresponding to each Z-Slice through the stack,
-    #   the maximum intensity projection (MIP) is computed as the maximum pixel value over the
-    #   0th axis of the 3D array.
-    Projection: np.ndarray = np.max(Z_Stack, axis=axis)
+    if ( CorrelationThreshold <= 0.0 ) or ( CorrelationThreshold >= 1.0 ):
+        raise ValueError(f"CorrelationThreshold must be within the range (0, 1.0)!")
 
-    #   Apply Gamma correction to this projection image...
-    Projection = Utils.GammaCorrection(Projection, Gamma=Config.MIPGamma)
+    if ( KernelStepSize < 1 ):
+        raise ValueError(f"KernelStepSize must be at least 1!")
 
-    #   Display the MIP image to the user...
-    if ( not Config.HeadlessMode ):
-        LogWriter.Println(f"Displaying {Axis.upper()}-Axis Maximum Intensity Projection of the Z-Stack now...")
-        Utils.DisplayImage(f"{Axis.upper()}-Axis Maximum Intensity Projection", Utils.ConvertTo8Bit(Projection), 0, True)
+    if ( InitialKernelSize <= 2 ):
+        raise ValueError(f"InitialKernelSize must be at least 3!")
 
-    #   If dry run mode is not enabled, write out this projection as an output artefact.
-    if ( not Config.EnableDryRun ):
-        SaveFilename: str = os.path.join(Config.OutputDirectory(), f"Maximum Intensity Projection - {Axis.upper()} Axis - Gamma {Config.MIPGamma:.4f}.png")
-        Config.MIProjectionFilename = SaveFilename
-        Success: bool = cv2.imwrite(SaveFilename, Projection)
-        if ( Success ):
-            LogWriter.Println(f"Successfully saved {Axis.upper()}-Axis Maximum Intensity Projection as file [ {SaveFilename} ].")
-        else:
-            LogWriter.Println(f"Failed to save {Axis.upper()}-Axis Maximum Intensity Projection as file [ {SaveFilename} ]!")
+    if ( InitialKernelSize <= 0 ):
+        raise ValueError(f"InitialKernelSize must be at least 1!")
 
-    return Projection
+    #   The previously-determined list of centroid locations within the image.
+    Centroid_Xs: typing.List[int] = []
+    Centroid_Ys: typing.List[int] = []
+
+    #   Convert the input image to a float64 image on the range [0, 1.0]
+    ThresholdedImage = Utils.GammaCorrection(ThresholdedImage.copy().astype(np.float64), Minimum=0.0, Maximum=1.0)
+
+    #   Iterate over the possible kernel sizes...
+    for KernelSize in range(InitialKernelSize, int(min(ThresholdedImage.shape)), KernelStepSize):
+
+        #   Create the circular kernel to correlate against the DRG image
+        SearchKernel: np.ndarray = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(KernelSize, KernelSize)).astype(np.float64)
+
+        #   Compute the correlation map between the two images, asserting that it is the same size and
+        #   uses the same coordinates as the original image.
+        CorrelationMap: np.ndarray = correlate(ThresholdedImage, SearchKernel, mode='same', method='fft')
+
+        #   Filter the correlation map to only find the regions of sufficiently strong correlation
+        CorrelationMap[CorrelationMap < CorrelationThreshold*np.max(CorrelationMap)] = 0.0
+
+        #   Compute the image moments, in order to determine the centroid of the highly-correlated region(s).
+        ImageMoments: cv2.Moments = cv2.moments(CorrelationMap, binaryImage=False)
+
+        #   Actually compute the centroid location
+        Centroid_X = int(ImageMoments["m10"] / ImageMoments["m00"])
+        Centroid_Y = int(ImageMoments["m01"] / ImageMoments["m00"])
+
+        #   If the centroid does not exist, then the kernel is improperly sized so we exit.
+        if ( Centroid_X == 0 ) and ( Centroid_Y == 0 ):
+            continue
+
+        #   Check where the current averaged centroid location is...
+        Current_X, Current_Y = 0, 0
+        if ( len(Centroid_Xs) > 0 ) and ( len(Centroid_Ys) > 0 ):
+            Current_X, Current_Y = tuple([int(np.mean(np.array(x))) for x in [Centroid_Xs, Centroid_Ys]])
+
+        Centroid_Xs.append(Centroid_X)
+        Centroid_Ys.append(Centroid_Y)
+        Next_X, Next_Y = tuple([int(np.mean(np.array(x))) for x in [Centroid_Xs, Centroid_Ys]])
+
+        if (abs(Next_X - Current_X) < CentroidJitterThreshold ) and ((Next_Y - Current_Y) < CentroidJitterThreshold ):
+            return (Next_X, Next_Y)
+
+    return tuple([int(np.mean(np.array(x))) for x in [Centroid_Xs, Centroid_Ys]])
 
 def WriteConfigurationState() -> None:
     """
