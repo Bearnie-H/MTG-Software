@@ -114,6 +114,7 @@
         two-phase mode, with four windings spaced π/2 radians apart.
     */
     #define TWO_PHASE 1
+    #undef THREE_PHASE
 #elif (6 == WINDING_COUNT)
     /*
         THREE_PHASE
@@ -122,6 +123,7 @@
         three-phase mode, with six windings spaced π/3 radians apart.
     */
     #define THREE_PHASE 1
+    #undef TWO_PHASE
 #else
     /*
         If some other number of windings are defined, this is unhandled
@@ -366,6 +368,96 @@ typedef enum PWMModeMask_t: uint8_t {
     // Define further masks for the additional modes here, if desired and required.
 
 } PWMModeMask_t;
+
+typedef struct WelfordAccumulator_t {
+
+    /*
+        Count
+
+        ...
+    */
+    uint16_t Count;
+
+    /*
+        MaxCount
+
+        ...
+    */
+    uint16_t MaxCount = WelfordAccumulator_DefaultMaxCount;
+
+    /*
+        Mean
+
+        ...
+    */
+    double Mean;
+
+    /*
+        M2
+
+        ...
+    */
+    double M2;
+
+    /*
+        WelfordAccumulator_t
+
+        This function...
+    */
+    WelfordAccumulator_t() = default;
+
+    WelfordAccumulator_t(uint16_t MaxCount);
+
+    /*
+        Reset
+
+        This function...
+    */
+    void Reset();
+
+    /*
+        TestUpdate
+
+        This function...
+    */
+    void TestUpdate(double Value, double* NewMean, double* NewVariance);
+
+    /*
+        TestUpdate
+
+        This function...
+    */
+    void TestUpdate(uint32_t Value, double* NewMean, double* NewVariance);
+
+    /*
+        Update
+
+        This function...
+    */
+    void Update(double Value);
+
+    /*
+        Update
+
+        This function...
+    */
+    void Update(uint32_t Value);
+
+    /*
+        Variance
+
+        This function...
+    */
+    double Variance();
+
+    /*
+        SampleVariance
+
+        This function...
+    */
+    double SampleVariance();
+
+} WelfordAccumulator_t;
 
 /*
     LoadPolarity_t
@@ -739,8 +831,6 @@ typedef struct FieldEmitter_t {
     volatile uint16_t DesiredFieldOrientation;
 
     /* +++ Begin Struct Methods +++ */
-
-#if defined(TWO_PHASE)
     /*
         2-Phase Constructor
 
@@ -750,7 +840,7 @@ typedef struct FieldEmitter_t {
         ready-to-use FieldEmitter_t instance.
     */
     FieldEmitter_t(LoadElement_t&& PhaseA, LoadElement_t&& PhaseB, const uint8_t TriggerPin);
-#elif defined(THREE_PHASE)
+
     /*
         3-Phase Constructor
 
@@ -760,7 +850,6 @@ typedef struct FieldEmitter_t {
         ready-to-use FieldEmitter_t instance.
     */
     FieldEmitter_t(LoadElement_t&& PhaseA, LoadElement_t&& PhaseB, LoadElement_t&& PhaseC, const uint8_t TriggerPin);
-#endif
 
     /*
         UpdateFieldOrientation
@@ -2000,10 +2089,8 @@ constexpr Pin_t Phase_A_Negative = 6;
 constexpr Pin_t Phase_B_Positive = 3;
 constexpr Pin_t Phase_B_Negative = 11;
 
-#if defined(THREE_PHASE)
-    constexpr Pin_t Phase_C_Positive = 9;
-    constexpr Pin_t Phase_C_Negative = 10;
-#endif
+constexpr Pin_t Phase_C_Positive = 9;
+constexpr Pin_t Phase_C_Negative = 10;
 
 /*
     EmitterTriggerPin
@@ -2172,40 +2259,24 @@ constexpr uint16_t FIELD_ORIENTATION_OFF = (uint16_t)0xF000;
 
 #endif
 
+/*
+    Emitter
+
+    This defines the global variable for the overall Emitter device. This is
+    the instance to operate on in order to modify the magnetic field to be
+    generated, manipulate the field-orientation trigger pin, or anything
+    else directly related to the magnetic field generation.
+
+    This is initialized as the 3-phase design.
+*/
+FieldEmitter_t Emitter = FieldEmitter_t(
+    LoadElement_t(Phase_A_Positive, Phase_A_Negative),
+    LoadElement_t(Phase_B_Positive, Phase_B_Negative),
 #if defined(THREE_PHASE)
-    /*
-        Emitter
-
-        This defines the global variable for the overall Emitter device. This is
-        the instance to operate on in order to modify the magnetic field to be
-        generated, manipulate the field-orientation trigger pin, or anything
-        else directly related to the magnetic field generation.
-
-        This is initialized as the 3-phase design.
-    */
-    FieldEmitter_t Emitter = FieldEmitter_t(
-        LoadElement_t(Phase_A_Positive, Phase_A_Negative),
-        LoadElement_t(Phase_B_Positive, Phase_B_Negative),
-        LoadElement_t(Phase_C_Positive, Phase_C_Negative),
-        EmitterTriggerPin
-    );
-#else
-    /*
-        Emitter
-
-        This defines the global variable for the overall Emitter device. This is
-        the instance to operate on in order to modify the magnetic field to be
-        generated, manipulate the field-orientation trigger pin, or anything
-        else directly related to the magnetic field generation.
-
-        This is initialized as the 2-phase design.
-    */
-    FieldEmitter_t Emitter = FieldEmitter_t(
-        LoadElement_t(Phase_A_Positive, Phase_A_Negative),
-        LoadElement_t(Phase_B_Positive, Phase_B_Negative),
-        EmitterTriggerPin
-    );
+    LoadElement_t(Phase_C_Positive, Phase_C_Negative),
 #endif
+    EmitterTriggerPin
+);
 
 /*
     InterruptFrequency
@@ -2218,6 +2289,23 @@ constexpr uint16_t FIELD_ORIENTATION_OFF = (uint16_t)0xF000;
     calculations of the field orientation angle.
 */
 InterruptFrequency_t InterruptFrequency = InterruptFrequency_t();
+
+/*
+    InterruptFrequency_DeratingFactor
+
+    This value represents the number of interrupt events which must occur
+    between calls of the InterruptFrequency_t.Tick() method. This is used to
+    account for the case where the interrupt frequency is higher than can be
+    handled by the Arduino.
+*/
+uint8_t InterruptFrequency_DeratingFactor = 1;
+
+/*
+    WelfordAccumulator_DefaultMaxCount
+
+    This value...
+*/
+uint16_t WelfordAccumulator_DefaultMaxCount = 64;
 
 /*
     DutyCycleLUT
@@ -2342,8 +2430,8 @@ void setup() {
     // When running in debug/instrumented mode, enable the Serial port for
     // output communications.
     Serial.begin(115200);
+    Serial.println("Starting setup()...");
 #endif
-
 
     // Check for whether the controller is powering up for the first time, or a
     // reset event has been triggered. Handle the different potential reset
@@ -2369,7 +2457,7 @@ void setup() {
     // that it executes the user-defined WDT_vect interrupt and then a system
     // reset. This must be done after the slow operations of setup(), but prior
     // to any interrupt registration which it is used to break out of.
-    // Watchdog_Initialize(Watchdog_2000ms, Watchdog_Reset);
+    Watchdog_Initialize(WatchdogTimeout_500ms, WatchdogMode_Reset);
 
     // Prepare the necessary ISR and global variables for the custom Timer2
     // based Timestamp_t API
@@ -2408,6 +2496,11 @@ void setup() {
         This function returns nothing to the caller.
 */
 void loop() {
+
+    /*
+        ...
+    */
+    wdt_reset();
 
     /*
         Update the duty cycles applied to the phase windings of the Emitter.
@@ -2449,6 +2542,11 @@ void loop() {
 
 void Pin_Trigger(const Pin_t Pin) {
 
+#if defined(DEBUG)
+    Serial.print("Setting Pin ");
+    Serial.print(Pin);
+    Serial.println(" to HIGH.");
+#endif
     digitalWrite(Pin, HIGH);
 
     return;
@@ -2456,6 +2554,11 @@ void Pin_Trigger(const Pin_t Pin) {
 
 void Pin_TriggerOff(const Pin_t Pin) {
 
+#if defined(DEBUG)
+    Serial.print("Setting Pin ");
+    Serial.print(Pin);
+    Serial.println(" to LOW.");
+#endif
     digitalWrite(Pin, LOW);
 
     return;
@@ -2463,6 +2566,15 @@ void Pin_TriggerOff(const Pin_t Pin) {
 
 void Pin_ToggleTrigger(const Pin_t Pin) {
 
+    uint8_t NewPinState = !digitalRead(Pin);
+
+#if defined(DEBUG)
+    Serial.print("Setting Pin ");
+    Serial.print(Pin);
+    Serial.print(" to ");
+    Serial.print(NewPinState ? "HIGH" : "LOW");
+    Serial.print(".");
+#endif
     digitalWrite(Pin, !digitalRead(Pin));
 
     return;
@@ -2482,6 +2594,7 @@ void CheckResetState(void) {
         // de-rating factor, as well as logging a message to notify this as the
         // reset trigger.
         LogPowerOnReset();
+        InterruptFrequency_DeratingFactor = 1;
     }
 
     if ( 0 != (OldMCUSR & ResetTrigger_External )) {
@@ -2504,6 +2617,10 @@ void CheckResetState(void) {
         // Reset all of the previously computed information about the frequency
         // of the interrupt signal.
         InterruptFrequency.Reset();
+
+        // If the watchdog triggered, then we want to increase the derating
+        // factor for the 555-Timer ISR.
+        InterruptFrequency_DeratingFactor <<= 1;
     }
 
     return;
@@ -2515,15 +2632,15 @@ void ConfigureStatusLEDPins(void) {
         ...
     */
     pinMode(DeviceInitializedPin, OUTPUT);
-    Pin_TriggerOff(DeviceInitializedPin);
     LogPinMode(DeviceInitializedPin, OUTPUT);
+    Pin_TriggerOff(DeviceInitializedPin);
 
     /*
         ...
     */
     pinMode(FieldTrajectoryEnablePin, OUTPUT);
-    Pin_TriggerOff(FieldTrajectoryEnablePin);
     LogPinMode(FieldTrajectoryEnablePin, OUTPUT);
+    Pin_TriggerOff(FieldTrajectoryEnablePin);
 
     return;
 }
@@ -2557,8 +2674,8 @@ void Watchdog_Initialize(WatchdogTimeout_t Timeout, WatchdogMode_t Mode) {
     // Set the pin used to outwardly signal a watchdog reset as an output pin,
     // and write it low.
     pinMode(WatchdogResetNotificationPin, OUTPUT);
-    Pin_TriggerOff(WatchdogResetNotificationPin);
     LogPinMode(WatchdogResetNotificationPin, OUTPUT);
+    Pin_TriggerOff(WatchdogResetNotificationPin);
 
     // Log the watchdog timer settings.
     LogWatchdogInitialized(Timeout, Mode);
@@ -2659,7 +2776,7 @@ void PrepareDutyCycleLUT(void) {
         PolarityLUT[Index] = (DutyCycle >= 0) ? (PositivePolarity) : (NegativePolarity);
         DutyCycleLUT[Index] = (uint8_t)abs(DutyCycle);
 
-        LogDutyCycleTable(Index);
+        // LogDutyCycleTable(Index);
     }
 
     return;
@@ -2879,6 +2996,10 @@ void SetPWMFrequencyPrescaler(const PWMTimer_t Timer, const PWMPrescalerMask_t M
 
 void InitializeTimestamp(void) {
 
+#if defined(DEBUG)
+    Serial.println("Disabling all Timer interrupts except TIMER2_OVF");
+#endif
+
     /*
         Within Timers 0, 1, and 2, there is a Timer Interrupt Mask Register,
         TIMSKn.  This register contains bits which, if set, act to enable
@@ -2911,10 +3032,6 @@ void InitializeTimestamp(void) {
     TIMSK2 |= 0b00000001;
     TIMSK2 &= 0b11111001;
 
-#if defined(DEBUG)
-    Serial.println("Disabling all Timer interrupts except TIMER2_OVF");
-#endif
-
     return;
 }
 
@@ -2943,8 +3060,6 @@ LoadElement_t::LoadElement_t(const Pin_t Positive, const Pin_t Negative) {
     return;
 };
 
-#if defined(TWO_PHASE)
-
 FieldEmitter_t::FieldEmitter_t(LoadElement_t&& PhaseA, LoadElement_t&& PhaseB, const uint8_t TriggerPin) {
 
     this->Phases[0] = PhaseA;
@@ -2955,8 +3070,6 @@ FieldEmitter_t::FieldEmitter_t(LoadElement_t&& PhaseA, LoadElement_t&& PhaseB, c
 
     return;
 }
-
-#elif defined(THREE_PHASE)
 
 FieldEmitter_t::FieldEmitter_t(LoadElement_t&& PhaseA, LoadElement_t&& PhaseB, LoadElement_t&& PhaseC, const uint8_t TriggerPin) {
 
@@ -2969,8 +3082,6 @@ FieldEmitter_t::FieldEmitter_t(LoadElement_t&& PhaseA, LoadElement_t&& PhaseB, L
 
     return;
 }
-
-#endif
 
 void FieldEmitter_t::UpdateFieldOrientation(void) {
 
@@ -3033,19 +3144,17 @@ void FieldEmitter_t::ConfigurePins(void) const {
         const LoadElement_t& PhaseWinding = this->Phases[PhaseIndex];
 
         pinMode(PhaseWinding.OutputPins[PositivePolarity], OUTPUT);
-        Pin_TriggerOff(PhaseWinding.OutputPins[PositivePolarity]);
         LogPinMode(PhaseWinding.OutputPins[PositivePolarity], OUTPUT);
+        Pin_TriggerOff(PhaseWinding.OutputPins[PositivePolarity]);
 
         pinMode(PhaseWinding.OutputPins[NegativePolarity], OUTPUT);
-        Pin_TriggerOff(PhaseWinding.OutputPins[NegativePolarity]);
         LogPinMode(PhaseWinding.OutputPins[NegativePolarity], OUTPUT);
+        Pin_TriggerOff(PhaseWinding.OutputPins[NegativePolarity]);
     }
 
     pinMode(this->TriggerPin, OUTPUT);
-    Pin_TriggerOff(this->TriggerPin);
     LogPinMode(this->TriggerPin, OUTPUT);
-
-    this->TriggerOff();
+    Pin_TriggerOff(this->TriggerPin);
 
     return;
 }
@@ -3141,6 +3250,78 @@ void FieldEmitter_t::ApplyDutyCycles(void) const {
     return;
 }
 
+WelfordAccumulator_t::WelfordAccumulator_t(uint16_t MaxCount) {
+
+    this->Count = 0;
+    this->MaxCount = MaxCount;
+    this->Mean = 0.0f;
+    this->M2 = 0.0f;
+
+    return;
+}
+
+void WelfordAccumulator_t::Reset() {
+
+    this->Count = 0;
+    this->Mean = 0.0f;
+    this->M2 = 0.0f;
+
+    return;
+}
+
+void WelfordAccumulator_t::TestUpdate(double Value, double* NewMean, double* NewVariance) {
+
+    uint16_t Count = (this->Count < this->MaxCount) ? this->Count + 1 : this->Count;
+    double Delta = Value - this->Mean;
+    *NewMean = this->Mean + Delta;
+
+    double Delta2 = Value - *NewMean;
+    double M2 = Delta * Delta2;
+    *NewVariance = M2 / double(Count);
+
+    return;
+}
+
+void WelfordAccumulator_t::TestUpdate(uint32_t Value, double* NewMean, double* NewVariance) {
+    return this->TestUpdate(double(Value), NewMean, NewVariance);
+}
+
+void WelfordAccumulator_t::Update(double Value) {
+
+    if ( this->Count < this->MaxCount ) {
+        this->Count++;
+    }
+
+    double Delta = Value - this->Mean;
+    this->Mean += Delta / double(this->Count);
+
+    double Delta2 = Value - this->Mean;
+    this->M2 += Delta * Delta2;
+
+    return;
+}
+
+void WelfordAccumulator_t::Update(uint32_t Value) {
+    this->Update(double(Value));
+    return;
+}
+
+double WelfordAccumulator_t::Variance() {
+    if ( this->Count == 0 ) {
+        return 0.0f;
+    }
+
+    return this->M2 / double(this->Count);
+}
+
+double WelfordAccumulator_t::SampleVariance() {
+    if ( this->Count <= 1 ) {
+        return 0.0f;
+    }
+
+    return this->M2 / double(this->Count - 1);
+}
+
 InterruptFrequency_t::InterruptFrequency_t(Duration_t UpdatePeriod = InterruptFrequencyDefaultUpdatePeriod) {
 
     /*
@@ -3180,7 +3361,7 @@ InterruptFrequency_t::InterruptFrequency_t(Duration_t UpdatePeriod = InterruptFr
 void InterruptFrequency_t::Reset(void) {
 
 #if defined(DEBUG)
-    Serial.println("Resetting InterruptFrequency_t!");
+    Serial.println("Resetting InterruptFrequency_t");
 #endif
 
     this->CurrentTimeStamp = Timestamp_t();
@@ -3208,6 +3389,10 @@ void InterruptFrequency_t::Reset(void) {
 
 void InterruptFrequency_t::Initialize(void) {
 
+    if ( this->UpdatePeriod == 0 ) {
+        this->UpdatePeriod = InterruptFrequencyDefaultUpdatePeriod;
+    }
+
     /*
         To initialize this value, we just keep trying to compute the interrupt
         interval until we actually get a value. This may take up to 1
@@ -3215,6 +3400,9 @@ void InterruptFrequency_t::Initialize(void) {
         actually executes, the interrupt period is a known good value.
     */
     while ( !this->IsSet ) {
+#if defined(DEBUG)
+    Serial.println("Initializing InterruptFrequency_t...");
+#endif
         this->Update();
     }
 
@@ -3339,22 +3527,6 @@ void InterruptFrequency_t::SetDeltaT(const Timestamp_t& Now, const Timestamp_t& 
         NextIntervalMean += MeanIncrementI;
         NextIntervalVariance += VarianceIncrement;
 
-#if defined(DEBUG)
-        Serial.print("II: ");
-        Serial.print(InterruptInterval);
-        Serial.print(" - M: ");
-        Serial.print(this->IntervalMean);
-        Serial.print(" - NM: ");
-        Serial.print(NextIntervalMean);
-        Serial.print(" - MI: ");
-        Serial.print(MeanIncrement);
-        Serial.print(" - V:");
-        Serial.print(this->IntervalVariance);
-        Serial.print(" - NV:");
-        Serial.print(NextIntervalVariance);
-        Serial.print(" - VI: ");
-        Serial.println(VarianceIncrement);
-#endif
     } else {
 
         bool Initialized = false;
@@ -3371,37 +3543,12 @@ void InterruptFrequency_t::SetDeltaT(const Timestamp_t& Now, const Timestamp_t& 
             SignedDuration_t MeanIncrementI = (Duration_t)((MeanIncrement > 0) ? ceil(MeanIncrement) : floor(MeanIncrement));
             VarianceIncrement = ((((SignedDuration_t)InterruptInterval - (SignedDuration_t)Means[ClusterIndex]) * ((SignedDuration_t)InterruptInterval - (SignedDuration_t)(Means[ClusterIndex] + MeanIncrementI))) - Variances[ClusterIndex]) / ClusterCounts[ClusterIndex];
 
-#if defined(DEBUG)
-            Serial.print("II: ");
-            Serial.print(InterruptInterval);
-            Serial.print(" C: ");
-            Serial.print(ClusterIndex);
-            Serial.print(" - CC: ");
-            Serial.print(ClusterCounts[ClusterIndex]);
-            Serial.print(" - M: ");
-            Serial.print(Means[ClusterIndex]);
-            Serial.print(" - NM: ");
-            Serial.print(Means[ClusterIndex] + MeanIncrementI);
-            Serial.print(" - MI: ");
-            Serial.print(MeanIncrement);
-            Serial.print(" - V:");
-            Serial.print(Variances[ClusterIndex]);
-            Serial.print(" - NV:");
-            Serial.print(Variances[ClusterIndex] + VarianceIncrement);
-            Serial.print(" - VI: ");
-            Serial.print(VarianceIncrement);
-            Serial.println();
-#endif
-
             if ( VarianceIncrement <= ( 5 * Means[ClusterIndex] )) {
 
                 Means[ClusterIndex] += MeanIncrementI;
                 Variances[ClusterIndex] += VarianceIncrement;
 
                 if ( ClusterCounts[ClusterIndex] < this->MaxCount ) {
-#if defined(DEBUG)
-                    Serial.println();
-#endif
                     return;
                 }
 
@@ -3422,9 +3569,6 @@ void InterruptFrequency_t::SetDeltaT(const Timestamp_t& Now, const Timestamp_t& 
         }
 
         if ( !Initialized ) {
-#if defined(DEBUG)
-            Serial.println();
-#endif
             return;
         }
     }
@@ -3446,7 +3590,7 @@ void InterruptFrequency_t::SetDeltaT(const Timestamp_t& Now, const Timestamp_t& 
     this->IsSet = true;
 
     // Display how long the interrupt interval is computed to be.
-    // LogInterruptInterval(this->IntervalMean, InterruptInterval);
+    LogInterruptInterval(this->IntervalMean, InterruptInterval);
 
     return;
 }
@@ -3521,6 +3665,16 @@ N RoundDown(const N Value, const N Modulus) {
 /* +++ Begin Interrupt Service Routine Function Definitions +++ */
 
 void ComputeNextFieldOrientation(void) {
+
+    /*
+        Handle the de-rating factor of the ISR in case the 555-Timer
+        is running too fast.
+    */
+    static uint8_t InterruptCount = 0;
+    if (++InterruptCount < InterruptFrequency_DeratingFactor) {
+        return;
+    }
+    InterruptCount = 0;
 
     /*
         ...
@@ -3693,8 +3847,11 @@ void ComputeNextFieldOrientation(void) {
         Phi = 0;
         t = 0;
         Emitter.DesiredFieldOrientation = FIELD_ORIENTATION_OFF;
+        Emitter.Trigger();
         return;
     }
+
+    Emitter.TriggerOff();
 
     /*
         dt
@@ -3714,10 +3871,10 @@ void ComputeNextFieldOrientation(void) {
         field orientation angle.
     +++ */
 
-    static constexpr uint16_t Segments = 360; // How many segments to divide the 360 degrees of the circle into?
+    static constexpr uint16_t Segments = 12; // How many segments to divide the 360 degrees of the circle into?
     static constexpr uint16_t Theta_deg = (uint16_t)(360.0 / Segments);
 
-    static constexpr double Omega = (1.0 / 15.0); // Hz, rotational frequency
+    static constexpr double Omega = (1.0 / 30.0); // Hz, rotational frequency
     static constexpr double Alpha = 0.0;  // Hz^2, rotational acceleration
 
     static constexpr double Period = 180.0;
@@ -3912,41 +4069,41 @@ void LogWatchdogInitialized(WatchdogTimeout_t Timeout, WatchdogMode_t Mode) {
     Serial.print("Enabling watchdog timeout: ");
     switch(Timeout) {
         case WatchdogTimeout_16ms:
-            Serial.print("16ms");
+            Serial.print("16");
             break;
         case WatchdogTimeout_32ms:
-            Serial.print("32ms");
+            Serial.print("32");
             break;
         case WatchdogTimeout_64ms:
-            Serial.print("64ms");
+            Serial.print("64");
             break;
         case WatchdogTimeout_125ms:
-            Serial.print("125ms");
+            Serial.print("125");
             break;
         case WatchdogTimeout_250ms:
-            Serial.print("250ms");
+            Serial.print("250");
             break;
         case WatchdogTimeout_500ms:
-            Serial.print("500ms");
+            Serial.print("500");
             break;
         case WatchdogTimeout_1000ms:
-            Serial.print("1000ms");
+            Serial.print("1000");
             break;
         case WatchdogTimeout_2000ms:
-            Serial.print("2000ms");
+            Serial.print("2000");
             break;
         case WatchdogTimeout_4000ms:
-            Serial.print("4000ms");
+            Serial.print("4000");
             break;
         case WatchdogTimeout_8000ms:
-            Serial.print("8000ms");
+            Serial.print("8000");
             break;
         default:
             Serial.print("UNKNOWN");
             break;
     }
 
-    Serial.print(" and Mode: ");
+    Serial.print("ms and Mode: ");
     switch (Mode) {
         case WatchdogMode_Off:
             Serial.println("Off");
