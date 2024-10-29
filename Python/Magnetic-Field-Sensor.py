@@ -521,7 +521,7 @@ class MeasurementStream():
             Buffer: bytearray = bytearray()
 
             #   Track the rate at which the MeasurementStream is actively receiving
-            #   meausrement valeus over the port.
+            #   measurement valeus over the port.
             StartTime: float = time.time()
             EndTime: float = 0.0
             Count: int = 0
@@ -556,7 +556,7 @@ class MeasurementStream():
                     #   on to the "next" data to process.
                     Buffer, Measurement, Message, Done = self._ParseSerialBytes(Buffer)
 
-                    #   If a complete meausrement is parsed out, append it to the FIFO queue and
+                    #   If a complete measurement is parsed out, append it to the FIFO queue and
                     #   attempt to update the sampling rate estimate.
                     if ( Measurement is not None ):
                         self.Measurements.append(Measurement)
@@ -937,7 +937,7 @@ def main() -> int:
             #       the X and Y axes...
             Z_VisualScaleFactor: float = 1
             try:
-                Z_VisualScaleFactor: float = float(np.diff(MagneticField_Axes.get_zlim())) / float(np.mean([np.diff(MagneticField_Axes.get_xlim()), np.diff(MagneticField_Axes.get_ylim())]))
+                Z_VisualScaleFactor: float = float(np.diff(MagneticField_Axes.get_zlim())[0]) / float(np.min([np.diff(MagneticField_Axes.get_xlim()), np.diff(MagneticField_Axes.get_ylim())])[0])
             except:
                 pass
 
@@ -949,14 +949,14 @@ def main() -> int:
             #   Update the titles of the plots to provide summary values to the user.
             MagneticFieldTitle: str = f'Magnetic Field\nAverage = {MagneticField_Average:.1f}mT\nMean Magnitude = {MagneticFieldNorm_NonZero[3,:].mean():.1f}mT\nMaximum = {MagneticFieldNorm_NonZero[3,:].max():.1f}mT\nMean Vector = {MagneticField_NonZero.mean(axis=1)[3:].round(2)}mT'
             TemperatureFieldTitle: str = f'Temperature Field\nMean = {TemperatureField_NonZero[3,:].mean():.2f}C\nMaximum = {TemperatureField_NonZero[3,:].max():.2f}C\nMinimum = {TemperatureField_NonZero[3,:].min():.2f}C'
-            if ( Config.MeasurementRate is not None ):
-                #   If the sampling rate is known, also report this.
-                MagneticFieldTitle += f"\nSampling Rate = {Config.MeasurementRate:.3f}Hz"
-                TemperatureFieldTitle += f"\nSampling Rate = {Config.MeasurementRate:.3f}Hz"
+            FigureTitle: str = f"Measurement Backlog: {len(Measurements)}\nCurrent Time: {CurrentTime:.6f}s\nSensors Active: {len(UniqueSensingElements)}"
 
             MagneticField_Axes.set_title(MagneticFieldTitle)
             TemperatureField_Axes.set_title(TemperatureFieldTitle)
-            Fields_Figure.suptitle(f"Measurement Backlog: {len(Measurements)}\nCurrent Time: {CurrentTime:.6f}s")
+            if ( Config.MeasurementRate is not None ):
+                #   If the sampling rate is known, also report this.
+                FigureTitle += f"\nSampling Rate = {Config.MeasurementRate:.3f}Hz"
+            Fields_Figure.suptitle(FigureTitle)
 
             plt.draw_all(force=True)
             plt.pause(0.01)
@@ -986,14 +986,14 @@ def HandleArguments() -> bool:
     """
 
     #   Initialize the argument parser to handle the command-line arguments.
-    Parser: argparse.ArgumentParser = argparse.ArgumentParser(description="This script performs the field visualization for the hall-effect sensor array. This script can either read new measurements from the sensor over the serial port (--stream-type=serial), or replay previous meausrements saved to a file (--stream-type=file).", add_help=True)
+    Parser: argparse.ArgumentParser = argparse.ArgumentParser(description="This script performs the field visualization for the hall-effect sensor array. This script can either read new measurements from the sensor over the serial port (--stream-type=serial), or replay previous measurements saved to a file (--stream-type=file).", add_help=True)
 
     #   Add in all of the command-line flags this program will accept.
     Parser.add_argument("--list-serial-ports", dest="ListSerialPorts", action="store_true", required=False, default=False, help="List the possible available devices to use as serial port to read from.")
     Parser.add_argument("--stream-type", dest="StreamType", metavar="file|serial", type=str, required=False, default="", help="Which type of measurement stream is being read from? Either the Serial Port, or a File")
     Parser.add_argument("--serial-port", dest="SerialPort", metavar="device", type=str, required=False, default=None, help="The device name of the Serial Port to read measurements from. See --list-serial-ports to learn what devices are available. Only required with --stream-type=serial")
     Parser.add_argument("--baud-rate", dest="BaudRate", metavar="baud-rate", type=int, required=False, default=9600, help="The baud rate to use reading/writing the Serial Port. Only required for --stream-type=serial. Typically either 9600 for DEBUG mode, or 115200 for non-DEBUG mode.")
-    Parser.add_argument("--filename", dest="Filename", metavar="file-path", type=str, required=False, default=None, help="The path to the formatted CSV file containing raw meausrements to replay. Only required for --stream-type=serial")
+    Parser.add_argument("--filename", dest="Filename", metavar="file-path", type=str, required=False, default=None, help="The path to the formatted CSV file containing raw measurements to replay. Only required for --stream-type=serial")
     Parser.add_argument("--position-reference", dest="PositionReference", metavar="corner-label", type=str, required=False, default="D", help="Which corner of Layer 0 was used as the indexing point to position the sensor relative to the magnetic source?")
     Parser.add_argument("--layer-separation", dest="LayerSeparation", metavar="mm", type=float, required=False, default=8.6, help="The consistent spacing between the layers of the sensor. If all layers are free-floating set to -1 to indicate this.")
     Parser.add_argument("--output-directory", dest="OutputDirectory", metavar="path", type=str, required=False, default=".", help="The output directory to write any output files or artefacts into.")
