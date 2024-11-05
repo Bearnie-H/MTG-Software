@@ -509,6 +509,27 @@ def UniformRescaleImage(Image: np.ndarray = None, ScalingFactor: float = 1.0, In
 
     return cv2.resize(Image, NewShape, interpolation=Interpolation)
 
+def RoundUpKernelToOdd(KernelSize: int) -> int:
+    """
+    RoundUpKernelToOdd
+
+    This function...
+
+    KernelSize:
+        ...
+
+    Return (int):
+        ...
+    """
+
+    if ( KernelSize ) <= 1:
+        raise ValueError(f"Kernel must be at least 2 in size!")
+
+    if (( KernelSize % 2 ) == 0):
+        KernelSize += 1
+
+    return KernelSize
+
 def ComputeZeroNormalizedCrossCorrelation(TemplateImage: np.ndarray = None, TestImage: np.ndarray = None) -> float:
     """
     ComputeZeroNormalizedCrossCorrelation

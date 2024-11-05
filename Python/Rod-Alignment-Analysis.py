@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import jsonpickle
 import math
 import os
 import typing
@@ -38,6 +39,8 @@ ANALYSIS_METHOD_SOBEL:      int = 1
 ANALYSIS_METHOD_COMPONENT:  int = 2
 ANALYSIS_METHOD_HOUGH:      int = 3
 ANALYSIS_METHOD_ELLIPSE:    int = 4
+
+DEBUGGING_HOLD_TIME: int = 0
 
 class Configuration():
     """
@@ -182,11 +185,11 @@ class Configuration():
         self.AngularResolution = Arguments.AngularResolution
 
         #   Extract out the elliptical filtering parameters (which may or may not be used)
-        self.BackgroundRemovalKernelSize = Arguments.BackgroundRemovalKernelSize
+        self.BackgroundRemovalKernelSize = MyUtils.RoundUpKernelToOdd(Arguments.BackgroundRemovalKernelSize)
         self.BackgroundRemovalSigma = Arguments.BackgroundRemovalSigma
-        self.ForegroundSmoothingKernelSize = Arguments.ForegroundSmoothingKernelSize
+        self.ForegroundSmoothingKernelSize = MyUtils.RoundUpKernelToOdd(Arguments.ForegroundSmoothingKernelSize)
         self.ForegroundSmoothingSigma = Arguments.ForegroundSmoothingSigma
-        self.EllipticalFilterKernelSize = Arguments.EllipticalFilterKernelSize
+        self.EllipticalFilterKernelSize = MyUtils.RoundUpKernelToOdd(Arguments.EllipticalFilterKernelSize)
         self.EllipticalFilterMinSigma = Arguments.EllipticalFilterMinSigma
         self.EllipticalFilterSigma = Arguments.EllipticalFilterSigma
         self.EllipticalFilterScaleFactor = Arguments.EllipticalFilterScaleFactor
@@ -264,6 +267,12 @@ class Configuration():
                 self._LogWriter.Println(f"Asserting playback mode [ NoDisplay ] in headless mode.")
         elif ( self.IsZStack ):
             Stack: ZStack.ZStack = ZStack.ZStack.FromFile(self.SourceFilename, self.LIFClearingAlgorithm)
+            self.SourceFilename = vwr.VideoReadWriter.FromImageSequence(Stack.Pixels, os.path.dirname(self.SourceFilename))._SourceFilename
+            self.VideoFrameRate = 1
+            self.IsVideo = True
+            if ( self.Headless ):
+                self.PlaybackMode = vwr.PlaybackMode_NoDisplay
+                self._LogWriter.Println(f"Asserting playback mode [ NoDisplay ] in headless mode.")
 
 
         if ( self.AngularResolution <= 0 ) or ( self.AngularResolution >= 90 ):
@@ -384,7 +393,7 @@ class AngleTracker():
 
         if ( self.DryRun ):
             return
-        
+
         if ( OutputDirectory is None ):
             OutputDirectory = self.OutputDirectory
 
@@ -431,7 +440,8 @@ class AngleTracker():
                     self.IntraframeAlignmentVideo.PrepareWriter(Resolution=tuple(reversed(MyUtils.FigureToImage(self.IntraframeAlignmentFigure).shape[:2])))
                 self.IntraframeAlignmentVideo.WriteFrame(MyUtils.FigureToImage(self.IntraframeAlignmentFigure), PlaybackMode, WindowName="Mean Rod Orientation")
             else:
-                cv2.imwrite(os.path.splitext(self.IntraframeAlignmentVideo._OutputFilename)[0] + ".png", MyUtils.FigureToImage(self.IntraframeAlignmentFigure))
+                if ( not self.DryRun ):
+                    cv2.imwrite(os.path.splitext(self.IntraframeAlignmentVideo._OutputFilename)[0] + ".png", MyUtils.FigureToImage(self.IntraframeAlignmentFigure))
 
         if ( self.IsVideo ):
             if ( self.AlignmentFractionVideo is not None ):
@@ -487,15 +497,15 @@ class AngleTracker():
         OrientationPDFAxes: Axes = None
         OrientationCDFAxes: Axes = None
         if ( len(F.axes) == 0 ):
-            OrientationPDFAxes = F.add_subplot(121, polar=True)
+            OrientationPDFAxes = F.add_subplot(111, polar=True)
             OrientationPDFAxes.set_thetamin(-90)
             OrientationPDFAxes.set_thetamax(90)
 
-            OrientationCDFAxes = F.add_subplot(122)
-            OrientationCDFAxes.set_xlim((-90, 90))
+            # OrientationCDFAxes = F.add_subplot(122)
+            # OrientationCDFAxes.set_xlim((-90, 90))
         else:
             OrientationPDFAxes: Axes = F.axes[0]
-            OrientationCDFAxes: Axes = F.axes[1]
+            # OrientationCDFAxes: Axes = F.axes[1]
 
         #   Shift so that the mean angle is at 0 degrees for this plot
         NormalizedOrientations: np.ndarray = Orientations - self.MeanAngles[-1]
@@ -506,9 +516,8 @@ class AngleTracker():
         #   Plot the PDF of orientations as a polar antenna plot.
         n, bins = np.histogram(np.deg2rad(NormalizedOrientations), bins=int(round(180.0 / HistogramBinSizing)), range=(-np.pi/2, np.pi/2), density=True)
         OrientationPDFAxes.plot(bins[:-1], n)
-        OrientationPDFAxes.vlines(np.deg2rad(LowerStDev), 0, np.max(n), colors='k', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees (Left)")
-        OrientationPDFAxes.vlines(np.deg2rad(UpperStDev), 0, np.max(n), colors='b', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees (Right)")
-        OrientationPDFAxes.set_title(f"Rod Orientation Angular Distribution\nMeasurement Count = {self.RodCounts[-1]}\nAlignment Fraction = {self.AlignmentFractions[-1]:.3f}")
+        OrientationPDFAxes.vlines(np.deg2rad([LowerStDev, UpperStDev]), 0, np.max(n), colors='k', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees")
+        OrientationPDFAxes.set_title(f"Rod Orientation Angular Distribution\nMeasurement Count = {self.RodCounts[-1]:.0f}\nAlignment Fraction = {self.AlignmentFractions[-1]:.3f}")
         OrientationPDFAxes.set_xlabel(f"Rod Orientation Angles (degrees)")
         OrientationPDFAxes.set_ylabel(f"Probability Density (n.d.)")
         OrientationPDFAxes.minorticks_on()
@@ -541,8 +550,11 @@ class AngleTracker():
         A: Axes = F.gca()
 
         A.set_title(f"Mean Rod Orientation vs. Time")
-        A.errorbar(x=self.Times[:len(self.MeanAngles)], y=self.MeanAngles, yerr=self.AngularStDevs, capsize=2, capthick=1, ecolor='r', elinewidth=0, label="Mean Orientation")
         A.set_xlabel(f"Time (s)")
+        if ( Config.IsZStack ):
+            A.set_title(f"Mean Rod Orientation vs. Height")
+            A.set_xlabel(f"Z-Stack Layer")
+        A.errorbar(x=self.Times[:len(self.MeanAngles)], y=self.MeanAngles, yerr=self.AngularStDevs, capsize=2, capthick=1, ecolor='r', elinewidth=0, label="Mean Orientation")
         A.set_ylabel(f"Mean Rod Orientation (degrees)")
 
         A.set_ylim([-90, 90])
@@ -839,11 +851,11 @@ def EllipticalFilter_PreprocessImage(Image: np.ndarray) -> np.ndarray:
     #   Convert to greyscale, as we don't need colour information for this
     #   process
     Image = MyUtils.BGRToGreyscale(Image)
-    MyUtils.DisplayImage("Greyscale Original Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=2, Topmost=True, ShowOverride=(not Config.Headless))
+    MyUtils.DisplayImage("Greyscale Original Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
 
     #   Linearly scale the brightness of the image to cover the full 8-bit range
     Image = MyUtils.ConvertTo8Bit(Image)
-    MyUtils.DisplayImage("8-Bit Greyscale Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=2, Topmost=True, ShowOverride=(not Config.Headless))
+    MyUtils.DisplayImage("8-Bit Greyscale Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
 
     #   Check the median pixel of the image to see the foreground is bright or
     #   dark
@@ -861,7 +873,7 @@ def EllipticalFilter_PreprocessImage(Image: np.ndarray) -> np.ndarray:
     else:
         Config.InvertImage = False
 
-    MyUtils.DisplayImage("8-Bit Greyscale Image with Dark Background", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=2, Topmost=True, ShowOverride=(not Config.Headless))
+    MyUtils.DisplayImage("8-Bit Greyscale Image with Dark Background", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
     return Image
 
 def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKernelSize: int, BackgroundRemovalSigma: float, ForegroundSmoothingKernelSize: int, ForegroundSmoothingSigma: float, DistinctOrientations: int, EllipticalFilterKernelSize: int, EllipticalFilterMinSigma: float, EllipticalFilterSigma: float, EllipticalFilterScaleFactor: float) -> typing.Tuple[np.ndarray, np.ndarray]:
@@ -916,22 +928,22 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
 
     #   Remove background by subtracting a large-window Gaussian blurred image
     Background: np.ndarray = cv2.GaussianBlur(Image, ksize=(BackgroundRemovalKernelSize, BackgroundRemovalKernelSize), sigmaX=BackgroundRemovalSigma)
-    MyUtils.DisplayImage("Blurred Background Image", MyUtils.ConvertTo8Bit(Background), 2, True, (not Config.Headless))
+    MyUtils.DisplayImage("Blurred Background Image", MyUtils.ConvertTo8Bit(Background), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
 
     Foreground: np.ndarray = Image.astype(np.int16) - Background.astype(np.int16)
-    MyUtils.DisplayImage("Foreground Image", MyUtils.ConvertTo8Bit(Foreground), 2, True, (not Config.Headless))
+    MyUtils.DisplayImage("Foreground Image", MyUtils.ConvertTo8Bit(Foreground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
 
     #   Truncate negative pixels to 0
     Foreground[Foreground < 0] = 0
-    MyUtils.DisplayImage("Truncated Foreground Image", MyUtils.ConvertTo8Bit(Foreground), 2, True, (not Config.Headless))
+    MyUtils.DisplayImage("Truncated Foreground Image", MyUtils.ConvertTo8Bit(Foreground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
 
     #   Smooth the image again, using a smaller-window Gaussian blur
     SmoothedForeground: np.ndarray = cv2.GaussianBlur(Foreground, ksize=(ForegroundSmoothingKernelSize, ForegroundSmoothingKernelSize), sigmaX=ForegroundSmoothingSigma)
-    MyUtils.DisplayImage("Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), 2, True, (not Config.Headless))
+    MyUtils.DisplayImage("Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
 
     #   Linearly rescale the image contrast back to the full 8-bit range
     SmoothedForeground = MyUtils.GammaCorrection(SmoothedForeground, Minimum=0, Maximum=255)
-    MyUtils.DisplayImage("Full-Range Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), 2, True, (not Config.Headless))
+    MyUtils.DisplayImage("Full-Range Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
 
     #   Apply the Mexican hat filter to the image for a set of N different angles,
     #   storing each result as a layer in a new "z-stack".
@@ -963,15 +975,15 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
         #   Truncate any pixels which end up negative
         G[G <= 0] = 0
 
-        MyUtils.DisplayImages(
-            Images=[
-                (f"Elliptical Kernel: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(K)),
-                (f"Elliptical Features: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(G)),
-            ],
-            HoldTime=2,
-            Topmost=True,
-            ShowOverride=(not Config.Headless)
-        )
+        # MyUtils.DisplayImages(
+            # Images=[
+                # (f"Elliptical Kernel: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(K)),
+                # (f"Elliptical Features: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(G)),
+            # ],
+            # HoldTime=DEBUGGING_HOLD_TIME,
+            # Topmost=True,
+            # ShowOverride=(not Config.Headless)
+        # )
 
         #   Store this result in the corresponding slice of the angle-image Z-stack
         AngleStack[Index,:] = G
@@ -981,6 +993,9 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
     #   angle of the filter it corresponds to) from the Z-stack.
     MaximumPixels: np.ndarray = np.max(AngleStack, axis=0)
     MaximumPixelAngles: np.ndarray = np.argmax(AngleStack, axis=0).astype(np.float64)
+
+    #   Finally, scale the angles from the indices of the angle stack to the actual values (in degrees) each slice corresponds to.
+    MaximumPixelAngles *= (180.0 / DistinctOrientations)
 
     #   Apply a threshold to the maximum intensity pixels across the Z-stack, to
     #   isolate only those regions of the image where the correlation to the
@@ -1003,10 +1018,6 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
         OutputImage[OriginalPixelsMask == 0] = MyUtils.GreyscaleToBGR(Image)[OriginalPixelsMask == 0]
 
     MaximumPixelAngles = MaximumPixelAngles[MaximumPixels != 0].flatten()
-
-    #   Finally, scale the angles from the indices of the angle stack to the actual values (in degrees) each slice corresponds to.
-    MaximumPixelAngles -= (DistinctOrientations / 2)
-    MaximumPixelAngles *= (180.0 / DistinctOrientations)
 
     return OutputImage, MaximumPixelAngles
 
@@ -1122,6 +1133,9 @@ def main() -> None:
 
     #   Save the rod alignment data to a file.
     Tracker.Save(OutputDirectory=Config.GetOutputDirectory())
+
+    with open(os.path.join(Config.GetOutputDirectory(), "Configuration-Parameters.json"), "w+") as ConfigDump:
+        ConfigDump.write(jsonpickle.encode(Config, indent="\t"))
 
     return
 
