@@ -646,13 +646,15 @@ class VideoReadWriter(Iterator):
 
     ##  Static Class Methods
     @staticmethod
-    def FromImageSequence(Images: np.ndarray, writeFile: str = None, logger: Logger.Logger = Logger.Logger(Prefix="FromImageSequence"), progress: bool = True) -> VideoReadWriter:
+    def FromImageSequence(Images: np.ndarray, tempFile: str = None, writeFile: str = None, logger: Logger.Logger = Logger.Logger(Prefix="FromImageSequence"), progress: bool = True) -> VideoReadWriter:
         """
         FromImageSequence
 
         This function...
 
         Images:
+            ...
+        tempFile:
             ...
         writeFile:
             ...
@@ -663,14 +665,15 @@ class VideoReadWriter(Iterator):
 
         Return (VideoReadWriter):
             ...
+
         """
 
-        with tempfile.NamedTemporaryFile() as OutFile:
-            WriteFile: str = OutFile.name + ".avi"
-            V: VideoReadWriter = VideoReadWriter(None, WriteFile, Logger.Logger(Prefix="CZI to Video Converter"), True)
+        with tempfile.NamedTemporaryFile() if ( tempFile is None ) else open(tempFile, "+wb") as OutFile:
+            WriteFile: str = os.path.splitext(OutFile.name)[0] + ".avi"
+            V: VideoReadWriter = VideoReadWriter(None, WriteFile, Logger.Logger(Prefix="Image Sequence to Video Converter"), True)
             V.PrepareWriter(OutputFilename=WriteFile, FourCC='MJPG', Resolution=Images[0].shape)
             for Image in Images:
-                V.WriteFrame(Utils.GreyscaleToBGR(Image))
+                V.WriteFrame(Utils.GreyscaleToBGR(Utils.ConvertTo8Bit(Image)))
             V._closeOutputVideo()
 
             return VideoReadWriter(readFile=WriteFile, writeFile=writeFile, logger=logger, progress=progress)

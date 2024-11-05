@@ -267,8 +267,9 @@ class Configuration():
                 self._LogWriter.Println(f"Asserting playback mode [ NoDisplay ] in headless mode.")
         elif ( self.IsZStack ):
             Stack: ZStack.ZStack = ZStack.ZStack.FromFile(self.SourceFilename, self.LIFClearingAlgorithm)
-            self.SourceFilename = vwr.VideoReadWriter.FromImageSequence(Stack.Pixels, os.path.dirname(self.SourceFilename))._SourceFilename
-            self.VideoFrameRate = 1
+            NewFilename: str = self.SourceFilename.replace(os.path.splitext(self.SourceFilename)[1], ".avi")
+            Video = vwr.VideoReadWriter.FromImageSequence(Stack.Pixels, NewFilename)
+            self.SourceFilename = NewFilename
             self.IsVideo = True
             if ( self.Headless ):
                 self.PlaybackMode = vwr.PlaybackMode_NoDisplay
@@ -500,12 +501,8 @@ class AngleTracker():
             OrientationPDFAxes = F.add_subplot(111, polar=True)
             OrientationPDFAxes.set_thetamin(-90)
             OrientationPDFAxes.set_thetamax(90)
-
-            # OrientationCDFAxes = F.add_subplot(122)
-            # OrientationCDFAxes.set_xlim((-90, 90))
         else:
             OrientationPDFAxes: Axes = F.axes[0]
-            # OrientationCDFAxes: Axes = F.axes[1]
 
         #   Shift so that the mean angle is at 0 degrees for this plot
         NormalizedOrientations: np.ndarray = Orientations - self.MeanAngles[-1]
@@ -516,7 +513,7 @@ class AngleTracker():
         #   Plot the PDF of orientations as a polar antenna plot.
         n, bins = np.histogram(np.deg2rad(NormalizedOrientations), bins=int(round(180.0 / HistogramBinSizing)), range=(-np.pi/2, np.pi/2), density=True)
         OrientationPDFAxes.plot(bins[:-1], n)
-        OrientationPDFAxes.vlines(np.deg2rad([LowerStDev, UpperStDev]), 0, np.max(n), colors='k', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees")
+        OrientationPDFAxes.vlines(np.deg2rad([LowerStDev, UpperStDev]), 0, np.max(n), colors='r', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees")
         OrientationPDFAxes.set_title(f"Rod Orientation Angular Distribution\nMeasurement Count = {self.RodCounts[-1]:.0f}\nAlignment Fraction = {self.AlignmentFractions[-1]:.3f}")
         OrientationPDFAxes.set_xlabel(f"Rod Orientation Angles (degrees)")
         OrientationPDFAxes.set_ylabel(f"Probability Density (n.d.)")
@@ -851,11 +848,11 @@ def EllipticalFilter_PreprocessImage(Image: np.ndarray) -> np.ndarray:
     #   Convert to greyscale, as we don't need colour information for this
     #   process
     Image = MyUtils.BGRToGreyscale(Image)
-    MyUtils.DisplayImage("Greyscale Original Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
+    # MyUtils.DisplayImage("Greyscale Original Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
 
     #   Linearly scale the brightness of the image to cover the full 8-bit range
     Image = MyUtils.ConvertTo8Bit(Image)
-    MyUtils.DisplayImage("8-Bit Greyscale Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
+    # MyUtils.DisplayImage("8-Bit Greyscale Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
 
     #   Check the median pixel of the image to see the foreground is bright or
     #   dark
@@ -873,7 +870,7 @@ def EllipticalFilter_PreprocessImage(Image: np.ndarray) -> np.ndarray:
     else:
         Config.InvertImage = False
 
-    MyUtils.DisplayImage("8-Bit Greyscale Image with Dark Background", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
+    # MyUtils.DisplayImage("8-Bit Greyscale Image with Dark Background", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
     return Image
 
 def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKernelSize: int, BackgroundRemovalSigma: float, ForegroundSmoothingKernelSize: int, ForegroundSmoothingSigma: float, DistinctOrientations: int, EllipticalFilterKernelSize: int, EllipticalFilterMinSigma: float, EllipticalFilterSigma: float, EllipticalFilterScaleFactor: float) -> typing.Tuple[np.ndarray, np.ndarray]:
@@ -928,22 +925,22 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
 
     #   Remove background by subtracting a large-window Gaussian blurred image
     Background: np.ndarray = cv2.GaussianBlur(Image, ksize=(BackgroundRemovalKernelSize, BackgroundRemovalKernelSize), sigmaX=BackgroundRemovalSigma)
-    MyUtils.DisplayImage("Blurred Background Image", MyUtils.ConvertTo8Bit(Background), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
+    # MyUtils.DisplayImage("Blurred Background Image", MyUtils.ConvertTo8Bit(Background), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
 
     Foreground: np.ndarray = Image.astype(np.int16) - Background.astype(np.int16)
-    MyUtils.DisplayImage("Foreground Image", MyUtils.ConvertTo8Bit(Foreground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
+    # MyUtils.DisplayImage("Foreground Image", MyUtils.ConvertTo8Bit(Foreground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
 
     #   Truncate negative pixels to 0
     Foreground[Foreground < 0] = 0
-    MyUtils.DisplayImage("Truncated Foreground Image", MyUtils.ConvertTo8Bit(Foreground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
+    # MyUtils.DisplayImage("Truncated Foreground Image", MyUtils.ConvertTo8Bit(Foreground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
 
     #   Smooth the image again, using a smaller-window Gaussian blur
     SmoothedForeground: np.ndarray = cv2.GaussianBlur(Foreground, ksize=(ForegroundSmoothingKernelSize, ForegroundSmoothingKernelSize), sigmaX=ForegroundSmoothingSigma)
-    MyUtils.DisplayImage("Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
+    # MyUtils.DisplayImage("Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
 
     #   Linearly rescale the image contrast back to the full 8-bit range
     SmoothedForeground = MyUtils.GammaCorrection(SmoothedForeground, Minimum=0, Maximum=255)
-    MyUtils.DisplayImage("Full-Range Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
+    # MyUtils.DisplayImage("Full-Range Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
 
     #   Apply the Mexican hat filter to the image for a set of N different angles,
     #   storing each result as a layer in a new "z-stack".
