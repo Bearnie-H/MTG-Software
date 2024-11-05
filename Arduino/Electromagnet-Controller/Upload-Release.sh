@@ -14,12 +14,16 @@ for Index, Device in enumerate(Devices, start=1):
 EOF
 )
 
-ArduinoPort=
+AArduinoPort="$1"
 for SerialPort in ${SerialPorts[@]}; do
     echo "Serial Port: $SerialPort"
     if [[ $SerialPort == *cu.usbmodem* ]]; then
         echo "Assuming this corresponds to the Arduino..."
-        ArduinoPort="$SerialPort"
+        if [ ! -z $ArduinoPort ]; then
+            echo "Already found a serial port!"
+        else
+            ArduinoPort="$SerialPort"
+        fi
     else
         echo "This doesn't look like an Arduino serial port..."
     fi

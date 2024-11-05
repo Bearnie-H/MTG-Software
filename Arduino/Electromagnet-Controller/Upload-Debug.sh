@@ -14,12 +14,16 @@ for Index, Device in enumerate(Devices, start=1):
 EOF
 )
 
-ArduinoPort=
+ArduinoPort="$1"
 for SerialPort in ${SerialPorts[@]}; do
     echo "Serial Port: $SerialPort"
     if [[ $SerialPort == *cu.usbmodem* ]]; then
         echo "Assuming this corresponds to the Arduino..."
-        ArduinoPort="$SerialPort"
+        if [ ! -z $ArduinoPort ]; then
+            echo "Already found a serial port!"
+        else
+            ArduinoPort="$SerialPort"
+        fi
     else
         echo "This doesn't look like an Arduino serial port..."
     fi
@@ -27,7 +31,7 @@ done
 
 if [ -z "$ArduinoPort" ]; then
     echo "Failed to find what looks like the Arduino Serial Port. Just compiling sketch..."
-    arduino-cli compile -b arduino:avr:uno --build-property "build.extra_flags=-DDEBUG" --clean "Electromagnet-Controller.ino"
+    arduino-cli compile -b arduino:avr:uno --build-property "build.extra_flags=-DDEBUG" --build-property "build.extra_flags=-DLOG_LEVEL_MEDIUM" --clean "Electromagnet-Controller.ino"
 else
-    arduino-cli compile -b arduino:avr:uno --build-property "build.extra_flags=-DDEBUG" --clean --port "$ArduinoPort" -u "Electromagnet-Controller.ino"
+    arduino-cli compile -b arduino:avr:uno --build-property "build.extra_flags=-DDEBUG" --build-property "build.extra_flags=-DLOG_LEVEL_MEDIUM" --clean --port "$ArduinoPort" -u "Electromagnet-Controller.ino"
 fi
