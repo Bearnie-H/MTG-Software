@@ -2477,7 +2477,7 @@ void setup() {
     // that it executes the user-defined WDT_vect interrupt and then a system
     // reset. This must be done after the slow operations of setup(), but prior
     // to any interrupt registration which it is used to break out of.
-    Watchdog_Initialize(WatchdogTimeout_8000ms, WatchdogMode_Reset);
+    // Watchdog_Initialize(WatchdogTimeout_8000ms, WatchdogMode_Reset);
 
     // Notify that the setup() function is now complete.
     Pin_Trigger(DeviceInitializedPin);
@@ -2502,7 +2502,7 @@ void loop() {
     /*
         ...
     */
-    wdt_reset();
+    // wdt_reset();
 
     /*
         Update the duty cycles applied to the phase windings of the Emitter.
