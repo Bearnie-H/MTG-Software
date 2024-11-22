@@ -40,6 +40,7 @@ ANALYSIS_METHOD_COMPONENT:  int = 2
 ANALYSIS_METHOD_HOUGH:      int = 3
 ANALYSIS_METHOD_ELLIPSE:    int = 4
 
+SHOW_DEBUGGING_TEMPORARIES: bool = True
 DEBUGGING_HOLD_TIME: int = 0
 
 class Configuration():
@@ -51,11 +52,12 @@ class Configuration():
     """
 
     SourceFilename: str
+    SourceFolder: str
 
     IsVideo: bool
     IsImage: bool
     IsZStack: bool
-    VideoFrameRate: float
+    LIFClearingAlgorithm: str
 
     InvertImage: bool
 
@@ -68,18 +70,8 @@ class Configuration():
     PlaybackMode: int
 
     AngularResolution: float
-
-    LIFClearingAlgorithm: str
-
-    #   Elliptical Filter parameters
-    BackgroundRemovalKernelSize: int
-    BackgroundRemovalSigma: float
-    ForegroundSmoothingKernelSize: int
-    ForegroundSmoothingSigma: float
-    EllipticalFilterKernelSize: int
-    EllipticalFilterMinSigma: float
-    EllipticalFilterSigma: float
-    EllipticalFilterScaleFactor: float
+    ImageResolution: float
+    FeatureLengthScale: float
 
     _LogWriter: Logger
     _OutputFolder: str
@@ -100,6 +92,9 @@ class Configuration():
         """
 
         self.PlaybackMode = vwr.PlaybackMode_NoDelay
+
+        self.SourceFilename = ""
+        self.SourceFolder   = ""
 
         self.IsVideo        = False
         self.IsImage        = False
@@ -161,46 +156,78 @@ class Configuration():
             ...
         """
 
+        FilepathToProcess: str = Arguments.Filepath
         self.AnalysisMethod = Arguments.AnalysisMethod
-        self.SourceFilename = Arguments.Filename
-        self.VideoFrameRate = 25.0
-        self.InterFrameDuration = 1.0 / self.VideoFrameRate
-
-        if ( Arguments.IsVideo ):
-            self.IsVideo = True
-            self.IsImage = False
-            self.IsZStack = False
-            self.VideoFrameRate = Arguments.FrameRate
-            self.InterFrameDuration = 1.0 / self.VideoFrameRate
-        elif ( Arguments.IsImage ):
-            self.IsImage = True
-            self.IsVideo = False
-            self.IsZStack = False
-        elif ( Arguments.IsZStack ):
-            self.IsZStack = True
-            self.IsImage = False
-            self.IsVideo = False
-            self.LIFClearingAlgorithm = Arguments.LIFClearingMethod
 
         self.AngularResolution = Arguments.AngularResolution
-
-        #   Extract out the elliptical filtering parameters (which may or may not be used)
-        self.BackgroundRemovalKernelSize = MyUtils.RoundUpKernelToOdd(Arguments.BackgroundRemovalKernelSize)
-        self.BackgroundRemovalSigma = Arguments.BackgroundRemovalSigma
-        self.ForegroundSmoothingKernelSize = MyUtils.RoundUpKernelToOdd(Arguments.ForegroundSmoothingKernelSize)
-        self.ForegroundSmoothingSigma = Arguments.ForegroundSmoothingSigma
-        self.EllipticalFilterKernelSize = MyUtils.RoundUpKernelToOdd(Arguments.EllipticalFilterKernelSize)
-        self.EllipticalFilterMinSigma = Arguments.EllipticalFilterMinSigma
-        self.EllipticalFilterSigma = Arguments.EllipticalFilterSigma
-        self.EllipticalFilterScaleFactor = Arguments.EllipticalFilterScaleFactor
+        self.FeatureLengthScale= Arguments.LengthScale
+        self.ImageResolution   = Arguments.ImageResolution
 
         self.DryRun = Arguments.DryRun
         self.Validate = Arguments.Validate
         self.Headless = Arguments.Headless
 
-        #   ...
+        if ( not os.path.exists(FilepathToProcess) ):
+            raise ValueError(f"Filepath [ {FilepathToProcess} ] provided does not exist!")
+        elif ( os.path.isdir(FilepathToProcess) ):
+            self.SourceFilename = ""
+            self.SourceFolder = FilepathToProcess
+        elif ( os.path.isfile(FilepathToProcess) ):
+            self.SetSourceFilename(FilepathToProcess)
+        else:
+            raise ValueError(f"Filepath provided is neither a directory nor a regular file! [ {FilepathToProcess } ]")
 
         return
+
+    def SetSourceFilename(self: Configuration, Filename: str) -> bool:
+        """
+        SetSourceFilename
+
+        This function...
+
+        Filename:
+            ...
+
+        Return (bool):
+            ...
+        """
+
+        if ( Filename is None ) or ( Filename == "" ):
+            self._LogWriter.Warnln(f"No source filename provided!")
+            return False
+
+        self.SourceFilename = Filename
+        self._OutputFolder = ""
+        self._OutputFolder = self.GetOutputDirectory()
+
+        VideoExtensions: typing.List[str] = [".avi", ".mp4", ".mov", ".mkv"]
+        ImageExtensions: typing.List[str] = [".png", ".jpg", ".jpeg", ".tif", ".tiff"]
+        StackExtensions: typing.List[str] = [".lif", ".czi"]
+
+        CurrentExtension: str = os.path.splitext(self.SourceFilename)[1].lower()
+        for Extension in VideoExtensions:
+            if ( Extension.lower() == CurrentExtension ):
+                self.IsVideo = True
+                self.IsImage = False
+                self.IsZStack = False
+                return True
+
+        for Extension in ImageExtensions:
+            if ( Extension.lower() == CurrentExtension ):
+                self.IsVideo = False
+                self.IsImage = True
+                self.IsZStack = False
+                return True
+
+        for Extension in StackExtensions:
+            if ( Extension.lower() == CurrentExtension ):
+                self.IsVideo = False
+                self.IsImage = False
+                self.IsZStack = True
+                return True
+
+        self._LogWriter.Errorln(f"Unknown or unhandled file type: [ {CurrentExtension} ]!")
+        return False
 
     def ValidateArguments(self: Configuration) -> bool:
         """
@@ -215,72 +242,48 @@ class Configuration():
         Validated: bool = True
 
         match (self.AnalysisMethod.lower().strip()):
-            case "sobel":
+            case "sobel" | "Sobel Edge Detection":
                 self.AnalysisMethod = "Sobel Edge Detection"
                 self.AnalysisType = ANALYSIS_METHOD_SOBEL
-            case "component":
+            case "component" | "Component Extraction":
                 self.AnalysisMethod = "Component Extraction"
                 self.AnalysisType = ANALYSIS_METHOD_COMPONENT
-            case "hough":
+            case "hough" | "Hough Line Transform":
                 self.AnalysisMethod = "Hough Line Transform"
                 self.AnalysisType = ANALYSIS_METHOD_HOUGH
-            case "ellipse":
+            case "ellipse" | "Elliptical Filtering":
                 self.AnalysisMethod = "Elliptical Filtering"
                 self.AnalysisType = ANALYSIS_METHOD_ELLIPSE
-
-                if ( self.BackgroundRemovalKernelSize <= 1 ) or (( self.BackgroundRemovalKernelSize % 2 ) == 0 ):
-                    self._LogWriter.Errorln(f"Invalid value for BackgroundRemovalKernelSize: {self.BackgroundRemovalKernelSize}. Must be odd and greater than 1.")
-                    Validated = False
-                if ( self.ForegroundSmoothingKernelSize <= 1 ) or (( self.ForegroundSmoothingKernelSize % 2 ) == 0 ):
-                    self._LogWriter.Errorln(f"Invalid value for ForegroundSmoothingKernelSize: {self.ForegroundSmoothingKernelSize}. Must be odd and greater than 1.")
-                    Validated = False
-                if ( self.EllipticalFilterKernelSize <= 1 ) or (( self.EllipticalFilterKernelSize % 2 ) == 0 ):
-                    self._LogWriter.Errorln(f"Invalid value for EllipticalFilterKernelSize: {self.EllipticalFilterKernelSize}. Must be odd and greater than 1.")
-                    Validated = False
-
-                if ( self.BackgroundRemovalSigma <= 0 ):
-                    self._LogWriter.Warnln(f"Zero-value identified for BackgroundRemovalKernelSize. This will cause a default to be chosen for you.")
-                if ( self.ForegroundSmoothingSigma <= 0 ):
-                    self._LogWriter.Warnln(f"Zero-value identified for ForegroundSmoothingKernelSize. This will cause a default to be chosen for you.")
-                if ( self.EllipticalFilterSigma <= 0 ):
-                    self._LogWriter.Warnln(f"Zero-value identified for EllipticalFilterKernelSize. This will cause a default to be chosen for you.")
-
-                if ( self.EllipticalFilterMinSigma <= 0 ) or ( self.EllipticalFilterMinSigma >= self.EllipticalFilterSigma ):
-                    self._LogWriter.Errorln(f"Invalid value for EllipticalFilterMinSigma: {self.EllipticalFilterMinSigma}. Must be at least greater than EllipticalFilterSigma ({self.EllipticalFilterSigma}).")
-                    Validated = False
-
-                if ( self.EllipticalFilterScaleFactor <= 0 ):
-                    self._LogWriter.Errorln(f"Invalid value for EllipticalFilterScaleFactor: {self.EllipticalFilterScaleFactor}. Must be a positive real number.")
-                    Validated = False
-
             case _:
                 self._LogWriter.Errorln(f"Invalid analysis method [ {self.AnalysisMethod} ]. Must be one of 'sobel', 'component', or 'hough'.")
                 Validated = False
 
+        if ( self.FeatureLengthScale <= 0.0 ):
+            self._LogWriter.Errorln(f"The length scale of features of interest must be a positive real number!")
+            Validated = False
+
+        if ( self.ImageResolution <= 0.0 ):
+            self._LogWriter.Errorln(f"The spatial resolution of the image(s) to process must be a positive real number!")
+            Validated = False
+
         if ( self.IsVideo ):
             self.IsImage = False
-            if ( self.VideoFrameRate < 0 ):
-                self._LogWriter.Errorln(f"Invalid frame-rate [ {self.VideoFrameRate}fps ].")
-                Validated = False
             if ( self.Headless ):
                 self.PlaybackMode = vwr.PlaybackMode_NoDisplay
                 self._LogWriter.Println(f"Asserting playback mode [ NoDisplay ] in headless mode.")
         elif ( self.IsZStack ):
-            Stack: ZStack.ZStack = ZStack.ZStack.FromFile(self.SourceFilename, self.LIFClearingAlgorithm)
+            Stack: ZStack.ZStack = ZStack.ZStack.FromFile(self.SourceFilename)
             NewFilename: str = self.SourceFilename.replace(os.path.splitext(self.SourceFilename)[1], ".avi")
-            Video = vwr.VideoReadWriter.FromImageSequence(Stack.Pixels, NewFilename)
+            vwr.VideoReadWriter.FromImageSequence(Stack.Pixels, NewFilename)
             self.SourceFilename = NewFilename
             self.IsVideo = True
             if ( self.Headless ):
                 self.PlaybackMode = vwr.PlaybackMode_NoDisplay
                 self._LogWriter.Println(f"Asserting playback mode [ NoDisplay ] in headless mode.")
 
-
-        if ( self.AngularResolution <= 0 ) or ( self.AngularResolution >= 90 ):
+        if ( self.AngularResolution <= 0.0 ) or ( self.AngularResolution >= 90.0 ):
             self._LogWriter.Errorln(f"Invalid angular resolution. Must be a real number between (0, 90) degrees: {self.AngularResolution}")
             Validated = False
-
-        #   ...
 
         return ( Validated ) or ( not self.ValidateOnly )
 
@@ -296,6 +299,7 @@ class AngleTracker():
     AlignmentFractions: np.ndarray
     MeanAngles: np.ndarray
     AngularStDevs: np.ndarray
+    AlignmentMetrics: np.ndarray
 
     IntraframeAlignmentFigure: Figure
     AlignmentFractionFigure: Figure
@@ -321,8 +325,9 @@ class AngleTracker():
         self.AlignmentFractions = np.array([])
         self.MeanAngles         = np.array([])
         self.AngularStDevs      = np.array([])
+        self.AlignmentMetrics   = np.array([])
 
-        self.HistogramBinSize: float = 9.0
+        self.HistogramBinSize: float = 1.0
 
         self.IsVideo = Video
         self.OutputDirectory = OutputDirectory
@@ -376,9 +381,9 @@ class AngleTracker():
 
         Lines: typing.List[str] = []
 
-        Lines.append(f"Time, Mean Angle, Angular StDev, Count, Alignment Fraction\n")
-        for Time, Mean, StDev, Count, AlignmentFraction in zip(self.Times, self.MeanAngles, self.AngularStDevs, self.RodCounts, self.AlignmentFractions):
-            Lines.append(f"{Time}, {Mean}, {StDev}, {Count}, {AlignmentFraction}\n")
+        Lines.append(f"Time,Mean Angle,Angular StDev,Count,Alignment Fraction,Alignment Score\n")
+        for Time, Mean, StDev, Count, AlignmentFraction, AlignmentMetric in zip(self.Times, self.MeanAngles, self.AngularStDevs, self.RodCounts, self.AlignmentFractions, self.AlignmentMetrics):
+            Lines.append(f"{Time},{Mean},{StDev},{Count},{AlignmentFraction},{AlignmentMetric}\n")
 
         return Lines
 
@@ -428,6 +433,7 @@ class AngleTracker():
         self.AngularStDevs = np.append(self.AngularStDevs, AngularStDev)
         self.RodCounts = np.append(self.RodCounts, RodCount)
         self.AlignmentFractions = np.append(self.AlignmentFractions, AlignmentFraction)
+        self.AlignmentMetrics = np.append(self.AlignmentMetrics, AlignmentFraction / AngularStDev)
 
         self.UpdateFigures(Orientations, Headless)
 
@@ -496,7 +502,6 @@ class AngleTracker():
         F.clear()
 
         OrientationPDFAxes: Axes = None
-        OrientationCDFAxes: Axes = None
         if ( len(F.axes) == 0 ):
             OrientationPDFAxes = F.add_subplot(111, polar=True)
             OrientationPDFAxes.set_thetamin(-90)
@@ -519,10 +524,6 @@ class AngleTracker():
         OrientationPDFAxes.set_ylabel(f"Probability Density (n.d.)")
         OrientationPDFAxes.minorticks_on()
         OrientationPDFAxes.legend()
-
-        #   Plot the CDF of rods within a given angular deviation from the mean
-        #   angle. This gives a measure of how tightly aligned to the mean angle
-        #   the rods are.
 
         F.tight_layout()
 
@@ -626,6 +627,7 @@ def RodsAdaptiveThreshold(Image: np.ndarray) -> np.ndarray:
     """
 
     #   Define the parameters of this operation
+    #   TODO: ...
     AdaptiveThresholdKernelSize: int = 9
     AdaptiveThresholdConstant: int = 5
 
@@ -633,7 +635,7 @@ def RodsAdaptiveThreshold(Image: np.ndarray) -> np.ndarray:
     Image = MyUtils.BGRToGreyscale(Image)
 
     #   Contrast-Enhance the image to always be full-scale
-    Image = MyUtils.GammaCorrection(Image, Minimum=0, Maximum=255)
+    Image = MyUtils.ConvertTo8Bit(Image)
 
     #   Try using an unsharp mask to reduce blurring, low-frequency components?
 
@@ -659,6 +661,7 @@ def RodSegmentation(Image: np.ndarray) -> typing.Tuple[np.ndarray, typing.List[i
     """
 
     #   Define the parameters of this operation
+    #   TODO: ...
     ComponentConnectivity: int = 8
     ComponentAreaBounds: typing.Tuple[int, int] = (10, 100)
 
@@ -700,6 +703,7 @@ def EllipseContourOrientations(OriginalImage: np.ndarray, Components: np.ndarray
             Orientations
     """
 
+    #   TODO: ...
     EllipseAreaBounds: typing.Tuple[int, int] = (10, 100)
     EllipseAxisLengthBounds: typing.Tuple[int, int] = (1, 50)
 
@@ -808,15 +812,23 @@ def EllipticalFilteringAlignmentMethod(Image: np.ndarray, Arguments: typing.List
     """
 
     Angles: AngleTracker = Arguments[1]
-    BackgroundRemovalKernelSize: int = Config.BackgroundRemovalKernelSize
-    BackgroundRemovalSigma: float = Config.BackgroundRemovalSigma
-    ForegroundSmoothingKernelSize: int = Config.ForegroundSmoothingKernelSize
-    ForegroundSmoothingSigma: float = Config.ForegroundSmoothingSigma
-    DistinctOrientations: int = int(round(180.0 / Angles.HistogramBinSize))
-    EllipticalFilterKernelSize: int = Config.EllipticalFilterKernelSize
-    EllipticalFilterMinSigma: float = Config.EllipticalFilterMinSigma
-    EllipticalFilterSigma: float = Config.EllipticalFilterSigma
-    EllipticalFilterScaleFactor: float = Config.EllipticalFilterScaleFactor
+
+    FeatureSizePx: float = Config.FeatureLengthScale / Config.ImageResolution
+
+    #   Derive the parameters required for this method from the expected or desired feature size
+    #   to extract and identify.
+    DistinctOrientations: int           = int(round(180.0 / Angles.HistogramBinSize))
+
+    BackgroundRemovalKernelSize: int    = MyUtils.RoundUpKernelToOdd(int(round(FeatureSizePx * 3.0)))
+    BackgroundRemovalSigma: float       = BackgroundRemovalKernelSize / 10.0
+
+    ForegroundSmoothingKernelSize: int  = MyUtils.RoundUpKernelToOdd(int(round(FeatureSizePx / 4.0)))
+    ForegroundSmoothingSigma: float     = ForegroundSmoothingKernelSize / 7.5
+
+    EllipticalFilterKernelSize: int     = MyUtils.RoundUpKernelToOdd(int(round(FeatureSizePx * 1.15)))
+    EllipticalFilterSigma: float        = EllipticalFilterKernelSize / 2.0
+    EllipticalFilterMinSigma: float     = EllipticalFilterSigma / 50.0
+    EllipticalFilterScaleFactor: float  = EllipticalFilterKernelSize / 20.0
 
     #   Pre-process the image to get it into a standardized and expected format.
     PreparedImage: np.ndarray = EllipticalFilter_PreprocessImage(Image.copy())
@@ -848,11 +860,11 @@ def EllipticalFilter_PreprocessImage(Image: np.ndarray) -> np.ndarray:
     #   Convert to greyscale, as we don't need colour information for this
     #   process
     Image = MyUtils.BGRToGreyscale(Image)
-    # MyUtils.DisplayImage("Greyscale Original Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
+    MyUtils.DisplayImage("Greyscale Original Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
 
     #   Linearly scale the brightness of the image to cover the full 8-bit range
     Image = MyUtils.ConvertTo8Bit(Image)
-    # MyUtils.DisplayImage("8-Bit Greyscale Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
+    MyUtils.DisplayImage("8-Bit Greyscale Image", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
 
     #   Check the median pixel of the image to see the foreground is bright or
     #   dark
@@ -870,7 +882,7 @@ def EllipticalFilter_PreprocessImage(Image: np.ndarray) -> np.ndarray:
     else:
         Config.InvertImage = False
 
-    # MyUtils.DisplayImage("8-Bit Greyscale Image with Dark Background", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless))
+    MyUtils.DisplayImage("8-Bit Greyscale Image with Dark Background", MyUtils.ConvertTo8Bit(Image.copy()), HoldTime=DEBUGGING_HOLD_TIME, Topmost=True, ShowOverride=(not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
     return Image
 
 def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKernelSize: int, BackgroundRemovalSigma: float, ForegroundSmoothingKernelSize: int, ForegroundSmoothingSigma: float, DistinctOrientations: int, EllipticalFilterKernelSize: int, EllipticalFilterMinSigma: float, EllipticalFilterSigma: float, EllipticalFilterScaleFactor: float) -> typing.Tuple[np.ndarray, np.ndarray]:
@@ -925,22 +937,22 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
 
     #   Remove background by subtracting a large-window Gaussian blurred image
     Background: np.ndarray = cv2.GaussianBlur(Image, ksize=(BackgroundRemovalKernelSize, BackgroundRemovalKernelSize), sigmaX=BackgroundRemovalSigma)
-    # MyUtils.DisplayImage("Blurred Background Image", MyUtils.ConvertTo8Bit(Background), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
+    MyUtils.DisplayImage("Blurred Background Image", MyUtils.ConvertTo8Bit(Background), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
 
     Foreground: np.ndarray = Image.astype(np.int16) - Background.astype(np.int16)
-    # MyUtils.DisplayImage("Foreground Image", MyUtils.ConvertTo8Bit(Foreground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
+    MyUtils.DisplayImage("Foreground Image", MyUtils.ConvertTo8Bit(Foreground), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
 
     #   Truncate negative pixels to 0
     Foreground[Foreground < 0] = 0
-    # MyUtils.DisplayImage("Truncated Foreground Image", MyUtils.ConvertTo8Bit(Foreground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
+    MyUtils.DisplayImage("Truncated Foreground Image", MyUtils.ConvertTo8Bit(Foreground), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
 
     #   Smooth the image again, using a smaller-window Gaussian blur
     SmoothedForeground: np.ndarray = cv2.GaussianBlur(Foreground, ksize=(ForegroundSmoothingKernelSize, ForegroundSmoothingKernelSize), sigmaX=ForegroundSmoothingSigma)
-    # MyUtils.DisplayImage("Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
+    MyUtils.DisplayImage("Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
 
     #   Linearly rescale the image contrast back to the full 8-bit range
     SmoothedForeground = MyUtils.GammaCorrection(SmoothedForeground, Minimum=0, Maximum=255)
-    # MyUtils.DisplayImage("Full-Range Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), DEBUGGING_HOLD_TIME, True, (not Config.Headless))
+    MyUtils.DisplayImage("Full-Range Smoothed Foreground Image", MyUtils.ConvertTo8Bit(SmoothedForeground), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
 
     #   Apply the Mexican hat filter to the image for a set of N different angles,
     #   storing each result as a layer in a new "z-stack".
@@ -960,7 +972,7 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
         Kernel1, Kernel2 = Kernel2, Kernel1
     EllipticalKernel: np.ndarray = Kernel1 - Kernel2
 
-    #   For each of the orientations of interest, iterate over the half-open range of angles [-90,90)
+    #   For each of the orientations of interest, iterate over the half-open range of angles [90,-90)
     for Index, Angle in enumerate(np.linspace(np.pi/2, -np.pi/2, DistinctOrientations, endpoint=False)):
 
         #   Construct the rotated Difference of Gaussian kernel to apply
@@ -973,13 +985,13 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
         G[G <= 0] = 0
 
         # MyUtils.DisplayImages(
-            # Images=[
-                # (f"Elliptical Kernel: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(K)),
-                # (f"Elliptical Features: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(G)),
-            # ],
-            # HoldTime=DEBUGGING_HOLD_TIME,
-            # Topmost=True,
-            # ShowOverride=(not Config.Headless)
+        #     Images=[
+        #         (f"Elliptical Kernel: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(K)),
+        #         (f"Elliptical Features: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(G)),
+        #     ],
+        #     HoldTime=DEBUGGING_HOLD_TIME,
+        #     Topmost=True,
+        #     ShowOverride=(not Config.Headless)
         # )
 
         #   Store this result in the corresponding slice of the angle-image Z-stack
@@ -998,7 +1010,16 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
     #   isolate only those regions of the image where the correlation to the
     #   elliptical filter is strongest. Use this to mask away all of the
     #   orientation pixels which don't correspond to rods.
-    _, MaximumPixels = cv2.threshold(MyUtils.ConvertTo8Bit(MaximumPixels), 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY)
+    MaximumPixels_Adaptive = cv2.adaptiveThreshold(MyUtils.ConvertTo8Bit(MaximumPixels), 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, MyUtils.RoundUpKernelToOdd(ForegroundSmoothingKernelSize), -(ForegroundSmoothingSigma))
+    Otsu_Threshold, MaximumPixels_Otsu = cv2.threshold(MyUtils.ConvertTo8Bit(MaximumPixels), 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY)
+    Triangle_Threshold, MaximumPixels_Triangle = cv2.threshold(MyUtils.ConvertTo8Bit(MaximumPixels), 0, 255, cv2.THRESH_TRIANGLE | cv2.THRESH_BINARY)
+
+    MyUtils.DisplayImage("Original Maximum Angle Image", MyUtils.ConvertTo8Bit(MaximumPixels), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
+    MyUtils.DisplayImage("Adaptive-Thresholded Angle Image", MyUtils.ConvertTo8Bit(MaximumPixels_Adaptive), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
+    MyUtils.DisplayImage(f"Otsu-Threshold Angle Image {Otsu_Threshold}", MyUtils.ConvertTo8Bit(MaximumPixels_Otsu), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
+    MyUtils.DisplayImage(f"Triangle-Threshold Angle Image {Triangle_Threshold}", MyUtils.ConvertTo8Bit(MaximumPixels_Triangle), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
+
+    MaximumPixels = MaximumPixels_Adaptive
 
     #   Construct a new image, consisting of the pixels composing the foreground features,
     #   where the colour depends on the hue angle.
@@ -1028,9 +1049,6 @@ def ComponentAlignmentMethod (Image, Arguments):
 
     #   Extract out the class instance used to track and record the angular information of the rods per frame...
     Angles: AngleTracker = Arguments[1]
-
-    ScaleFactor: float = 1.0
-    Image = MyUtils.UniformRescaleImage(Image, ScalingFactor=ScaleFactor)
 
     #   Apply an adaptive threshold to the image in order to identify the rods versus the background
     ThresholdedImage = RodsAdaptiveThreshold(Image)
@@ -1062,11 +1080,9 @@ def SobelAlignmentMethod(Image:  np.ndarray, Arguments: typing.List[typing.Any])
         ...
     """
 
+    # TODO: ...
     Angles: AngleTracker = Arguments[1]
     SobelBlockSize = 3
-
-    ScaleFactor = 1.0
-    Image = MyUtils.UniformRescaleImage(Image, ScaleFactor)
 
     #   Apply adaptive thresholding to identify the rods from the background
     ThresholdedImage: np.ndarray = RodsAdaptiveThreshold(Image)
@@ -1096,12 +1112,19 @@ def SobelAlignmentMethod(Image:  np.ndarray, Arguments: typing.List[typing.Any])
     AlignmentFraction: float = np.sum([1 if abs(x) <= AngularStDev else 0 for x in (EdgeDirection.copy().flatten() - MeanAngle) ]) / len(EdgeDirection.flatten())
     Angles.Update(EdgeDirection.flatten(), MeanAngle, AngularStDev, RodCount=0, AlignmentFraction=AlignmentFraction, Headless=Config.Headless)
 
-    Gradient = MyUtils.UniformRescaleImage(Gradient, 1.0 / ScaleFactor)
     return Gradient
 
-#   Main
-#       This is the main entry point of the script.
-def main() -> None:
+def ProcessFile() -> None:
+    """
+    ProcessFile
+
+    This function...
+
+    Return (None):
+        ...
+    """
+
+    LogWriter.Println(f"Working with input file: [ {Config.SourceFilename} ]...")
 
     #   Prepare the instance of the AngleTracker to record all of the rod
     #   alignment statistics over the length of the video or image to be
@@ -1118,8 +1141,8 @@ def main() -> None:
 
     #   Prepare the timing information for the angle statistics...
     FrameCount: int = (Video.EndFrameIndex - Video.StartFrameIndex) + 1
-    Tracker.Times = np.linspace(Video.StartFrameIndex / Config.VideoFrameRate, (Video.EndFrameIndex-1) / Config.VideoFrameRate, FrameCount)
-    Video.PrepareWriter(FrameRate=Config.VideoFrameRate)
+    Tracker.Times = np.linspace(Video.StartFrameIndex, (Video.EndFrameIndex-1), FrameCount)
+    Video.PrepareWriter(FrameRate=1)
 
     #   Actually go ahead and process the provided file, calling the _ComputeAlignmentFraction callback on each frame.
     Video.ProcessVideo(PlaybackMode=Config.PlaybackMode, Callback=_ComputeAlignmentFraction, CallbackArgs=[Config.AnalysisType, Tracker])
@@ -1131,8 +1154,28 @@ def main() -> None:
     #   Save the rod alignment data to a file.
     Tracker.Save(OutputDirectory=Config.GetOutputDirectory())
 
-    with open(os.path.join(Config.GetOutputDirectory(), "Configuration-Parameters.json"), "w+") as ConfigDump:
-        ConfigDump.write(jsonpickle.encode(Config, indent="\t"))
+    if ( not Config.DryRun ):
+        with open(os.path.join(Config.GetOutputDirectory(), "Configuration-Parameters.json"), "w+") as ConfigDump:
+            ConfigDump.write(jsonpickle.encode(Config, indent="\t"))
+
+    LogWriter.Println(f"Finished working with input file: [ {Config.SourceFilename} ].")
+
+    return
+
+#   Main
+#       This is the main entry point of the script.
+def main() -> None:
+
+    if ( Config.SourceFolder is not None ) and ( Config.SourceFolder != "" ):
+        LogWriter.Println(f"Working with all files in the directory: [ {Config.SourceFolder} ]...")
+        for root, _, files in os.walk(Config.SourceFolder):
+            for Filename in files:
+                if ( Config.SetSourceFilename(os.path.join(root, Filename)) ) and ( Config.ValidateArguments() ):
+                    ProcessFile()
+    elif ( Config.SourceFilename is not None ) and ( Config.SourceFilename != "" ):
+        ProcessFile()
+    else:
+        raise RuntimeError(f"Neither source file or source folder has been provided!")
 
     return
 
@@ -1150,31 +1193,14 @@ def HandleArguments() -> bool:
     Flags: argparse.ArgumentParser = argparse.ArgumentParser()
 
     #   Add the command-line flags and parameters...
-    Flags.add_argument("--filename", dest="Filename", metavar="file-path", type=str, required=True, help="The video or image file showing rod rotation to be processed.")
-    Flags.add_argument("--video", dest="IsVideo", action='store_true', default=False, help="")
-    Flags.add_argument("--frame-rate", dest="FrameRate", metavar="per-second", type=float, required=False, default=-1, help="The frame-rate of the video file to process. Only checked if --video flag is set.")
-    Flags.add_argument("--image", dest="IsImage", action='store_true', default=False, help="")
-    Flags.add_argument("--method", dest="AnalysisMethod", metavar="<sobel|component|hough|ellipse>", type=str, required=False, default="component", help="The rod segmentation and identification method to use.")
+    Flags.add_argument("--to-process", dest="Filepath", metavar="<file|folder>", type=str, required=True, help="The path to either the file to process, or the folder of files to batch process.")
 
-    Flags.add_argument("--angular-resolution", dest="AngularResolution", metavar="degrees", type=float, required=False, default=9.0, help="The angular resolution of the resulting histogram of rod orientations, in units of degrees.")
+    Flags.add_argument("--method", dest="AnalysisMethod", metavar="<sobel|component|hough|ellipse>", type=str, required=False, default="ellipse", help="The rod segmentation and identification method to use.")
 
-    #   Add in argument(s) for brightfield versus fluorescent imaging.
-    #   ...
+    Flags.add_argument("--angular-resolution", dest="AngularResolution", metavar="degrees", type=float, required=False, default=1.0, help="The angular resolution of the resulting histogram of rod orientations, in units of degrees.")
 
-    #   Add in handling for Z-stack images.
-    Flags.add_argument("--z-stack", dest="IsZStack", action='store_true', default=False, help="")
-    Flags.add_argument("--lif-clearing-method", dest="LIFClearingMethod", metavar='clearing-algorithm', type=str, required=False, default='LVCC', help="")
-    #   ...
-
-    #   Add in the arguments for the elliptical filtering analysis method
-    Flags.add_argument("--ellipse-background-kernel", dest="BackgroundRemovalKernelSize",   metavar="kernel-size", type=int,   required=False, default=81, help="The size of the kernel used for background subtraction.")
-    Flags.add_argument("--ellipse-background-sigma",  dest="BackgroundRemovalSigma",        metavar="sigma",       type=float, required=False, default=15, help="The standard deviation of the Gaussian blur used for background subtraction.")
-    Flags.add_argument("--ellipse-smoothing-kernel",  dest="ForegroundSmoothingKernelSize", metavar="kernel-size", type=int,   required=False, default=11, help="The size of the kernel used for foreground smoothing.")
-    Flags.add_argument("--ellipse-smoothing-sigma",   dest="ForegroundSmoothingSigma",      metavar="sigma",       type=float, required=False, default=2,  help="The standard deviation of the Gaussian blur used for foreground smoothing.")
-    Flags.add_argument("--ellipse-kernel",            dest="EllipticalFilterKernelSize",    metavar="kernel-size", type=int,   required=False, default=81, help="The size of the kernel used for the Mexican Hat filtering.")
-    Flags.add_argument("--ellipse-min-sigma",         dest="EllipticalFilterMinSigma",      metavar="sigma",       type=float, required=False, default=1,  help="The standard deviation of the short axis of the Mexican Hat filter.")
-    Flags.add_argument("--ellipse-sigma",             dest="EllipticalFilterSigma",         metavar="sigma",       type=float, required=False, default=10, help="The standard deviation of the long axis of the Mexican Hat filter.")
-    Flags.add_argument("--ellipse-scale-factor",      dest="EllipticalFilterScaleFactor",   metavar="s",           type=float, required=False, default=4,  help="The scale factor for the standard deviations of the Gaussian kernels used to approximate a Mexican Hat by a Difference of Gaussians.")
+    Flags.add_argument("--length-scale",     dest="LengthScale",     metavar="µm",    type=float, required=True, help="The length scale of the features of which to determine the orientation of.")
+    Flags.add_argument("--image-resolution", dest="ImageResolution", metavar="µm/px", type=float, required=True, help="The size of the pixels within the image, in units of µm per pixel.")
 
             #   Add in flags for manipulating the logging functionality of the script.
     Flags.add_argument("--log-file", dest="LogFile", metavar="file-path", type=str, required=False, default="-", help="File path to the file to write all log messages of this program to.")

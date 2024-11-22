@@ -111,7 +111,7 @@ class ZStack():
                 raise NotImplementedError(f"Z-Stacks from [ {os.path.splitext(Filename)[1].lower()} ] files is not yet supported!")
 
     @staticmethod
-    def FromLIF(Filename: str, SeriesName: str) -> ZStack:
+    def FromLIF(Filename: str, SeriesName: str = "LVCC") -> ZStack:
         """
         FromLIF
 

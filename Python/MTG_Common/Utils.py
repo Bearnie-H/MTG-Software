@@ -525,6 +525,8 @@ def RoundUpKernelToOdd(KernelSize: int) -> int:
     if ( KernelSize ) <= 1:
         raise ValueError(f"Kernel must be at least 2 in size!")
 
+    KernelSize = int(round((KernelSize)))
+
     if (( KernelSize % 2 ) == 0):
         KernelSize += 1
 
