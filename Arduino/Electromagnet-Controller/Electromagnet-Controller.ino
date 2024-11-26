@@ -3,9 +3,8 @@
     Date:       1st February, 2023
     Purpose:    This program is the control software for the magnetic field
                     emitter created for the Mend-the-Gap collaboration. This
-                    software provides the controller functionality for the
-                    original 4-winding, 2-phase emitter, as well as the full
-                    6-winding, 3-phase emitter.
+                    software provides the controller functionality for only the
+                    full 6-winding, 3-phase emitter.
 */
 
 /*
@@ -66,14 +65,16 @@
 /*
     BAUD_RATE
 
-    This macro...
+    This macro defines the baud rate of the Serial port when the firmware is
+    compiled in instrumented mode.
 */
 #define BAUD_RATE 115200
 
 /*
     VERBOSITY
 
-    This macro...
+    This macro defines the level of logging verbosity to compile into the
+    firmware.
 */
 #if defined(LOG_LEVEL_LOW)
     #define VERBOSITY 1
@@ -116,45 +117,6 @@
     used in this program, or those macros which cannot be replaced with typesafe
     constexpr expressions.
 */
-
-/*
-    The total number of electromagnetic windings in the stator. This can either be
-    4 for the 2-phase design, or 6 for the 3-phase design.
-
-    This is a pre-processor macro rather than a constexpr global to allow
-    validation of this value at compile-time.
-*/
-#define WINDING_COUNT 6
-
-/*
-    Validate the WINDING_COUNT macro to be either 4 or 6. Raising a compiler
-    error if the value is invalid.
-*/
-#if (4 == WINDING_COUNT)
-    /*
-        TWO_PHASE
-
-        If defined, this macro indicates that the controller is running in
-        two-phase mode, with four windings spaced π/2 radians apart.
-    */
-    #define TWO_PHASE 1
-    #undef THREE_PHASE
-#elif (6 == WINDING_COUNT)
-    /*
-        THREE_PHASE
-
-        If defined, this macro indicates that the controller is running in
-        three-phase mode, with six windings spaced π/3 radians apart.
-    */
-    #define THREE_PHASE 1
-    #undef TWO_PHASE
-#else
-    /*
-        If some other number of windings are defined, this is unhandled
-        behaviour, so raise a compiler error.
-    */
-    #error "WINDING_COUNT Macro contains an illegal value. This Macro can only be defined as either 4 or 6!"
-#endif
 
 /*
     DegreesToRadians
@@ -515,23 +477,6 @@ typedef struct WelfordAccumulator_t {
 } WelfordAccumulator_t;
 
 /*
-    LoadPolarity_t
-
-    This enumeration defines the polarity of the signal to apply to a particular
-    load element. This enum is defined to be implemented using the uint8_t as
-    the base storage type, shrinking from 4-bytes to 1-byte per value. The
-    ordering of the enumeration constants is also important, and plays a role in
-    the ordering of the pin array within the LoadElement_t struct, where
-    LoadElement_t->Pin[PositivePolarity] WILL correspond to the output pin to
-    drive high in order to apply a positive polarity signal to that load
-    element.
-*/
-typedef enum LoadPolarity_t: uint8_t {
-    PositivePolarity = 0,
-    NegativePolarity = 1
-} LoadPolarity_t;
-
-/*
     Duration_t
 
     This represents a duration of time, corresponding to the difference between
@@ -764,14 +709,10 @@ constexpr Duration_t InterruptFrequencyDefaultUpdatePeriod = (Duration_t)(2 * Se
 typedef struct LoadElement_t {
 
     /*
-        OutputPins
-
-        This represents the pair of output pins of the µ-controller to drive in
-        order to apply power to the load element itself. These are ordered such
-        that the LoadPolarity_t value indexes the "active" pin, while the other
-        must be driven low.
+        ...
     */
-    Pin_t OutputPins[2];
+    Pin_t PWM;
+    Pin_t Enable;
 
     /*
         DutyCycle
@@ -784,17 +725,6 @@ typedef struct LoadElement_t {
         but contains to information regarding the polarity.
     */
     uint8_t DutyCycle;
-
-    /*
-        Polarity
-
-        See the documentation for the LoadPolarity_t type.
-
-        This represents the polarity of the signal to apply to the load element.
-        This can either be positive or negative. A zero-value for duty-cycle
-        covers the case of the load element being completely de-energized.
-    */
-    LoadPolarity_t Polarity;
 
     /*
         Default Constructor
@@ -812,12 +742,10 @@ typedef struct LoadElement_t {
         struct.  This is the function which is called to prepare and ensure a
         LoadElement_t instance is ready for use.
 
-        PositivePin:
-            The pin number of the output pin to use for applying a positive
-            polarity output signal to the load.
-        NegativePin:
-            The pin number of the output pin to use for applying a negative
-            polarity output signal to the load.
+        PWMPin:
+            ...
+        EnablePin:
+            ...
 
         Return (LoadElement_t):
             This function returns the allocated and initialized LoadElement_t
@@ -829,7 +757,7 @@ typedef struct LoadElement_t {
             reset, all pins are configured as pinMode(Pin, OUTPUT), and have
             level equivalent to digitalWrite(Pin, LOW);
     */
-    LoadElement_t(const Pin_t PositivePin, const Pin_t NegativePin);
+    LoadElement_t(const Pin_t PWMPin, const Pin_t EnablePin);
 
 } LoadElement_t;
 
@@ -852,7 +780,7 @@ typedef struct FieldEmitter_t {
         corresponds to Phase A, index 1 to Phase B, and index 2 to Phase C (if
         this third phase is present).
     */
-    LoadElement_t Phases[(WINDING_COUNT >> 1)];
+    LoadElement_t Phases[3];
 
     /*
         TriggerPin
@@ -887,16 +815,6 @@ typedef struct FieldEmitter_t {
     volatile uint16_t DesiredFieldOrientation;
 
     /* +++ Begin Struct Methods +++ */
-    /*
-        2-Phase Constructor
-
-        This constructor prepares a FieldEmitter_t instance for two-phase
-        operation.  This will set up the load windings, the trigger pin, and set
-        the desired initial field orientation to meaningful values, returning a
-        ready-to-use FieldEmitter_t instance.
-    */
-    FieldEmitter_t(LoadElement_t&& PhaseA, LoadElement_t&& PhaseB, const uint8_t TriggerPin);
-
     /*
         3-Phase Constructor
 
@@ -2069,7 +1987,7 @@ void LogInterruptInterval(const Duration_t& AverageInterval, const Duration_t& C
     field orientation angle to the set of phase currents to apply to each of the
     phase windings.
 */
-constexpr uint8_t PhaseCount = (WINDING_COUNT >> 1);
+constexpr uint8_t PhaseCount = 3;
 
 /*
     PhaseSeparationRadians defines the angular separation of the phase windings
@@ -2087,8 +2005,6 @@ constexpr double PhaseSeparationRadians = (PI - (PI / PhaseCount));
 */
 constexpr uint16_t PhaseSeparationDegrees = (180 - (180 / PhaseCount));
 
-
-
 /* +++ Begin Pin Definitions +++ */
 /*
     Define the pairs of output pins for each of the two (or three) phases for
@@ -2097,14 +2013,14 @@ constexpr uint16_t PhaseSeparationDegrees = (180 - (180 / PhaseCount));
     counter for the pins is consistent regardless of directionality, and the
     overall PWM behaviour is invariant to the polarity of the phase.
 */
-constexpr Pin_t Phase_A_Positive = 5;
-constexpr Pin_t Phase_A_Negative = 6;
+constexpr Pin_t Phase_A_PWM     = 5;
+constexpr Pin_t Phase_A_Enable  = 6;
 
-constexpr Pin_t Phase_B_Positive = 3;
-constexpr Pin_t Phase_B_Negative = 11;
+constexpr Pin_t Phase_B_PWM     = 3;
+constexpr Pin_t Phase_B_Enable  = 11;
 
-constexpr Pin_t Phase_C_Positive = 9;
-constexpr Pin_t Phase_C_Negative = 10;
+constexpr Pin_t Phase_C_PWM     = 9;
+constexpr Pin_t Phase_C_Enable  = 10;
 
 /*
     EmitterTriggerPin
@@ -2284,11 +2200,9 @@ constexpr uint16_t FIELD_ORIENTATION_OFF = (uint16_t)0xF000;
     This is initialized as the 3-phase design.
 */
 FieldEmitter_t Emitter = FieldEmitter_t(
-    LoadElement_t(Phase_A_Positive, Phase_A_Negative),
-    LoadElement_t(Phase_B_Positive, Phase_B_Negative),
-#if defined(THREE_PHASE)
-    LoadElement_t(Phase_C_Positive, Phase_C_Negative),
-#endif
+    LoadElement_t(Phase_A_PWM, Phase_A_Enable),
+    LoadElement_t(Phase_B_PWM, Phase_B_Enable),
+    LoadElement_t(Phase_C_PWM, Phase_C_Enable),
     EmitterTriggerPin
 );
 
@@ -2331,23 +2245,6 @@ uint8_t InterruptFrequency_DeratingFactor = InterruptFrequency_DefaultDeratingFa
         aligned with the positive polarity of Phase A.
 */
 uint8_t DutyCycleLUT[360];
-
-/*
-    PolarityLUT
-
-    This array defines the look-up table between the field orientation angle
-    (index) and the corresponding duty cycle polarity to apply for the phase
-    winding (value). This look-up table is provided so as to not require
-    computing these values online during the control loop, as the Arduino
-    platform does not contain hardware floating-point support and the necessary
-    cosine calculations are extremely slow.
-
-    NOTE:
-        This look-up table contains only the polarity of the duty-cycle to
-        apply, and assumes that a field orientation angle of 0 is perfectly
-        aligned with the positive polarity of Phase A.
-*/
-LoadPolarity_t PolarityLUT[360];
 
 /*
     Timer2OverflowCount
@@ -2753,22 +2650,18 @@ void PrepareDutyCycleLUT(void) {
         A. This way we can compute a single look-up table and apply it to all
         phases symmetrically.
     */
-    for ( uint16_t Index = 0; Index < ARRAY_SIZE(DutyCycleLUT); Index++ ) {
+    for ( uint16_t CurrentAngle = 0; CurrentAngle < ARRAY_SIZE(DutyCycleLUT); CurrentAngle++ ) {
 
         /*
             Convert the duty cycle to radians, compute the cosine, and then
-            re-scale to the range [-255, 255].
+            re-scale to the range [-255, 255]. Then, downsample and shift to the
+            range [0, 255], and treat a duty cycle of 50% as the zero-point,
+            with values less equating to negative polarity.
         */
-        const int16_t DutyCycle = (int16_t)(255.0 * cos(DegreesToRadians(Index)));
+        const uint8_t DutyCycle = (uint8_t)(((int16_t)(255.0 * cos(DegreesToRadians(CurrentAngle))) + 255) / 2);
+        DutyCycleLUT[CurrentAngle] = DutyCycle;
 
-        /*
-            The Polarity is just the sign of the duty cycle, while the
-            duty-cycle look-up table only records the magnitude.
-        */
-        PolarityLUT[Index] = (DutyCycle >= 0) ? (PositivePolarity) : (NegativePolarity);
-        DutyCycleLUT[Index] = (uint8_t)abs(DutyCycle);
-
-        LogDutyCycleTable(Index);
+        LogDutyCycleTable(CurrentAngle);
     }
 
     return;
@@ -2811,9 +2704,7 @@ void PWM_SetWaveformMode(const PWMMode_t WaveformGenerationMode) {
         case PWMMode_FastPWM_8Bit:
             SetPWMTimerMode(Timer0, Timer0_FastPWM_8Bit_AndMask_A, Timer0_FastPWM_8Bit_OrMask_A, Timer0_FastPWM_8Bit_AndMask_B, Timer0_FastPWM_8Bit_OrMask_B);
             SetPWMTimerMode(Timer2, Timer2_FastPWM_8Bit_AndMask_A, Timer2_FastPWM_8Bit_OrMask_A, Timer2_FastPWM_8Bit_AndMask_B, Timer2_FastPWM_8Bit_OrMask_B);
-#if defined(THREE_PHASE)
             SetPWMTimerMode(Timer1, Timer1_FastPWM_8Bit_AndMask_A, Timer1_FastPWM_8Bit_OrMask_A, Timer1_FastPWM_8Bit_AndMask_B, Timer1_FastPWM_8Bit_OrMask_B);
-#endif
             /*
                 Currently, only 8-bit FastPWM is implemented, as this is the
                 mode that all three timers can operate in, where the output PWM
@@ -2875,37 +2766,27 @@ void PWM_SetFrequency(const PWMFrequency_t Frequency) {
         case PWM_62500Hz:
             SetPWMFrequencyPrescaler(Timer0, Pin_5_6_62500Hz);
             SetPWMFrequencyPrescaler(Timer2, Pin_3_11_62500Hz);
-#if defined(THREE_PHASE)
             SetPWMFrequencyPrescaler(Timer1, Pin_9_10_62500Hz);
-#endif
             break;
         case PWM_7812Hz:
             SetPWMFrequencyPrescaler(Timer0, Pin_5_6_7812Hz);
             SetPWMFrequencyPrescaler(Timer2, Pin_3_11_7812Hz);
-#if defined(THREE_PHASE)
             SetPWMFrequencyPrescaler(Timer1, Pin_9_10_7812Hz);
-#endif
             break;
         case PWM_976Hz:
             SetPWMFrequencyPrescaler(Timer0, Pin_5_6_976Hz);
             SetPWMFrequencyPrescaler(Timer2, Pin_3_11_976Hz);
-#if defined(THREE_PHASE)
             SetPWMFrequencyPrescaler(Timer1, Pin_9_10_976Hz);
-#endif
             break;
         case PWM_244Hz:
             SetPWMFrequencyPrescaler(Timer0, Pin_5_6_244Hz);
             SetPWMFrequencyPrescaler(Timer2, Pin_3_11_244Hz);
-#if defined(THREE_PHASE)
             SetPWMFrequencyPrescaler(Timer1, Pin_9_10_244Hz);
-#endif
             break;
         case PWM_61Hz:
             SetPWMFrequencyPrescaler(Timer0, Pin_5_6_61Hz);
             SetPWMFrequencyPrescaler(Timer2, Pin_3_11_61Hz);
-#if defined(THREE_PHASE)
             SetPWMFrequencyPrescaler(Timer1, Pin_9_10_61Hz);
-#endif
             break;
         default:
             WarnInvalidPWMFrequency(Frequency);
@@ -3037,27 +2918,15 @@ Timestamp_t GetTimestamp(void) {
 }
 
 /* +++ Begin Struct/Class Methods +++ */
-LoadElement_t::LoadElement_t(const Pin_t Positive, const Pin_t Negative) {
+LoadElement_t::LoadElement_t(const Pin_t PWMPin, const Pin_t EnablePin) {
 
-    this->OutputPins[PositivePolarity] = Positive;
-    this->OutputPins[NegativePolarity] = Negative;
+    this->PWM = PWMPin;
+    this->Enable = Enable;
 
-    this->DutyCycle = 0;
-    this->Polarity = PositivePolarity;
+    this->DutyCycle = 127;  // 50% equates to zero duty cycle.
 
     return;
 };
-
-FieldEmitter_t::FieldEmitter_t(LoadElement_t&& PhaseA, LoadElement_t&& PhaseB, const uint8_t TriggerPin) {
-
-    this->Phases[0] = PhaseA;
-    this->Phases[1] = PhaseB;
-
-    this->TriggerPin = TriggerPin;
-    this->DesiredFieldOrientation = FIELD_ORIENTATION_OFF;
-
-    return;
-}
 
 FieldEmitter_t::FieldEmitter_t(LoadElement_t&& PhaseA, LoadElement_t&& PhaseB, LoadElement_t&& PhaseC, const uint8_t TriggerPin) {
 
@@ -3121,13 +2990,13 @@ void FieldEmitter_t::ConfigurePins(void) const {
 
         const LoadElement_t& PhaseWinding = this->Phases[PhaseIndex];
 
-        pinMode(PhaseWinding.OutputPins[PositivePolarity], OUTPUT);
-        LogPinMode(PhaseWinding.OutputPins[PositivePolarity], OUTPUT);
-        Pin_TriggerOff(PhaseWinding.OutputPins[PositivePolarity]);
+        pinMode(PhaseWinding.PWM, OUTPUT);
+        LogPinMode(PhaseWinding.PWM, OUTPUT);
+        Pin_TriggerOff(PhaseWinding.PWM);
 
-        pinMode(PhaseWinding.OutputPins[NegativePolarity], OUTPUT);
-        LogPinMode(PhaseWinding.OutputPins[NegativePolarity], OUTPUT);
-        Pin_TriggerOff(PhaseWinding.OutputPins[NegativePolarity]);
+        pinMode(PhaseWinding.Enable, OUTPUT);
+        LogPinMode(PhaseWinding.Enable, OUTPUT);
+        Pin_TriggerOff(PhaseWinding.Enable);
     }
 
     pinMode(this->TriggerPin, OUTPUT);
@@ -3171,7 +3040,6 @@ void FieldEmitter_t::ComputeDutyCycles(void) {
             LoadElement_t& PhaseWinding = this->Phases[PhaseIndex];
 
             PhaseWinding.DutyCycle = DutyCycleLUT[PhaseOrientation];
-            PhaseWinding.Polarity = PolarityLUT[PhaseOrientation];
         }
     }
 
@@ -3189,43 +3057,26 @@ void FieldEmitter_t::ApplyDutyCycles(void) const {
         const LoadElement_t& PhaseWinding = this->Phases[PhaseIndex];
 
         /*
+            ...
+        */
+        const Pin_t PWM = PhaseWinding.PWM;
+        const Pin_t Enable = PhaseWinding.Enable;
+
+        /*
             Extract out the duty cycle and polarity for this particular phase
             into local variables for readability. This should all be optimized
             out by the compiler anyway.
         */
-        const LoadPolarity_t Polarity = PhaseWinding.Polarity;
         const uint8_t DutyCycle = PhaseWinding.DutyCycle;
 
         /*
-            Extract out and determine which of the output pins of the Phase
-            winding should be active and which should be inactive.
-
-            If we perform an exclusive OR operation between 1 and the polarity
-            value, this acts to toggle the value between 1 and 0, exactly what
-            we want to know.
+            ...
         */
-        const Pin_t InactivePin = PhaseWinding.OutputPins[(0x01 ^ Polarity)];
-        const Pin_t ActivePin = PhaseWinding.OutputPins[Polarity];
-
-        /*
-            Apply the required duty cycles to the output pins for this phase.
-
-            We find the inactive output pin as being the OPPOSITE polarity as
-            what the duty cycle computed earlier requires. To find this, we can
-            simply XOR the polarity with 1 to toggle between the two
-            LoadPolarity_t values.
-
-            First, set the inactive pin to low, to ensure that there is never a
-            chance for the H-bridge to short through the power MOSFETs.
-
-            Then, apply the computed duty cycle to the active pin, either
-            enabling the PWM signal or modifying the duty cycle.
-        */
-        digitalWrite(InactivePin, LOW);
-        analogWrite(ActivePin, DutyCycle);
+        analogWrite(PWM, DutyCycle);
+        digitalWrite(Enable, HIGH);
 
         // ...
-        LogCurrentPhaseDutyCycle(PhaseIndex, ActivePin, InactivePin, DutyCycle);
+        LogCurrentPhaseDutyCycle(PhaseIndex, PWM, DutyCycle);
     }
 
     return;
@@ -3319,8 +3170,8 @@ InterruptFrequency_t::InterruptFrequency_t(Duration_t UpdatePeriod = InterruptFr
         Initialize all of the Timestamp_t values to 0's, so we have known values
         to compare against.
     */
-    this->CurrentTimeStamp = Timestamp_t();
-    this->PreviousTimeStamp = Timestamp_t();
+    this->CurrentTimeStamp    = Timestamp_t();
+    this->PreviousTimeStamp   = Timestamp_t();
     this->LastUpdateTimeStamp = Timestamp_t();
 
     /*
@@ -3351,9 +3202,9 @@ void InterruptFrequency_t::Reset(void) {
 
     LogResettingInterruptFrequency();
 
-    this->CurrentTimeStamp = Timestamp_t();
-    this->PreviousTimeStamp = Timestamp_t();
-    this->LastUpdateTimeStamp= Timestamp_t();
+    this->CurrentTimeStamp    = Timestamp_t();
+    this->PreviousTimeStamp   = Timestamp_t();
+    this->LastUpdateTimeStamp = Timestamp_t();
 
     if ( 0 == this->UpdatePeriod ) {
         this->UpdatePeriod = InterruptFrequency_t::UpdatePeriod;
@@ -3953,7 +3804,6 @@ void LogDutyCycleTable(uint16_t FieldOrientationAngle) {
     Serial.print("Field Orientation Angle ");
     Serial.print(FieldOrientationAngle);
     Serial.print(" degrees has duty cycle: ");
-    (PolarityLUT[FieldOrientationAngle] == PositivePolarity) ? Serial.print("+") : Serial.print("-");
     Serial.println(DutyCycleLUT[FieldOrientationAngle]);
 #endif
 
@@ -4224,7 +4074,7 @@ void LogResettingInterruptFrequency() {
     return;
 }
 
-void LogCurrentPhaseDutyCycle(uint8_t PhaseIndex, Pin_t ActivePin, Pin_t InactivePin, uint8_t DutyCycle) {
+void LogCurrentPhaseDutyCycle(uint8_t PhaseIndex, Pin_t PWMPin, uint8_t DutyCycle) {
 
 #if VERBOSITY >= 2
     Serial.print("Phase: ");
@@ -4241,10 +4091,8 @@ void LogCurrentPhaseDutyCycle(uint8_t PhaseIndex, Pin_t ActivePin, Pin_t Inactiv
         default:
             break;
     }
-    Serial.print(" - (A/I): ");
-    Serial.print(ActivePin);
-    Serial.print("/");
-    Serial.print(InactivePin);
+    Serial.print(" - Pin: ");
+    Serial.print(PWMPin);
     Serial.print(" Duty: ");
     Serial.println(DutyCycle);
 #endif
@@ -4298,7 +4146,7 @@ void LogPinSetState(Pin_t Pin, const char* State) { return; }
 
 void LogSetupStarting() { return; }
 
-void LogCurrentPhaseDutyCycle(uint8_t PhaseIndex, Pin_t ActivePin, Pin_t InactivePin, uint8_t DutyCycle) { return; }
+void LogCurrentPhaseDutyCycle(uint8_t PhaseIndex, Pin_t PWMPin, uint8_t DutyCycle) { return; }
 
 #endif
 /* --- End Debugging Function Definitions --- */
