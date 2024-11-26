@@ -991,7 +991,7 @@ def EllipticalFilter_IdentifyOrientations(Image: np.ndarray, BackgroundRemovalKe
         #     ],
         #     HoldTime=DEBUGGING_HOLD_TIME,
         #     Topmost=True,
-        #     ShowOverride=(not Config.Headless)
+        #     ShowOverride=(not Config.Headless and SHOW_DEBUGGING_TEMPORARIES)
         # )
 
         #   Store this result in the corresponding slice of the angle-image Z-stack
