@@ -12,4 +12,7 @@ requirements.in
 *test*
 
 DRG_analysis_240904.py
+DRG_analysis_250116.py
 Run_CSV.py
+
+Documentation-Images/**

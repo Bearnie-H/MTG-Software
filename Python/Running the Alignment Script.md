@@ -77,7 +77,7 @@ The first stage of processing is to determine and subtract the background signal
 
 ### Stage 2 - Foreground Smoothing
 
-The second stage of processing is to smooth out the result following the background subtraction. This can leave sharp brightness changes or otherwise negatively impact the edge features of the image. To counteract this, another Gaussian blur is applied to the image in order to re-smooth out these artefacts, using a smaller kernel than was used for background subtraction. Larger kernel sizes blur larger features away, and higher sigmas also more strongly mix all of the pixels within the blurring kernel.
+The second stage of processing is to smooth out the result following the background subtraction. This can leave sharp brightness changes or otherwise negatively impact the edge features of the image. To counteract this, another Gaussian blur is applied to the image in order to re-smooth out these artefacts, using a smaller kernel than was used for background subtraction. Larger kernel sizes blur larger features away, and higher sigma values also more strongly mix all of the pixels within the blurring kernel.
 
 ### Stage 3 - Elliptical Spatial Filtering
 

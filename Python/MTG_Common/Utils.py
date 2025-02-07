@@ -268,6 +268,8 @@ def GammaCorrection(Image: np.ndarray = None, Gamma: float = 1.0, Minimum: int =
         ScaleFactor = Maximum / np.max(Scaled)
         if ( ScaleFactor != 1.0 ):
             Scaled *= ScaleFactor
+    else:
+        Scaled += Maximum
 
     return Scaled.astype(OriginalDtype)
 
@@ -290,6 +292,32 @@ def ConvertTo8Bit(Image: np.ndarray) -> np.ndarray:
         raise ValueError(f"Image must not be None")
 
     return GammaCorrection(Image=Image.copy(), Gamma=1, Minimum=0, Maximum=255).astype(np.uint8)
+
+def WriteImage(Image: np.ndarray, Filepath: str) -> bool:
+    """
+    WriteImage
+
+    This function...
+
+    Image:
+        ...
+    Filepath:
+        ...
+
+    Return (bool):
+        ...
+    """
+
+    if ( Image is None ):
+        raise ValueError(f"Image does not exist!")
+
+    if ( Filepath is None ) or ( Filepath == "" ):
+        raise ValueError(f"Filepath is not provided!")
+
+    if ( not os.path.exists(os.path.dirname(Filepath)) ):
+        os.makedirs(os.path.dirname(Filepath), mode=0o755, exist_ok=True)
+
+    return cv2.imwrite(Filepath, Image)
 
 def RotateFrame(Frame: np.ndarray = None, Theta: float = 0.0, Clockwise: bool = False) -> np.ndarray:
     """
