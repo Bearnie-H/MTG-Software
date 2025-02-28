@@ -309,7 +309,6 @@ class AngleTracker():
     IntraframeAlignmentFigure: Figure
     AlignmentFractionFigure: Figure
 
-    RodsVideo: vwr.VideoReadWriter
     IntraframeAlignmentVideo: vwr.VideoReadWriter
     AlignmentFractionVideo: vwr.VideoReadWriter
 
@@ -318,7 +317,7 @@ class AngleTracker():
 
     DryRun: bool
 
-    def __init__(self: AngleTracker, LogWriter: Logger = Logger(Prefix="AngleTracker"), RodVideo: vwr.VideoReadWriter = None, OutputDirectory: str = ".", Video: bool = True, DryRun: bool = True) -> None:
+    def __init__(self: AngleTracker, LogWriter: Logger = Logger(Prefix="AngleTracker"), OutputDirectory: str = ".", Video: bool = True, DryRun: bool = True) -> None:
         """
         Constructor
 
@@ -347,7 +346,6 @@ class AngleTracker():
             self.AlignmentFractionFigure = MyUtils.PrepareFigure(Interactive=False)
         self.AlignmentFractionVideo = None
 
-        self.RodsVideo = RodVideo
         if ( self.DryRun ):
             self.IntraframeAlignmentVideo = vwr.VideoReadWriter(readFile=None, writeFile=None, logger=LogWriter, progress=(not LogWriter.WritesToFile()))
             self.AlignmentFractionVideo = vwr.VideoReadWriter(readFile=None, writeFile=None, logger=LogWriter, progress=(not LogWriter.WritesToFile()))
@@ -413,7 +411,7 @@ class AngleTracker():
 
         return
 
-    def Update(self: AngleTracker, Orientations: np.ndarray, AlignmentAngle: float, AngularStDev: float, RodCount: int = None, AlignmentFraction: float = 0, Headless: bool = False) -> None:
+    def Update(self: AngleTracker, Orientations: np.ndarray, AlignmentAngle: float, AngularStDev: float, RodCount: int = None, AlignmentFraction: float = 0, Headless: bool = False) -> typing.Tuple[Figure, Figure]:
         """
         Update
 
@@ -440,7 +438,7 @@ class AngleTracker():
         self.AlignmentFractions = np.append(self.AlignmentFractions, AlignmentFraction)
         self.AlignmentMetrics = np.append(self.AlignmentMetrics, AlignmentFraction / AngularStDev)
 
-        self.UpdateFigures(Orientations, Headless)
+        F1, F2 = self.UpdateFigures(Orientations, Headless)
 
         PlaybackMode: int = vwr.PlaybackMode_NoDelay
         if ( Headless ):
@@ -461,9 +459,9 @@ class AngleTracker():
                     self.AlignmentFractionVideo.PrepareWriter(Resolution=tuple(reversed(MyUtils.FigureToImage(self.AlignmentFractionFigure).shape[:2])))
                 self.AlignmentFractionVideo.WriteFrame(MyUtils.FigureToImage(self.AlignmentFractionFigure), PlaybackMode, WindowName="Alignment over Time")
 
-        return
+        return (F1, F2)
 
-    def UpdateFigures(self: AngleTracker, Orientations: np.ndarray, Headless: bool = False) -> None:
+    def UpdateFigures(self: AngleTracker, Orientations: np.ndarray, Headless: bool = False) -> typing.Tuple[Figure, Figure]:
         """
         UpdateFigures
 
@@ -478,17 +476,23 @@ class AngleTracker():
             ...
         """
 
+        F1, F2 = None, None
+
         #   Update each of the figures, showing alignment within a single frame, and the alignment fraction as a function of time.
-        self._UpdateIntraFrameAlignmentFigure(Orientations, Headless)
+        F1 = self.UpdateIntraFrameAlignmentFigure(Orientations)
+        if ( not Headless ):
+            MyUtils.DisplayFigure("Feature Alignment Polar Histogram", F1, DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
 
         if ( self.IsVideo ):
-            self._UpdateAlignmentFractionFigure(Headless)
+            F2 = self.UpdateAlignmentFractionFigure()
+            if ( not Headless ):
+                MyUtils.DisplayFigure("Alignment Fractions", F2, DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
 
-        return
+        return (F1, F2)
 
-    def _UpdateIntraFrameAlignmentFigure(self: AngleTracker, Orientations: np.ndarray, Headless: bool = False) -> None:
+    def UpdateIntraFrameAlignmentFigure(self: AngleTracker, Orientations: np.ndarray) -> Figure:
         """
-        _UpdateIntraFrameAlignmentFigure
+        UpdateIntraFrameAlignmentFigure
 
         This function...
 
@@ -532,11 +536,11 @@ class AngleTracker():
 
         F.tight_layout()
 
-        return
+        return F
 
-    def _UpdateAlignmentFractionFigure(self: AngleTracker, Headless: bool = False) -> None:
+    def UpdateAlignmentFractionFigure(self: AngleTracker) -> Figure:
         """
-        _UpdateAlignmentFractionFigure
+        UpdateAlignmentFractionFigure
 
         This function...
 
@@ -565,7 +569,7 @@ class AngleTracker():
         A.legend()
         F.tight_layout()
 
-        return
+        return F
 
 #   Define the globals to set by the command-line arguments
 LogWriter: Logger = Logger()
@@ -842,8 +846,13 @@ def EllipticalFilteringAlignmentMethod(Image: np.ndarray, Arguments: typing.List
     else:
         PreparedImage = MyUtils.BGRToGreyscale(Image.copy())
 
-    #   Actually apply the elliptical filtering to identify the orientation information from the image.
-    AnnotatedImage, Orientations = EllipticalFilter_IdentifyOrientations(Image, PreparedImage, Config.InvertImage, ForegroundSmoothingKernelSize, -ForegroundSmoothingSigma, DistinctOrientations, EllipticalFilterKernelSize, EllipticalFilterMinSigma, EllipticalFilterSigma, EllipticalFilterScaleFactor)
+    #   Prepare the base elliptical kernel to work with.
+    EllipticalKernel: np.ndarray = PrepareEllipticalKernel(EllipticalFilterKernelSize, EllipticalFilterSigma, EllipticalFilterMinSigma, EllipticalFilterScaleFactor)
+
+    #   Apply the elliptical convoluation and identify all of the orientations
+    Mask, Orientations = ApplyEllipticalConvolution(PreparedImage, DistinctOrientations, EllipticalKernel)
+
+    OutputImage = CreateOrientationVisualization(Image.copy(), Orientations, Mask)
 
     #   ...
     Count, AlignmentFraction, AngularMean, AngularStDev, Orientations = ComputeAlignmentMetric(Orientations=Orientations)
@@ -851,7 +860,7 @@ def EllipticalFilteringAlignmentMethod(Image: np.ndarray, Arguments: typing.List
     #   ...
     Angles.Update(Orientations=Orientations, AlignmentAngle=AngularMean, AngularStDev=AngularStDev, RodCount=Count, AlignmentFraction=AlignmentFraction, Headless=Config.Headless)
 
-    return AnnotatedImage
+    return OutputImage
 
 def EllipticalFilter_PreprocessImage(Image: np.ndarray, BackgroundRemovalKernelSize: int, BackgroundRemovalSigma: float, ForegroundSmoothingKernelSize: int, ForegroundSmoothingSigma: float) -> np.ndarray:
     """
@@ -914,63 +923,7 @@ def EllipticalFilter_PreprocessImage(Image: np.ndarray, BackgroundRemovalKernelS
 
     return Image
 
-def EllipticalFilter_IdentifyOrientations(Original: np.ndarray, PreprocessedImage: np.ndarray, InvertedOriginal: bool, AdaptiveThresholdKernelSize: int, AdaptiveThresholdOffset: float, DistinctOrientations: int, EllipticalFilterKernelSize: int, EllipticalFilterMinSigma: float, EllipticalFilterSigma: float, EllipticalFilterScaleFactor: float) -> typing.Tuple[np.ndarray, np.ndarray]:
-    """
-    EllipticalFilter_IdentifyOrientations
-
-    This function extracts orientation information from the given image by
-    convolving with a highly elliptical kernel and identifying which orientation
-    of kernel results in the strongest signal for each pixel. This function
-    performs it's own background subtraction, foreground smoothing, and
-    segmentation filtering to only identify the orientation information of the
-    meaningful foreground.
-
-    Image:
-        The image to be analyzed. This must be a 8-bit greyscale image, where
-        the background is dark and the foreground is bright.
-    BackgroundRemovalKernelSize:
-        The size of the Gaussian blurring kernel used to generate a "background"
-        image to be subtracted from the given image.
-    BackgroundRemovalSigma:
-        The standard deviation of the Gaussian kernel used to identify the
-        "background".
-    ForegroundSmoothingKernelSize:
-        The size of the Gaussian blurring kernel used to smooth the "foreground"
-        after the background has been subtracted.
-    ForegroundSmoothingSigma:
-        The standard deviation of the Gaussian kernel used to smooth the
-        "foreground".
-    DistinctOrientations:
-        The count of distinct orientations over the half-open range [-90,90)
-        degrees to examine.
-    EllipticalFilterKernelSize:
-        The size of the elliptical kernel used to identify the orientation of
-        the "features" at each pixel of the image.
-    EllipticalFilterMinSigma:
-        The standard deviation of the Gaussian kernel in the "short" direction
-        of the ellipse.
-    EllipticalFilterSigma:
-        The standard deviation of the Gaussian kernel in the "long" direction of
-        the ellipse.
-    EllipticalFilterScaleFactor:
-        The scale factor between the "narrow" and "wide" Gaussian kernels used
-        to approximate a Mexican Hat (Laplacian) kernel as a Difference of
-        Gaussians. The bandwidth of the resulting filter.
-
-    Return (np.ndarray):
-        A NumPy array of "orientations". This is an array consisting of the
-        orientations of each pixel strongly corresponding to the foreground
-        features of the image, which can be analyzed further to explore the
-        population statistics of these orientations.
-    """
-
-    Mask, Angles = ApplyEllipticalConvolution(PreprocessedImage, DistinctOrientations, EllipticalFilterKernelSize, EllipticalFilterSigma, EllipticalFilterMinSigma, EllipticalFilterScaleFactor, AdaptiveThresholdKernelSize, AdaptiveThresholdOffset)
-
-    OutputImage = CreateOrientationVisualization(Original, InvertedOriginal, Angles, Mask)
-
-    return OutputImage, Angles[Mask != 0].flatten()
-
-def ApplyEllipticalConvolution(Image: np.ndarray, DistinctOrientations: int, EllipticalFilterKernelSize: int, EllipticalFilterSigma: float, EllipticalFilterMinSigma: float, EllipticalFilterScaleFactor: float, AdaptiveThresholdKernelSize: int, AdaptiveThresholdOffset: int) -> typing.Tuple[np.ndarray, np.ndarray]:
+def ApplyEllipticalConvolution(Image: np.ndarray, DistinctOrientations: int, EllipticalKernel: np.ndarray) -> typing.Tuple[np.ndarray, np.ndarray]:
     """
     ApplyEllipticalConvolution
 
@@ -980,17 +933,7 @@ def ApplyEllipticalConvolution(Image: np.ndarray, DistinctOrientations: int, Ell
         ...
     DistinctOrientations:
         ...
-    EllipticalFilterKernelSize:
-        ...
-    EllipticalFilterSigma:
-        ...
-    EllipticalFilterMinSigma:
-        ...
-    EllipticalFilterScaleFactor:
-        ...
-    AdaptiveThresholdKernelSize:
-        ...
-    AdaptiveThresholdOffset:
+    EllipticalKernel:
         ...
 
     Return (Tuple):
@@ -1004,41 +947,27 @@ def ApplyEllipticalConvolution(Image: np.ndarray, DistinctOrientations: int, Ell
     #   storing each result as a layer in a new "z-stack".
     AngleStack: np.ndarray = np.zeros((DistinctOrientations, *MyUtils.BGRToGreyscale(Image).shape))
 
-    #   Prepare the two asymmetric kernels to use to construct a Difference of Gaussians approximation to a Mexican Hat filter
-    #   Kernel 2 must have larger sigma than Kernel 1
-    Kernel1_X: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterSigma)
-    Kernel1_Y: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterMinSigma)
-
-    Kernel2_X: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterScaleFactor*EllipticalFilterSigma)
-    Kernel2_Y: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterScaleFactor*EllipticalFilterMinSigma)
-
-    Kernel1: np.ndarray = Kernel1_X * Kernel1_Y.T
-    Kernel2: np.ndarray = Kernel2_X * Kernel2_Y.T
-    if ( EllipticalFilterScaleFactor < 1 ):
-        Kernel1, Kernel2 = Kernel2, Kernel1
-    EllipticalKernel: np.ndarray = Kernel1 - Kernel2
-
     #   For each of the orientations of interest, iterate over the half-open range of angles [90,-90)
-    for Index, Angle in enumerate(np.linspace(np.pi/2, -np.pi/2, DistinctOrientations, endpoint=False)):
+    for Index, Angle in enumerate(np.linspace(90, -90, DistinctOrientations, endpoint=False)):
 
         #   Construct the rotated Difference of Gaussian kernel to apply
-        K: np.ndarray = MyUtils.RotateFrame(EllipticalKernel, Theta=np.rad2deg(Angle))
+        K: np.ndarray = MyUtils.RotateFrame(EllipticalKernel, Theta=Angle)
 
         #   Apply the kernel over the image
         G: np.ndarray = cv2.filter2D(Image, ddepth=cv2.CV_32F, kernel=K)
 
         #   Truncate any pixels which end up negative
-        G[G <= 0] = 0
+        G[G < 0] = 0
 
-        MyUtils.DisplayImages(
-            Images=[
-                (f"Elliptical Kernel: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(K)),
-                (f"Elliptical Features: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(G)),
-            ],
-            HoldTime=DEBUGGING_HOLD_TIME,
-            Topmost=True,
-            ShowOverride=(not Config.Headless and SHOW_DEBUGGING_TEMPORARIES)
-        )
+        # MyUtils.DisplayImages(
+        #     Images=[
+        #         (f"Elliptical Kernel: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(K)),
+        #         (f"Elliptical Features: {np.rad2deg(Angle):.2f}deg", MyUtils.ConvertTo8Bit(G)),
+        #     ],
+        #     HoldTime=DEBUGGING_HOLD_TIME,
+        #     Topmost=True,
+        #     ShowOverride=(not Config.Headless and SHOW_DEBUGGING_TEMPORARIES)
+        # )
 
         #   Store this result in the corresponding slice of the angle-image Z-stack
         AngleStack[Index,:] = G
@@ -1046,39 +975,62 @@ def ApplyEllipticalConvolution(Image: np.ndarray, DistinctOrientations: int, Ell
     #   With the results of the elliptical filter in a "Z-Stack", construct the
     #   resulting "angle image", by taking the maximum intensity pixel (and the
     #   angle of the filter it corresponds to) from the Z-stack.
-    MaximumPixels: np.ndarray = np.max(AngleStack, axis=0)
-    MaximumPixelAngles: np.ndarray = np.argmax(AngleStack, axis=0).astype(np.float64)
-
-    #   Finally, scale the angles from the indices of the angle stack to the actual values (in degrees) each slice corresponds to.
-    MaximumPixelAngles *= (180.0 / DistinctOrientations)
+    Mask: np.ndarray = np.max(AngleStack, axis=0)
+    Orientations: np.ndarray = np.argmax(AngleStack, axis=0).astype(np.float64) * (180.0 / DistinctOrientations)
 
     #   Apply a threshold to the maximum intensity pixels across the Z-stack, to
     #   isolate only those regions of the image where the correlation to the
     #   elliptical filter is strongest. Use this to mask away all of the
     #   orientation pixels which don't correspond to rods or neurites.
-    MaximumPixels_Adaptive = cv2.adaptiveThreshold(MyUtils.BGRToGreyscale(MyUtils.ConvertTo8Bit(MaximumPixels)), 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, MyUtils.RoundUpKernelToOdd(AdaptiveThresholdKernelSize), AdaptiveThresholdOffset)
-    Otsu_Threshold, MaximumPixels_Otsu = cv2.threshold(MyUtils.ConvertTo8Bit(MaximumPixels), 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY)
-    Triangle_Threshold, MaximumPixels_Triangle = cv2.threshold(MyUtils.ConvertTo8Bit(MaximumPixels), 0, 255, cv2.THRESH_TRIANGLE | cv2.THRESH_BINARY)
+    Otsu_Threshold, Mask = cv2.threshold(MyUtils.ConvertTo8Bit(Mask), 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY)
 
-    MyUtils.DisplayImage("Original Maximum Angle Image", MyUtils.ConvertTo8Bit(MaximumPixels), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
-    MyUtils.DisplayImage("Adaptive-Thresholded Angle Image", MyUtils.ConvertTo8Bit(MaximumPixels_Adaptive), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
-    MyUtils.DisplayImage(f"Otsu-Threshold Angle Image {Otsu_Threshold}", MyUtils.ConvertTo8Bit(MaximumPixels_Otsu), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
-    MyUtils.DisplayImage(f"Triangle-Threshold Angle Image {Triangle_Threshold}", MyUtils.ConvertTo8Bit(MaximumPixels_Triangle), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
+    MyUtils.DisplayImage(f"Segmented Angle Image {Otsu_Threshold}", MyUtils.ConvertTo8Bit(Mask), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
 
-    MaximumPixels = MaximumPixels_Otsu
-    MyUtils.DisplayImage(f"Masked Otsu-Threshold Angle Image {Otsu_Threshold}", MyUtils.ConvertTo8Bit(MaximumPixels_Otsu), DEBUGGING_HOLD_TIME, True, (not Config.Headless and SHOW_DEBUGGING_TEMPORARIES))
+    return Mask, Orientations
 
-    return MaximumPixels, MaximumPixelAngles
+def PrepareEllipticalKernel(EllipticalFilterKernelSize: float, EllipticalFilterSigma: float, EllipticalFilterMinSigma: float, EllipticalFilterScaleFactor: float) -> np.ndarray:
+    """
+    PrepareEllipticalKernel
 
-def CreateOrientationVisualization(OriginalImage: np.ndarray, InvertOriginal: bool, Angles: np.ndarray, Mask: np.ndarray) -> np.ndarray:
+    This function...
+
+    EllipticalFilterKernelSize:
+        ...
+    EllipticalFilterSigma:
+        ...
+    EllipticalFilterMinSigma:
+        ...
+    EllipticalFilterScaleFactor:
+        ...
+
+    Return (np.ndarray):
+        ...
+    """
+
+    #   Prepare the two asymmetric kernels to use to construct a Difference of Gaussians approximation to a Mexican Hat filter
+    #   Kernel 2 must have larger sigma than Kernel 1
+    Kernel1_X: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterSigma)
+    Kernel1_Y: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterMinSigma)
+    Kernel2_X: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterScaleFactor*EllipticalFilterSigma)
+    Kernel2_Y: np.ndarray = cv2.getGaussianKernel(EllipticalFilterKernelSize, EllipticalFilterScaleFactor*EllipticalFilterMinSigma)
+
+    #   Create a 2nd rank kernel as the outer product of the different X and Y 1st rank tensors
+    Kernel1: np.ndarray = Kernel1_X * Kernel1_Y.T
+    Kernel2: np.ndarray = Kernel2_X * Kernel2_Y.T
+
+    #   Assert that the scale factor is such that the wider gaussian is subtracted from the narrower gaussian.
+    if ( EllipticalFilterScaleFactor < 1 ):
+        Kernel1, Kernel2 = Kernel2, Kernel1
+
+    return (Kernel1 - Kernel2)
+
+def CreateOrientationVisualization(OriginalImage: np.ndarray, Angles: np.ndarray, Mask: np.ndarray) -> np.ndarray:
     """
     CreateOrientationVisualization
 
     This function...
 
     OriginalImage:
-        ...
-    InvertOriginal:
         ...
     Angles:
         ...
@@ -1098,11 +1050,7 @@ def CreateOrientationVisualization(OriginalImage: np.ndarray, InvertOriginal: bo
     OutputImage = cv2.cvtColor(OutputImage, cv2.COLOR_HSV2BGR)
 
     OriginalPixelsMask = MyUtils.GreyscaleToBGR(Mask)
-    # if ( InvertOriginal ):
-    #     OutputImage[OriginalPixelsMask == 0] = MyUtils.GreyscaleToBGR(-OriginalImage)[OriginalPixelsMask == 0]
-    # else:
-    #     OutputImage[OriginalPixelsMask == 0] = MyUtils.GreyscaleToBGR(OriginalImage)[OriginalPixelsMask == 0]
-    OutputImage[OriginalPixelsMask == 0] = MyUtils.GreyscaleToBGR(OriginalImage)[OriginalPixelsMask == 0]
+    OutputImage[OriginalPixelsMask == 0] = MyUtils.GreyscaleToBGR(MyUtils.GammaCorrection(OriginalImage))[OriginalPixelsMask == 0]
 
     return OutputImage
 

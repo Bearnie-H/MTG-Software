@@ -10,6 +10,7 @@
 #   Import the necessary standard library modules
 from __future__ import annotations
 import argparse
+import itertools
 import os
 import sys
 import traceback
@@ -19,7 +20,6 @@ import typing
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib.path import Path
 from matplotlib.widgets import PolygonSelector
 import numpy as np
 import cv2
@@ -28,14 +28,22 @@ from scipy.signal import correlate
 #   Import the desired locally written modules
 from MTG_Common import Logger
 from MTG_Common import Utils
-from MTG_Common import VideoReadWriter as vwr
-from Alignment_Analysis import EllipticalFilter_IdentifyOrientations, ComputeAlignmentMetric, AngleTracker
+from MTG_Common import ZStack
+from Alignment_Analysis import PrepareEllipticalKernel, ApplyEllipticalConvolution, CreateOrientationVisualization, ComputeAlignmentMetric, AngleTracker
 
 DEBUG_DISPLAY_ENABLED: bool = False
-DEBUG_DISPLAY_TIMEOUT: int = 4
+DEBUG_DISPLAY_TIMEOUT: float = 0.25
 
 #   Add a sequence number to the images as generated and exported from this script.
 ImageSequenceNumber: int = 1
+
+#   Add in top-level return codes for the status of processing the script.
+#   These signal to the environment whether or not everything processed
+#   correctly, or if the script encountered an error during processing.
+STATUS_SUCCESS: int                         = 0
+STATUS_ARGUMENT_VALIDATION_FAILURE: int     = 1
+STATUS_BRIGHTFIELD_FAILURE: int             = 2
+STATUS_FLUORESCENT_FAILURE: int             = 3
 
 class Configuration():
     """
@@ -48,9 +56,9 @@ class Configuration():
     #   Public Class Members
 
     BrightFieldImageFile: str
-    BrightFieldImage: np.ndarray
+    BrightFieldImage: ZStack.ZStack
     MIPImageFile: str
-    MIPImage: np.ndarray
+    FluorescentImage: ZStack.ZStack
 
     ApplyManualROISelection: bool
 
@@ -75,8 +83,8 @@ class Configuration():
         """
         self.BrightFieldImageFile = ""
         self.BrightFieldImage = None
-        self.MIPImageFile = ""
-        self.MIPImage = None
+        self.FluorescentImageFile = ""
+        self.FluorescentImage = None
 
         self.ApplyManualROISelection = False
 
@@ -98,7 +106,6 @@ class Configuration():
         """
 
         return "\n".join([
-
         ])
 
     ### Public Methods
@@ -117,7 +124,7 @@ class Configuration():
         """
 
         self.BrightFieldImageFile = Arguments.BrightField
-        self.MIPImageFile = Arguments.MIPImage
+        self.FluorescentImageFile = Arguments.MIPImage
 
         self.ApplyManualROISelection = Arguments.ManualROI
 
@@ -161,15 +168,15 @@ class Configuration():
             self._LogWriter.Errorln(f"Bright Field image file does not exist!")
             Validated &= False
         else:
-            self.BrightFieldImage = cv2.imread(self.BrightFieldImageFile, cv2.IMREAD_GRAYSCALE)
+            self.BrightFieldImage = ZStack.ZStack.FromFile(self.BrightFieldImageFile)
             self._LogWriter.Println(f"Working with bright-field image file [ {self.BrightFieldImageFile} ]...")
 
-        if ( not os.path.exists(self.MIPImageFile) ):
-            self._LogWriter.Errorln(f"Maximum Intensity Projection image file does not exist!")
+        if ( not os.path.exists(self.FluorescentImageFile) ):
+            self._LogWriter.Errorln(f"Fluorescent image file does not exist!")
             Validated &= False
         else:
-            self.MIPImage = cv2.imread(self.MIPImageFile, cv2.IMREAD_GRAYSCALE)
-            self._LogWriter.Println(f"Working with maximum intensity projection image file [ {self.MIPImageFile} ]...")
+            self.FluorescentImage = ZStack.ZStack.FromFile(self.FluorescentImageFile)
+            self._LogWriter.Println(f"Working with fluorescent image file [ {self.FluorescentImageFile} ]...")
 
         if ( self.ApplyManualROISelection ) and ( self.HeadlessMode ):
             self.ApplyManualROISelection = False
@@ -181,15 +188,16 @@ class Configuration():
         """
         Save
 
-        This function...
+        This function saves out the Configuration instance in either or both text or JSON format
+        for later review.
 
         Text:
-            ...
+            Boolean for whether to save a text copy of the Configuration instance.
         JSON:
-            ...
+            Boolean for whether to save a JSON copy of the Configuration instance.
 
         Return (bool):
-            ...
+            Flag for whether the save operation(s) were successful.
         """
 
         Success: bool = True
@@ -199,6 +207,9 @@ class Configuration():
         if ( JSON ):
             Success &= self._SaveJSON()
 
+        if ( not ( Text or JSON ) ):
+            self._LogWriter.Warnln(f"Save() method called without specifying Text or JSON format.")
+
         return Success
 
     ### Private Methods
@@ -206,10 +217,10 @@ class Configuration():
         """
         _SaveText
 
-        This function...
+        This function specifically saves out the configuration in text format.
 
         Return (bool):
-            ...
+            Boolean for whether the save operation was successful.
         """
         Success: bool = False
 
@@ -221,10 +232,10 @@ class Configuration():
         """
         _SaveJSON
 
-        This function...
+        This function specifically saves out the configuration in JSON format.
 
         Return (bool):
-            ...
+            Boolean for whether the save operation was successful.
         """
         Success: bool = False
 
@@ -232,10 +243,109 @@ class Configuration():
 
         return Success
 
+class QuantificationResults():
+    """
+    QuantificationResults
+
+    This class...
+    """
+
+    OriginalBrightField: ZStack.ZStack
+    BrightFieldMinProjection: np.ndarray
+    BrightFieldBinarized: np.ndarray
+    BrightFieldExclusionMask: np.ndarray
+    BodyCentroidLocation: typing.Tuple[int, int]
+
+    OriginalFluorescent: ZStack.ZStack
+    BinarizedFluorescent: ZStack.ZStack
+    MaskedFluorescent: ZStack.ZStack
+    FilteredFluorescent: ZStack.ZStack
+    ManuallySelectedFluorescent: ZStack.ZStack
+
+    NeuriteDistances: typing.Sequence[np.ndarray]
+    ColourAnnotatedNeuriteLengths: ZStack.ZStack
+
+    NeuriteOrientations: typing.Sequence[np.ndarray]
+    ColourAnnotatedNeuriteOrientations: ZStack.ZStack
+
+
+    #   ...
+
+    def __init__(self: QuantificationResults, LogWriter: Logger.Logger) -> None:
+        """
+        Constructor
+
+        This function...
+
+        LogWriter:
+            ...
+
+        Return (None):
+            ...
+        """
+
+        self.OriginalBrightField = ZStack.ZStack(Name="Original Bright Field")
+        self.BrightFieldMinProjection = np.array([])
+        self.BrightFieldBinarized = np.array([])
+        self.BrightFieldExclusionMask = np.array([])
+        self.BodyCentroidLocation = ()
+
+        self.OriginalFluorescent = ZStack.ZStack(Name="Original Fluorescent")
+        self.BinarizedFluorescent = ZStack.ZStack(Name="Binarized Fluorescent")
+        self.MaskedFluorescent = ZStack.ZStack(Name="Masked Binarized Fluorescent")
+        self.FilteredFluorescent = ZStack.ZStack(Name="Component Filtered Binarized Fluorescent")
+        self.ManuallySelectedFluorescent = ZStack.ZStack(Name="Component Filtered Binarized Fluorescent with Manual ROI Selection")
+
+        self.NeuriteDistances = []
+        self.ColourAnnotatedNeuriteLengths = ZStack.ZStack(Name="Colour-Annotated Neurite Lengths")
+
+        self.NeuriteOrientations = []
+        self.ColourAnnotatedNeuriteOrientations = ZStack.ZStack(Name="Colour-Annotated Neurite Orientations")
+
+        self._LogWriter = LogWriter
+
+        return
+
+    def Save(self: QuantificationResults, Folder: str, DryRun: bool) -> bool:
+        """
+        Save
+
+        This function...
+
+        Folder:
+            ...
+
+        Return (bool):
+            ...
+        """
+
+        if ( Folder is None ) or ( Folder == "" ):
+            raise ValueError(f"Output folder must be specified!")
+
+        if ( not DryRun ):
+            if ( not os.path.exists(Folder) ):
+                os.makedirs(Folder, 0o755, exist_ok=True)
+
+
+        self.OriginalBrightField.SetName("Bright Field").SaveTIFF(Folder)
+        Utils.WriteImage(self.BrightFieldMinProjection, os.path.join(Folder, "Bright Field Minimum Intensity.tif"))
+        Utils.WriteImage(self.BrightFieldBinarized, os.path.join(Folder, "Bright Field Binarized.tif"))
+        Utils.WriteImage(self.BrightFieldExclusionMask, os.path.join(Folder, "Bright Field Exclusion Mask.tif"))
+        self.OriginalFluorescent.SaveTIFF(Folder)
+        self.BinarizedFluorescent.SaveTIFF(Folder)
+        self.MaskedFluorescent.SaveTIFF(Folder)
+        self.FilteredFluorescent.SaveTIFF(Folder)
+        self.ManuallySelectedFluorescent.SaveTIFF(Folder)
+        self.ColourAnnotatedNeuriteLengths.SaveTIFF(Folder)
+        self.ColourAnnotatedNeuriteOrientations.SaveTIFF(Folder)
+
+        return True
+
+
 #   Define the globals to set by the command-line arguments
 LogWriter: Logger.Logger = Logger.Logger(Prefix=os.path.basename(sys.argv[0]))
 Config: Configuration = Configuration(LogWriter=LogWriter)
-#   ...
+Results: QuantificationResults = QuantificationResults(LogWriter=LogWriter)
 
 #   Main
 #       This is the main entry point of the script.
@@ -246,44 +356,40 @@ def main() -> int:
 
     #   Take the bright-field image and use this to identify the centroid of the DRG body,
     #   as well as to generate a mask to remove the DRG body from the fluorescent MIP.
-    CentroidLocation, DRGBodyMask, WellEdgeMask = ProcessBrightField(Config.BrightFieldImage)
+    Results.OriginalBrightField = Config.BrightFieldImage
+    CentroidLocation, DRGBodyMask, WellEdgeMask = ProcessBrightField(Config.BrightFieldImage.MinimumIntensityProjection())
 
-    #   Take the fluorescent image and segment out the neurite growth pixels
-    Neurites: np.ndarray = ProcessFluorescent(Config.MIPImage, DRGBodyMask, WellEdgeMask)
+    for Index, Layer in enumerate(Config.FluorescentImage.Layers()):
+        LogWriter.Println(f"Processing Layer [ {Index+1}/{len(Config.FluorescentImage.Layers())} ]")
 
-    #   If the user has selected they would like to apply manual ROI selection to exclude specific noise regions,
-    #   perform this now.
-    Neurites, ManualExclusionMask = ApplyManualROI(Neurites, Config.MIPImage)
+        #   Take the fluorescent image and segment out the neurite growth pixels
+        Neurites: np.ndarray = ProcessFluorescent(Layer, DRGBodyMask, WellEdgeMask)
 
-    #   With the centroid location and neurite pixels now identified, quantify the distribution of lengths of neurites
-    Stats: np.ndarray = QuantifyNeuriteLengths(Neurites, CentroidLocation)
+        #   If the user has selected they would like to apply manual ROI selection to exclude specific noise regions,
+        #   perform this now.
+        Neurites, ManualExclusionMask = ApplyManualROI(Neurites, Layer)
+        DisplayAndSaveImage(Utils.ConvertTo8Bit(ManualExclusionMask), "Polygon Exclusion Mask", Config.DryRun, Config.HeadlessMode)
+        DisplayAndSaveImage(Utils.ConvertTo8Bit(Neurites), "Polygon Exclusion Masked Image", Config.DryRun, Config.HeadlessMode)
+        Results.ManuallySelectedFluorescent.Append(Utils.ConvertTo8Bit(Neurites))
 
-    #   TODO: This needs to be derived from command-line settings, and extracted into a dedicated function for orientation details.
-    #   Finally, compute the orientation details of the neurites within the image.
-    FeatureSizePx: float = 50 / 0.7644
-    DistinctOrientations: int           = 90
-    BackgroundRemovalKernelSize: int    = Utils.RoundUpKernelToOdd(int(round(FeatureSizePx * 3.0)))
-    BackgroundRemovalSigma: float       = BackgroundRemovalKernelSize / 10.0
+        #   With the centroid location and neurite pixels now identified, quantify the distribution of lengths of neurites
+        Results.NeuriteDistances.append(QuantifyNeuriteLengths(Neurites, CentroidLocation))
 
-    ForegroundSmoothingKernelSize: int  = Utils.RoundUpKernelToOdd(int(round(FeatureSizePx / 4.0)))
-    ForegroundSmoothingSigma: float     = ForegroundSmoothingKernelSize / 7.5
+        FeatureSizePx: float = 50 / 0.7644
+        DistinctOrientations: int = 90
+        Results.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer, Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
 
-    EllipticalFilterKernelSize: int     = Utils.RoundUpKernelToOdd(int(round(FeatureSizePx * 1.15)))
-    EllipticalFilterSigma: float        = EllipticalFilterKernelSize / 2.0
-    EllipticalFilterMinSigma: float     = EllipticalFilterSigma / 50.0
-    EllipticalFilterScaleFactor: float  = EllipticalFilterKernelSize / 20.0
+    GenerateNeuriteLengthVisualization(Results.OriginalFluorescent, Results.ManuallySelectedFluorescent, Results.NeuriteDistances, CentroidLocation)
 
-    OrientationVisualization, Orientations = EllipticalFilter_IdentifyOrientations(Utils.BGRToGreyscale(Config.BrightFieldImage), Neurites, False, ForegroundSmoothingKernelSize, -ForegroundSmoothingSigma, DistinctOrientations, EllipticalFilterKernelSize, EllipticalFilterMinSigma, EllipticalFilterSigma, EllipticalFilterScaleFactor)
-    OrientationVisualization = cv2.circle(OrientationVisualization, CentroidLocation, 10, (0, 0, 255), -1)
-    DisplayAndSaveImage(OrientationVisualization, "Colour Annotated Neurite Orientations")
+    CreateQuantificationFigures(list(itertools.chain.from_iterable(Results.NeuriteDistances)))
 
-    RodCount, AlignmentFraction, MeanAngle, AngularStDev, Orientations = ComputeAlignmentMetric(Orientations)
-    Angles: AngleTracker = AngleTracker(LogWriter, vwr.VideoReadWriter.FromImageSequence([Neurites]), Config.OutputDirectory, Video=False, DryRun=Config.DryRun).SetAngularResolution(180.0 / DistinctOrientations)
-    Angles.Update(Orientations, MeanAngle, AngularStDev, RodCount, AlignmentFraction, Config.HeadlessMode)
+    #   Save out the configuration state for possible later review.
+    Config.Save(Text=True, JSON=True)
+    Results.Save(Folder=Config.OutputDirectory, DryRun=False)
 
     return 0
 
-def DisplayAndSaveImage(Image: np.ndarray, Description: str) -> None:
+def DisplayAndSaveImage(Image: np.ndarray, Description: str, DryRun: bool, Headless: bool) -> None:
     """
     DisplayAndSaveImage
 
@@ -302,10 +408,10 @@ def DisplayAndSaveImage(Image: np.ndarray, Description: str) -> None:
     global ImageSequenceNumber
 
     #   Display the image to the screen
-    Utils.DisplayImage(f"{ImageSequenceNumber} - {Description}", Image, DEBUG_DISPLAY_TIMEOUT, True, (not Config.HeadlessMode) and DEBUG_DISPLAY_ENABLED)
+    Utils.DisplayImage(f"{ImageSequenceNumber} - {Description}", Image, DEBUG_DISPLAY_TIMEOUT, True, (not Headless) and DEBUG_DISPLAY_ENABLED)
 
     #   Save the image to disk.
-    if ( not Config.DryRun ):
+    if ( not DryRun ):
         if ( Utils.WriteImage(Image, os.path.join(Config.OutputDirectory, f"{ImageSequenceNumber} - {Description}.png")) ):
             LogWriter.Println(f"Wrote out image [ {ImageSequenceNumber} - {Description}.png ] to [ {Config.OutputDirectory}/ ]...")
         else:
@@ -340,34 +446,60 @@ def ProcessBrightField(BrightFieldImage: np.ndarray) -> typing.Tuple[typing.Tupl
 
     #   First, convert the bright field image to a full-range 8-bit image and assert that it is greyscale.
     Image: np.ndarray = Utils.ConvertTo8Bit(Utils.BGRToGreyscale(BrightFieldImage))
-    DisplayAndSaveImage(Image, "Initial Bright-Field Image")
+    DisplayAndSaveImage(Image, "Initial Bright-Field Image", Config.DryRun, Config.HeadlessMode)
+    Results.BrightFieldMinProjection = Image
 
     #   Next, assert that the image is generally a bright background with a dark foreground
-    if ( np.median(Image) <= np.mean(Image) ):
+    if ( np.median(Image) < np.mean(Image) ):
         Image = -Image
-        DisplayAndSaveImage(Image, "Inverted Bright-Field Image")
+        DisplayAndSaveImage(Image, "Inverted Bright-Field Image", Config.DryRun, Config.HeadlessMode)
+        Results.BrightFieldMinProjection = Image
 
     #   Create a copy of the image to binarize in order to perform the search for the centroid of the DRG body
-    ThresholdLevel, BinarizedImage = cv2.threshold(Image.copy(), 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
-    DisplayAndSaveImage(BinarizedImage, f"Otsu Binarized Image ({ThresholdLevel:.0f})")
+    BinarizedImage, ThresholdLevel = BinarizeBrightField(Image.copy())
+    DisplayAndSaveImage(BinarizedImage, f"Binarized Image ({ThresholdLevel if ThresholdLevel >= 0 else float('NaN'):.0f})", Config.DryRun, Config.HeadlessMode)
+    Results.BrightFieldBinarized = BinarizedImage
 
     #   Using this binarized image, identify the centroid of the DRG body
     Centroid: typing.Tuple[int, int] = EstimateCentroid(BinarizedImage)
     #   Annotate where the centroid of the DRG body is found to be, and display this to the user...
     CentroidAnnotated: np.ndarray = cv2.circle(Utils.GreyscaleToBGR(Image.copy()), Centroid, 10, (0, 0, 255), -1)
-    DisplayAndSaveImage(CentroidAnnotated, "Centroid Annotated DRG Body")
+    DisplayAndSaveImage(CentroidAnnotated, "Centroid Annotated DRG Body", Config.DryRun, Config.HeadlessMode)
+    Results.BodyCentroidLocation = Centroid
 
     #   With the centroid identified, review the bright field image and compute a mask which covers the
     #   body of the DRG.
     DRGBodyMask: np.ndarray = ComputeDRGMask(BinarizedImage, Centroid)
-    #   Display the DRG Body Mask to the user...
-    DisplayAndSaveImage(Utils.ConvertTo8Bit(DRGBodyMask), "DRG Body Mask")
+    DisplayAndSaveImage(Utils.ConvertTo8Bit(DRGBodyMask), "DRG Body Mask", Config.DryRun, Config.HeadlessMode)
 
     #   Compute the mask of the well edge within the image, as this is typically the source of more noise signals than anywhere else
     WellEdgeMask: np.ndarray = ComputeWellEdgeMask(BinarizedImage, Centroid)
-    DisplayAndSaveImage(Utils.ConvertTo8Bit(WellEdgeMask), "Well Edge Mask")
+    DisplayAndSaveImage(Utils.ConvertTo8Bit(WellEdgeMask), "Well Edge Mask", Config.DryRun, Config.HeadlessMode)
+
+    Results.BrightFieldExclusionMask = Utils.ConvertTo8Bit(DRGBodyMask * WellEdgeMask)
 
     return (Centroid, DRGBodyMask, WellEdgeMask)
+
+def BinarizeBrightField(Image: np.ndarray) -> typing.Tuple[np.ndarray, int]:
+    """
+    BinarizeBrightField
+
+    This function...
+
+    Image:
+        ...
+
+    Return (Tuple):
+        [0] - np.ndarray:
+            ...
+        [1] - int:
+            ...
+    """
+
+    #   Just apply a basic Otsu's method segmentation.
+    ThresholdLevel, BinarizedImage = cv2.threshold(Image.copy(), 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+
+    return BinarizedImage, ThresholdLevel
 
 def EstimateCentroid(ThresholdedImage: np.ndarray, CorrelationThreshold: float = 0.975, KernelStepSize: int = 10, InitialKernelSize: int = 11, CentroidJitterThreshold: int = 1) -> typing.Tuple[int, int]:
     """
@@ -439,12 +571,12 @@ def EstimateCentroid(ThresholdedImage: np.ndarray, CorrelationThreshold: float =
         Centroid_X = int(ImageMoments["m10"] / ImageMoments["m00"])
         Centroid_Y = int(ImageMoments["m01"] / ImageMoments["m00"])
 
+        # Utils.DisplayImage(f"DRG Centroid Correlation Map: [ K={KernelSize} ]", cv2.circle(Utils.GreyscaleToBGR(Utils.ConvertTo8Bit(CorrelationMap.copy())), (Centroid_X, Centroid_Y), 10, (0, 0, 255), -1), DEBUG_DISPLAY_TIMEOUT, True, DEBUG_DISPLAY_ENABLED and ( not Config.HeadlessMode ))
+
         #   If the centroid does not exist, then the kernel is improperly sized so we exit.
         if ( Centroid_X == 0 ) and ( Centroid_Y == 0 ):
             LogWriter.Warnln(f"Failed to identify centroid location for kernel of size [ {KernelSize} ]...")
             break
-
-        # Utils.DisplayImage(f"Centroid Estimation - (K={KernelSize})", cv2.circle(Utils.GreyscaleToBGR(Utils.ConvertTo8Bit(CorrelationMap)), (Centroid_X, Centroid_Y), 10, (0, 0, 255), -1), DEBUG_DISPLAY_TIMEOUT, True, (not Config.HeadlessMode) or DEBUG_DISPLAY_ENABLED)
 
         #   Check where the current averaged centroid location is...
         Current_X, Current_Y = 0, 0
@@ -466,15 +598,16 @@ def ComputeDRGMask(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[int, 
     ComputeDRGMask
 
     This function takes in the binarized bright-field image of the DRG body and computes
-    a mask for excluding all DRG body pixels from the fluoresdcense
+    a mask for excluding all DRG body pixels from the fluorescence image.
 
     ThresholdedImage:
-        ...
+        The pre-thresholded binary bright-field image of the DRG body within the chip well.
     DRGCentroid:
-        ...
+        The estimated location of the DRG centroid within the image, in (X, Y) pixel coordinates
 
     Return (np.ndarray):
-        ...
+        An image mask suitable to be applied to remove all pixels within the interior
+        of the DRG body, without affecting any other pixels of the image.
     """
 
     #   Define all of the tunable parameters of this function in one place
@@ -525,15 +658,17 @@ def ComputeWellEdgeMask(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuople
     """
     ComputeWellEdgeMask
 
-    This function...
+    This function takes in the binarized bright-field image of the DRG body and computes
+    a mask for excluding all pixels outside of the chip well in view.
 
     ThresholdedImage:
-        ...
+        The pre-thresholded binary bright-field image of the DRG body within the chip well.
     DRGCentroid:
-        ...
+        The estimated location of the DRG centroid within the image, in (X, Y) pixel coordinates
 
     Return (np.ndarray):
-        ...
+        An image mask suitable to be applied to remove all pixels outside of the well
+        interior within the chip.
     """
 
     #   Define all of the tunable parameters of this function in one place
@@ -583,82 +718,165 @@ def ComputeWellEdgeMask(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuople
 
     return WellEdgeMask
 
-def ProcessFluorescent(MaximumIntensityProjection: np.ndarray, DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> np.ndarray:
+def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> np.ndarray:
     """
     ProcessFluorescent
 
+    This function handles all of the processing to apply to the fluorescence image
+    in order to extract out the neurite length and orientation information from the image.
+
+    FluorescentImage:
+        A flattened maximum intensity Z-projection of the original fluoresence Z-stack.
+    DRGBodyMask:
+        The pre-computed mask for removing pixels within the interior of the DRG body from
+        the fluorescence image.
+    WellEdgeMask:
+        The pre-computed mask for removing pixels outside the bounds of the well of the chip.
+
+    Return (np.ndarray):
+        A binary image with the pixels corresponding to neurites set as non-zero values, while
+        all non-neurite pixels are set to 0.
+    """
+
+    #   Define all of the tunable parameters in one place
+    #   TODO: Make these configuration settings
+    AdaptiveKernelSize: int = 45
+    AdaptiveOffset: int = -5
+    MaskExpansionSize: int = int(AdaptiveKernelSize / 4)
+    SpeckleComponentAreaThreshold: int = 25
+    NeuriteAspectRatioThreshold: float = 1.5
+    NeuriteInfillFractionThreshold: float = 0.75 * (np.pi / 4)
+
+    #   First, convert the image to a full-range 8-bit image and assert that it is greyscale.
+    Image: np.ndarray = Utils.ConvertTo8Bit(Utils.BGRToGreyscale(FluorescentImage))
+    DisplayAndSaveImage(Image, "Initial Fluorescent Image", Config.DryRun, Config.HeadlessMode)
+    Results.OriginalFluorescent.Append(Image)
+
+    #   Apply an adaptive local threshold over the image to further select out the neurite pixels
+    BinarizedImage: np.ndarray = BinarizeFluorescent(Image, AdaptiveKernelSize, AdaptiveOffset)
+    DisplayAndSaveImage(BinarizedImage, f"Binarized Fluorescent Image (k={AdaptiveKernelSize}, C={AdaptiveOffset})", Config.DryRun, Config.HeadlessMode)
+    Results.BinarizedFluorescent.Append(BinarizedImage)
+
+    #   Expand the original DRG Body mask again slightly, to not include artefacts from the "edge" introduced
+    #   by applying the mask
+    BinarizedImage = ApplyExclusionMask(BinarizedImage, cv2.erode(DRGBodyMask, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(MaskExpansionSize, MaskExpansionSize))))
+    DisplayAndSaveImage(BinarizedImage, f"DRG Body Mask Edge Removed", Config.DryRun, Config.HeadlessMode)
+
+    #   Expand the original Well Edge mask again slightly, to not include artefacts from the "edge" introduced
+    #   by applying the mask
+    BinarizedImage = ApplyExclusionMask(BinarizedImage, cv2.erode(WellEdgeMask, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(MaskExpansionSize, MaskExpansionSize))))
+    DisplayAndSaveImage(BinarizedImage, f"Well Edge Mask Edge Removed", Config.DryRun, Config.HeadlessMode)
+    Results.MaskedFluorescent.Append(BinarizedImage)
+
+    #   Finally, separate out all of the components of the image and filter them to remove any which do not
+    #   satisfy the expectations of neurites
+    FilteredNeuriteComponents = FilterNeuriteComponents(BinarizedImage, SpeckleComponentAreaThreshold, NeuriteAspectRatioThreshold, NeuriteInfillFractionThreshold)
+    DisplayAndSaveImage(Utils.ConvertTo8Bit(FilteredNeuriteComponents), "Filtered Connected Components after Local Thresholding", Config.DryRun, Config.HeadlessMode)
+    Results.FilteredFluorescent.Append(Utils.ConvertTo8Bit(FilteredNeuriteComponents))
+
+    return FilteredNeuriteComponents
+
+def BinarizeFluorescent(Image: np.ndarray, KernelSize: int, ThresholdValue: int) -> np.ndarray:
+    """
+    BinarizeFluorescent
+
     This function...
 
-    MaximumIntensityProjection:
+    Image:
         ...
-    DRGBodyMask:
+    KernelSize:
         ...
-    WellEdgeMask:
+    ThresholdValue:
+        ...
+    """
+
+    ThresholdedImage: np.ndarray = cv2.adaptiveThreshold(Image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, KernelSize, ThresholdValue)
+
+    return ThresholdedImage
+
+def ApplyExclusionMask(Image: np.ndarray, Mask: np.ndarray) -> np.ndarray:
+    """
+    ApplyExclusionMask
+
+    This function...
+
+    Image:
+        ...
+    Mask:
         ...
 
     Return (np.ndarray):
         ...
     """
 
-    #   Define all of the tunable parameters in one place
-    AdaptiveKernelSize: int = 45
-    AdaptiveOffset: int = -5
-    SpeckleComponentAreaThreshold: int = 125
-    MinimumAreaPercentile: int = 1
+    Mask = Utils.GammaCorrection(Mask.astype(np.float64), Gamma=1, Minimum=0.0, Maximum=1.0)
 
-    #   First, convert the image to a full-range 8-bit image and assert that it is greyscale.
-    Image: np.ndarray = Utils.ConvertTo8Bit(Utils.BGRToGreyscale(MaximumIntensityProjection))
-    DisplayAndSaveImage(Image, "Initial Maximum Intensity Projection Image")
+    return Utils.ConvertTo8Bit(Image * Mask)
 
-    #   Apply an adaptive local threshold over the image to further select out the neurite pixels
-    ThresholdedImage: np.ndarray = cv2.adaptiveThreshold(Image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, AdaptiveKernelSize, AdaptiveOffset)
-    DisplayAndSaveImage(ThresholdedImage, f"Locally Thresholded Image (k={AdaptiveKernelSize}, C={AdaptiveOffset})")
+def FilterNeuriteComponents(Image: np.ndarray, SpeckleAreaThreshold: int, NeuriteAspectRatioThreshold: float, NeuriteInfillFraction: float) -> np.ndarray:
+    """
+    FilterNeuriteComponents
 
-    #   Expand the original DRG Body mask again slightly, to not include artefacts from the "edge" introduced
-    #   by applying the mask
-    MaskExpansionSize: int = int(AdaptiveKernelSize / 4)
-    ThresholdedImage = Utils.GammaCorrection(ThresholdedImage * cv2.erode(DRGBodyMask, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(MaskExpansionSize, MaskExpansionSize))))
-    DisplayAndSaveImage(ThresholdedImage, f"DRG Body Mask Edge Removed")
+    This function...
 
-    #   Expand the original Well Edge mask again slightly, to not include artefacts from the "edge" introduced
-    #   by applying the mask
-    ThresholdedImage = Utils.GammaCorrection(ThresholdedImage * cv2.erode(WellEdgeMask, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(MaskExpansionSize, MaskExpansionSize))))
-    DisplayAndSaveImage(ThresholdedImage, f"Well Edge Mask Edge Removed")
+    Image:
+        ...
 
-    #   Next, we want to removal little speckle noise and other very small regions which make it through the thresholding.
+    Return (np.ndarray):
+        ...
+    """
+
+    #   We want to removal little speckle noise and other very small regions which make it through the thresholding.
     #   Identify connected components and only accept those larger than some area threshold
-    NumberOfComponents, Labels, Stats, Centroids = cv2.connectedComponentsWithStats(ThresholdedImage, connectivity=4)
-    #   Determine the distances of each component centroid from the previously identified DRG centroid
+    NumberOfComponents, Labels, Stats, Centroids = cv2.connectedComponentsWithStats(Image, connectivity=4)
+
+    if ( NumberOfComponents == 0 ):
+        raise RuntimeError(f"Failed to identify any components within the image!")
+
+    #   Determine the area of each component, given by the number of pixels it contains.
     OrderedComponents: np.ndarray = np.array(sorted([
-        (x, Stats[x, cv2.CC_STAT_AREA]) for x in range(1, NumberOfComponents) if Stats[x, cv2.CC_STAT_AREA] > SpeckleComponentAreaThreshold
+        (x, Stats[x, cv2.CC_STAT_AREA]) for x in range(1, NumberOfComponents) if Stats[x, cv2.CC_STAT_AREA] > SpeckleAreaThreshold
     ], key=lambda x: x[1], reverse=True))
-    MinimumAreaThreshold: float = np.percentile(OrderedComponents[:,1], MinimumAreaPercentile)
 
     #   Re-build the components into a single image to work with, containing only the meaningful components of the image.
-    FilteredComponents: np.ndarray = np.zeros_like(ThresholdedImage)
-    for ComponentID, ComponentArea in OrderedComponents:
-        if ( ComponentArea < MinimumAreaThreshold ):
-            continue
+    FilteredComponents: np.ndarray = np.zeros_like(Image)
+    for Index, (ComponentID, ComponentArea) in enumerate(OrderedComponents):
 
-        #   Maybe add some filtering based off the circularity of the components?
+        #   Apply Filtering based off the circularity of the components.
         #   We'd expect neurites to be either high aspect ratio, or if the bounding box is close to square, the filled area would be low.
         ComponentMask: np.ndarray = (Labels == ComponentID).astype(np.uint8)
+
         Contours, _ = cv2.findContours(ComponentMask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        #   We only look at the first contour, since we only draw a single component into the temporary image.
         if ( len(Contours) > 0 ):
 
-            (Centre, (Width, Height), Orientation) = cv2.minAreaRect(Contours[0])
+            Rectangle: cv2.RotatedRect = cv2.minAreaRect(Contours[0])
+            (Centre, (Width, Height), Orientation) = Rectangle
 
             AspectRatio: float = np.max([Height, Width]) / np.min([Height, Width])
             BoundingArea: int = Height * Width
-            if ( AspectRatio <= 1.5 ):
-                FilledFraction: float = BoundingArea / ComponentArea
-                if ( FilledFraction >= 0.85 ):
+            FilledFraction: float = ComponentArea / BoundingArea
+
+            #   TESTING - Overlay the current component on the existing image.
+            # LogWriter.Println(f"Component: {ComponentID} - {AspectRatio=:.2f}, {FilledFraction=:.2f}")
+            # T: np.ndarray = Utils.GreyscaleToBGR(FilteredComponents.copy())
+            # T[:,:,0] = cv2.drawContours(np.zeros_like(FilteredComponents), [np.intp(cv2.boxPoints(Rectangle))], 0, 1, 1)
+            # T[Labels == ComponentID, 1] = 1
+            # Utils.DisplayImage(f"Candidate Next Component ({Index}/{OrderedComponents.shape[0]}) - {AspectRatio=:.2f}, {FilledFraction=:.2f}", Utils.ConvertTo8Bit(T), DEBUG_DISPLAY_TIMEOUT, True, DEBUG_DISPLAY_ENABLED and (not Config.HeadlessMode))
+
+            if ( AspectRatio < NeuriteAspectRatioThreshold ):
+                if ( FilledFraction > NeuriteInfillFraction ):
+                    # LogWriter.Println(f"Infill Fraction [ {FilledFraction} ] too high!")
                     continue
-            #   ...
+                else:
+                    # LogWriter.Println(f"Infill Fraction [ {FilledFraction} ] satisfactory!")
+                    pass
+            else:
+                # LogWriter.Println(f"Aspect Ratio [ {AspectRatio} ] satisfactory!")
+                pass
 
             FilteredComponents[Labels == ComponentID] = 1
-
-    DisplayAndSaveImage(Utils.ConvertTo8Bit(FilteredComponents), "Filtered Connected Components after Local Thresholding")
 
     return FilteredComponents
 
@@ -666,32 +884,33 @@ def ApplyManualROI(ImageToFilter: np.ndarray, Background: np.ndarray) -> typing.
     """
     ApplyManualROI
 
-    This function...
+    This function allows the user to manually draw closed polygons over the image to construct
+    a mask for removing any pixels or regions which have erroneously been considered as neurites.
+    This builds up a new exclusion mask to apply to the image, removing all pixels within
+    the polygons drawn by the user.
 
     ImageToFilter:
-        ...
+        The current image of identified neurite pixels, which can be manually further filtered by this function.
     Background:
-        ...
+        A background image to provide context into what the identified pixels correspond to, generally the
+        fluorescent image.
 
     Return (Tuple):
         [0] - np.ndarray:
-            ...
+            The resulting masked image, with the user-selected regions removed.
         [1] - np.ndarray:
-            ...
+            The mask generated by the user, for visualization or potential later re-use.
     """
 
+    #   Pre-fill the exclusion mask with all ones, to include all pixels.
     PolygonExclusionMask: np.ndarray = np.ones_like(Utils.BGRToGreyscale(ImageToFilter))
 
     if ( Config.ApplyManualROISelection ):
 
-        def UpdateExclusionMask(Vertices: np.ndarray) -> None:
-            nonlocal PolygonExclusionMask
-            Vertices = np.array([
-                (int(X), int(Y)) for (X, Y) in Vertices
-            ])
-            PolygonExclusionMask = cv2.drawContours(PolygonExclusionMask, [Vertices], 0, 0, -1)
-            Utils.DisplayImage(f"Current Polygon Exclusion Result", Utils.ConvertTo8Bit(PolygonExclusionMask * ImageToFilter), DEBUG_DISPLAY_TIMEOUT, True, True)
+        F, Ax = plt.subplots()
 
+        #   Prepare an overlaid image with the background being shown as-is, and the foreground neurite pixels
+        #   only in the green channel.
         Base: np.ndarray = Utils.GammaCorrection(Utils.GreyscaleToBGR(Background).astype(np.float64), Minimum=0, Maximum=1.0)
         Foreground: np.ndarray = Utils.GammaCorrection(Utils.GreyscaleToBGR(ImageToFilter).astype(np.float64), Minimum=0, Maximum=1.0)
         Foreground[:,:,0] = 0
@@ -700,32 +919,58 @@ def ApplyManualROI(ImageToFilter: np.ndarray, Background: np.ndarray) -> typing.
 
         Result = (Foreground * Alpha) + (Base * (1.0 - Alpha))
 
-        F, Ax = plt.subplots()
+        #   Actually display the image and allow the user to select points on the image to draw the polygons to exclude.
+        #   TODO: Update the candidate image between each exclusion mask application?
         AxIm = Ax.imshow(Result, origin='upper')
+
+        #   Define the callback to run if and when the user draws a closed polygon.
+        def UpdateExclusionMask(Vertices: np.ndarray) -> None:
+
+            #   When a closed polygon is drawn, convert it into a set of (X,Y) coordinate points,
+            #   and draw this as a contour over the image, infilling with 0's to mask out the
+            #   interior region of the contour.
+            nonlocal PolygonExclusionMask
+            nonlocal Ax
+            Vertices = np.array([
+                (int(X), int(Y)) for (X, Y) in Vertices
+            ])
+            PolygonExclusionMask = cv2.drawContours(PolygonExclusionMask, [Vertices], 0, 0, -1)
+            Utils.DisplayImage(f"Current Polygon Exclusion Result", Utils.ConvertTo8Bit(PolygonExclusionMask * ImageToFilter), DEBUG_DISPLAY_TIMEOUT, True, True)
+
+            #   Prepare an overlaid image with the background being shown as-is, and the foreground neurite pixels
+            #   only in the green channel.
+            Base: np.ndarray = Utils.GammaCorrection(Utils.GreyscaleToBGR(Background).astype(np.float64), Minimum=0, Maximum=1.0)
+            Foreground: np.ndarray = Utils.GammaCorrection(Utils.GreyscaleToBGR(PolygonExclusionMask * ImageToFilter).astype(np.float64), Minimum=0, Maximum=1.0)
+            Foreground[:,:,0] = 0
+            Foreground[:,:,2] = 0
+            Alpha: np.ndarray = Foreground.copy()
+
+            Result = (Foreground * Alpha) + (Base * (1.0 - Alpha))
+
+            Ax.imshow(Utils.ConvertTo8Bit(Result), origin='upper')
 
         P = PolygonSelector(Ax, onselect=UpdateExclusionMask, props=dict(color='r', linestyle='-', linewidth=2))
         plt.show(block=True)
 
-    DisplayAndSaveImage(Utils.ConvertTo8Bit(PolygonExclusionMask), "Polygon Exclusion Mask")
 
     PolygonMaskedImage: np.ndarray = Utils.BGRToGreyscale(ImageToFilter) * PolygonExclusionMask
-    DisplayAndSaveImage(Utils.ConvertTo8Bit(PolygonMaskedImage), "Polygon Exclusion Masked Image")
-
     return PolygonMaskedImage, PolygonExclusionMask
 
 def QuantifyNeuriteLengths(NeuritePixels: np.ndarray, Origin: typing.Tuple[int, int]) -> np.ndarray:
     """
     QuantifyNeuriteLengths
 
-    This function...
+    This function handles the actual quantification operation for transforming the image
+    of identified neurite pixels, and the centroid of the DRG body, into a distribution of lengths
+    of neurites within the image.
 
     NeuritePixels:
-        ...
+        The image with identified neurite pixels as non-zero values.
     Origin:
-        ...
+        The (X, Y) coordinates to consider as the origin from which distances are to be measured.
 
     Return (np.ndarray):
-        ...
+        A 1D numpy array of the L2-normed distances as measured from the estimated DRG centroid location.
     """
 
     #   Identify the indices of the image corresponding to the neurite pixels
@@ -734,39 +979,85 @@ def QuantifyNeuriteLengths(NeuritePixels: np.ndarray, Origin: typing.Tuple[int, 
     #   Compute the L2 norm from the origin point to each identified neurite pixel
     Distances: np.ndarray = np.hypot(NeuriteCoordinates[:,0] - Origin[1], NeuriteCoordinates[:,1] - Origin[0])
 
-    #   Prepare a visualization of the neurite lengths, with increasing length corresponding to varying hue
-    NeuriteLengthVisualization: np.ndarray = Utils.GreyscaleToBGR(np.zeros_like(NeuritePixels))
-
-    #   Add in the centroid location
-    NeuriteLengthVisualization = cv2.circle(NeuriteLengthVisualization, Origin, 10, (0, 255, 255), -1)
-    MaximumLength: float = np.max(Distances)
-    for Index, Distance in enumerate(Distances):
-        NeuriteLengthVisualization[NeuriteCoordinates[Index, 0], NeuriteCoordinates[Index, 1], :] = (180 * (Distance / MaximumLength), 255, 255)
-    DisplayAndSaveImage(cv2.cvtColor(NeuriteLengthVisualization, cv2.COLOR_HSV2BGR), "Neurite Length Visualization")
-
-    Base: np.ndarray = Utils.GammaCorrection(Utils.GreyscaleToBGR(Config.BrightFieldImage.copy()).astype(np.float64), Minimum=0, Maximum=1.0)
-    Foreground: np.ndarray = Utils.GammaCorrection(cv2.cvtColor(NeuriteLengthVisualization, cv2.COLOR_HSV2BGR).astype(np.float64), Minimum=0, Maximum=1.0)
-    Alpha: np.ndarray = Utils.GammaCorrection(Utils.GreyscaleToBGR(NeuritePixels).astype(np.float64), Minimum=0, Maximum=1.0)
-
-    Result = (Foreground * Alpha) + (Base * (1.0 - Alpha))
-    Result = cv2.circle(Result, Origin, 10, (0, 0, 1.0), -1)
-    DisplayAndSaveImage(Utils.ConvertTo8Bit(Result), "Colour Annotated Identified Neurites")
-
-    CreateQuantificationFigures(Distances)
-
     return Distances
+
+def GenerateNeuriteLengthVisualization(BaseImages: ZStack.ZStack, NeuritePixels: ZStack.ZStack, Distances: typing.Sequence[np.ndarray], Origin: typing.Tuple[int, int]) -> None:
+
+    MaximumLength: float = np.max([np.max(x) for x in Distances])
+
+    for Index, (Layer, BaseImage, LayerDistances) in enumerate(zip(NeuritePixels.Layers(), BaseImages.Layers(), Distances)):
+        NeuriteCoordinates = np.argwhere(Layer != 0)
+
+        #   Prepare a visualization of the neurite lengths, with increasing length corresponding to varying hue
+        NeuriteLengthVisualization: np.ndarray = Utils.GreyscaleToBGR(np.zeros_like(Layer))
+
+        #   Add in the centroid location
+        NeuriteLengthVisualization = cv2.circle(NeuriteLengthVisualization, Origin, 10, (0, 255, 255), -1)
+        for Index, Distance in enumerate(LayerDistances):
+            NeuriteLengthVisualization[NeuriteCoordinates[Index, 0], NeuriteCoordinates[Index, 1], :] = (180 * (Distance / MaximumLength), 255, 255)
+        DisplayAndSaveImage(cv2.cvtColor(NeuriteLengthVisualization, cv2.COLOR_HSV2BGR), "Neurite Length Visualization", Config.DryRun, Config.HeadlessMode)
+
+        Base: np.ndarray = Utils.GammaCorrection(Utils.GreyscaleToBGR(BaseImage.copy()).astype(np.float64), Minimum=0, Maximum=1.0)
+        Foreground: np.ndarray = Utils.GammaCorrection(cv2.cvtColor(NeuriteLengthVisualization, cv2.COLOR_HSV2BGR).astype(np.float64), Minimum=0, Maximum=1.0)
+        Alpha: np.ndarray = Utils.GammaCorrection(Utils.GreyscaleToBGR(Layer).astype(np.float64), Minimum=0, Maximum=1.0)
+
+        Result = (Foreground * Alpha) + (Base * (1.0 - Alpha))
+        Result = cv2.circle(Result, Origin, 10, (0, 0, 1.0), -1)
+        DisplayAndSaveImage(Utils.ConvertTo8Bit(Result), "Colour Annotated Identified Neurites", Config.DryRun, Config.HeadlessMode)
+        Results.ColourAnnotatedNeuriteLengths.Append(Utils.ConvertTo8Bit(Result))
+
+    return
+
+def QuantifyNeuriteOrientations(BaseImage: np.ndarray, NeuritePixels: np.ndarray, CentroidLocation: typing.Tuple[int, int], FeatureSizePx: float, DistinctOrientations: int) -> np.ndarray:
+    """
+    QuantifyNeuriteOrientations
+
+    This function...
+
+
+    Return
+    """
+
+    #   TODO: This also needs to be extracted into a dedicated function...
+    #   TODO: This needs to be derived from command-line settings, and extracted into a dedicated function for orientation details.
+    #   Finally, compute the orientation details of the neurites within the image.
+    EllipticalFilterKernelSize: int     = Utils.RoundUpKernelToOdd(int(round(FeatureSizePx * 1.15)))
+    EllipticalFilterSigma: float        = EllipticalFilterKernelSize / 2.0
+    EllipticalFilterMinSigma: float     = EllipticalFilterSigma / 50.0
+    EllipticalFilterScaleFactor: float  = EllipticalFilterKernelSize / 20.0
+
+    #   Prepare the base elliptical kernel to work with.
+    EllipticalKernel: np.ndarray = PrepareEllipticalKernel(EllipticalFilterKernelSize, EllipticalFilterSigma, EllipticalFilterMinSigma, EllipticalFilterScaleFactor)
+
+    #   Apply the elliptical convoluation and identify all of the orientations
+    Mask, RawOrientations = ApplyEllipticalConvolution(NeuritePixels, DistinctOrientations, EllipticalKernel)
+
+    Mask[NeuritePixels == 0] = 0
+    OrientationVisualization: np.ndarray = CreateOrientationVisualization(BaseImage, RawOrientations, Mask)
+
+    OrientationVisualization = cv2.circle(OrientationVisualization, CentroidLocation, 10, (0, 0, 255), -1)
+    DisplayAndSaveImage(OrientationVisualization, "Colour Annotated Neurite Orientations", Config.DryRun, Config.HeadlessMode)
+    Results.ColourAnnotatedNeuriteOrientations.Append(OrientationVisualization)
+
+    Count, AlignmentFraction, MeanOrientation, AngularStDev, Orientations = ComputeAlignmentMetric(RawOrientations[Mask != 0].flatten())
+    Angles: AngleTracker = AngleTracker(LogWriter, Config.OutputDirectory, Video=False, DryRun=Config.DryRun).SetAngularResolution(180.0 / DistinctOrientations)
+    OrientationPlot, _= Angles.Update(Orientations, MeanOrientation, AngularStDev, Count, AlignmentFraction, Config.HeadlessMode)
+    DisplayAndSaveImage(Utils.FigureToImage(OrientationPlot), "Neurite Orientations", Config.DryRun, Config.HeadlessMode)
+
+    return RawOrientations
 
 def CreateQuantificationFigures(NeuriteLengths: np.ndarray) -> None:
     """
     CreateQuantificationFigures
 
-    This function...
+    This function creates the figures used to report the quantified neurite lengths as identified
+    from the images.
 
     NeuriteLengths:
-        ...
+        A 1D numpy array of the raw distance values for neurite pixels.
 
     Return (None):
-        ...
+        None, the figures are generated and optionally displayed and saved to disk.
     """
 
     BinCount: int = 100
@@ -776,7 +1067,7 @@ def CreateQuantificationFigures(NeuriteLengths: np.ndarray) -> None:
     F: Figure = Utils.PrepareFigure(Interactive=(not Config.HeadlessMode))
     A: Axes = F.add_subplot(111)
 
-    F.suptitle(f"Dorsal Root Ganglion in Ultimatrix")
+    F.suptitle(f"<Experimental Identification Here>")
     A.set_title(f"Neurite Length Quantification - Total Pixel Count {len(NeuriteLengths)}")
     A.set_xlabel(f"Neurite Length (px)")
     A.set_ylabel(f"Normalized Pixel Count")
@@ -787,7 +1078,7 @@ def CreateQuantificationFigures(NeuriteLengths: np.ndarray) -> None:
     A.vlines([mean + stdev, mean - stdev], ymin=0, ymax=np.max(n), label=f"1σ Length ({stdev:.0f}px)", color='k')
     A.legend()
 
-    DisplayAndSaveImage(Utils.FigureToImage(F), "Neurite Length Distribution")
+    DisplayAndSaveImage(Utils.FigureToImage(F), "Neurite Length Distribution", Config.DryRun, Config.HeadlessMode)
 
     return
 
@@ -795,10 +1086,10 @@ def HandleArguments() -> bool:
     """
     HandleArguments
 
-    This function...
+    This function sets up, parses, extracts, and validates the command-line arguments for the script.
 
     Return (bool):
-        ...
+        A boolean indicating whether or not the script should continue executing after this function returns.
     """
 
     #   Prepare the argument parser
@@ -808,7 +1099,6 @@ def HandleArguments() -> bool:
     #   Add in the flags for the bright-field and fluorescent MIP images to work from.
     Flags.add_argument("--bf-image",  dest="BrightField", metavar="file-path", type=str, required=True, help="The file path to the bright-field image file to work with.")
     Flags.add_argument("--mip-image", dest="MIPImage",    metavar="file-path", type=str, required=True, help="The file path to the maximum intensity image computed from the fluorescent Z-stack to work with.")
-
     Flags.add_argument("--manual-roi", dest="ManualROI", action="store_true", required=False, default=False, help="...")
 
     #   Add in the flag specifying where the results generated by this script should be written out to.

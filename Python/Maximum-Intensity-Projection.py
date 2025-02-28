@@ -14,6 +14,7 @@ import typing
 #   ...
 
 #   Import the necessary third-part modules
+import numpy as np
 #   ...
 
 #   Import the desired locally written modules
@@ -30,14 +31,32 @@ LogWriter: Logger.Logger = Logger.Logger(Prefix="Maximum-Intensity-Projection.py
 #       This is the main entry point of the script.
 def main() -> None:
 
-    Utils.DisplayImage(
-        "Maximum Intensity Projection",
-        ZStack.ZStack.FromFile(sys.argv[1]).MaximumIntensityProjection(),
-        0,
-        True
-    )
+    Description: str = ""
+    Projection: np.ndarray = None
 
-    #   ...
+    if ( len(sys.argv) == 3 ):
+        if ( sys.argv[2].lower() == "--min" ):
+            Projection = ZStack.ZStack.FromFile(sys.argv[1]).MinimumIntensityProjection()
+            Description = "Minimum Intensity Projection"
+        elif ( sys.argv[2].lower() == "--max" ):
+            Projection = ZStack.ZStack.FromFile(sys.argv[1]).MaximumIntensityProjection()
+            Description = "Maximum Intensity Projection"
+        elif ( sys.argv[2].lower() == "--avg" ):
+            Projection = ZStack.ZStack.FromFile(sys.argv[1]).AverageIntensityProjection()
+            Description = "Average Intensity Projection"
+        elif ( sys.argv[2].lower() == "--display" ):
+            ZStack.ZStack.FromFile(sys.argv[1]).Display()
+
+
+    if ( Projection is not None ):
+        Utils.DisplayImage(
+            Description,
+            Utils.ConvertTo8Bit(Projection),
+            5,
+            True
+        )
+
+        Utils.WriteImage(Utils.ConvertTo8Bit(Projection), os.path.join(os.path.dirname(sys.argv[1]), f"{os.path.splitext(os.path.basename(sys.argv[1]))[0]} - {Description}.tif"))
 
     return
 
