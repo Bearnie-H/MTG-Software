@@ -2921,7 +2921,7 @@ Timestamp_t GetTimestamp(void) {
 LoadElement_t::LoadElement_t(const Pin_t PWMPin, const Pin_t EnablePin) {
 
     this->PWM = PWMPin;
-    this->Enable = Enable;
+    this->Enable = EnablePin;
 
     this->DutyCycle = 127;  // 50% equates to zero duty cycle.
 

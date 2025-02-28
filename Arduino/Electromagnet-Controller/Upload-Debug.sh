@@ -31,7 +31,9 @@ done
 
 if [ -z "$ArduinoPort" ]; then
     echo "Failed to find what looks like the Arduino Serial Port. Just compiling sketch..."
-    arduino-cli compile -b arduino:avr:uno --build-property "build.extra_flags=-DDEBUG" --build-property "build.extra_flags=-DLOG_LEVEL_MEDIUM" --clean "Electromagnet-Controller.ino"
+    arduino-cli compile -b arduino:avr:uno --build-property "build.extra_flags=-DDEBUG" --build-property "build.extra_flags=-DLOG_LEVEL_HIGH" --clean "Electromagnet-Controller.ino"
 else
-    arduino-cli compile -b arduino:avr:uno --build-property "build.extra_flags=-DDEBUG" --build-property "build.extra_flags=-DLOG_LEVEL_MEDIUM" --clean --port "$ArduinoPort" -u "Electromagnet-Controller.ino"
+    arduino-cli compile -b arduino:avr:uno --build-property "build.extra_flags=-DDEBUG" --build-property "build.extra_flags=-DLOG_LEVEL_HIGH" --clean --port "$ArduinoPort" -u "Electromagnet-Controller.ino"
+    echo "Starting to monitor Serial Port..."
+    arduino-cli monitor -b arduino:avr:uno --config 115200 --port "$ArduinoPort"
 fi
