@@ -31,7 +31,7 @@ from MTG_Common import Utils
 from MTG_Common import ZStack
 from Alignment_Analysis import PrepareEllipticalKernel, ApplyEllipticalConvolution, CreateOrientationVisualization, ComputeAlignmentMetric, AngleTracker
 
-DEBUG_DISPLAY_ENABLED: bool = False
+DEBUG_DISPLAY_ENABLED: bool = True
 DEBUG_DISPLAY_TIMEOUT: float = 0.25
 
 #   Add a sequence number to the images as generated and exported from this script.
@@ -992,7 +992,6 @@ def GenerateNeuriteLengthVisualization(BaseImages: ZStack.ZStack, NeuritePixels:
         NeuriteLengthVisualization: np.ndarray = Utils.GreyscaleToBGR(np.zeros_like(Layer))
 
         #   Add in the centroid location
-        NeuriteLengthVisualization = cv2.circle(NeuriteLengthVisualization, Origin, 10, (0, 255, 255), -1)
         for Index, Distance in enumerate(LayerDistances):
             NeuriteLengthVisualization[NeuriteCoordinates[Index, 0], NeuriteCoordinates[Index, 1], :] = (180 * (Distance / MaximumLength), 255, 255)
         DisplayAndSaveImage(cv2.cvtColor(NeuriteLengthVisualization, cv2.COLOR_HSV2BGR), "Neurite Length Visualization", Config.DryRun, Config.HeadlessMode)

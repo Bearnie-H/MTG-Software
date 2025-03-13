@@ -229,7 +229,7 @@ def GammaCorrection(Image: np.ndarray = None, Gamma: float = 1.0, Minimum: int =
         A new np.ndarray instance containing the brightness-scaled original image.
     """
 
-    if ( Image is None ):
+    if ( Image is None ) or ( len(Image) == 0 ):
         raise ValueError(f"Image must be provided.")
 
     if ( 0 >= Gamma ):
@@ -268,8 +268,6 @@ def GammaCorrection(Image: np.ndarray = None, Gamma: float = 1.0, Minimum: int =
         ScaleFactor = Maximum / np.max(Scaled)
         if ( ScaleFactor != 1.0 ):
             Scaled *= ScaleFactor
-    else:
-        Scaled += Maximum
 
     return Scaled.astype(OriginalDtype)
 
@@ -308,7 +306,7 @@ def WriteImage(Image: np.ndarray, Filepath: str) -> bool:
         ...
     """
 
-    if ( Image is None ):
+    if ( Image is None ) or ( len(Image) == 0 ):
         raise ValueError(f"Image does not exist!")
 
     if ( Filepath is None ) or ( Filepath == "" ):

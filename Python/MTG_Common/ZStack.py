@@ -197,6 +197,23 @@ class ZStack():
 
         return New
 
+    def InitializePixels(self: ZStack, Shape: typing.Tuple[int, int, int]) -> ZStack:
+        """
+        InitializePixels
+
+        This function
+
+        Shape:
+            ...
+
+        Return (ZStack):
+            ...
+        """
+
+        self.Pixels = np.zeros(Shape, np.uint8)
+
+        return self
+
     def Append(self: ZStack, ToAppend: np.ndarray) -> ZStack:
         """
         Append
@@ -217,6 +234,29 @@ class ZStack():
 
         return self
 
+    def InsertLayer(self: ZStack, ToInsert: np.ndarray, LayerIndex: int) -> ZStack:
+        """
+        InsertLayer
+
+        This function...
+
+        ToInsert:
+            ...
+        LayerIndex:
+            ...
+
+        Return (ZStack):
+            ...
+        """
+
+        if ( self.Pixels is None ) or ( self.Pixels.shape[0] < LayerIndex ):
+            self._LogWriter.Errorln(f"Pixels is not initialized or large enough!")
+            return self
+
+        self.Pixels[LayerIndex,:,:] = ToInsert
+
+        return self
+
     def Layers(self: ZStack) -> typing.Sequence[np.ndarray]:
         """
         Layers
@@ -227,9 +267,13 @@ class ZStack():
             ...
         """
 
+        if ( self.Pixels is None ):
+            return []
+
         if ( not self.IsZStack() ):
             return self.Pixels.reshape((1,) + self.Pixels.shape)
 
+        # return [x for x in self.Pixels[0:5,:]]
         return self.Pixels
 
     def LayerCount(self: ZStack) -> int:
@@ -241,6 +285,9 @@ class ZStack():
         Return (int):
             ...
         """
+
+        if ( self.Pixels is None ):
+            return 0
 
         return self.Pixels.shape[0] if self.IsZStack() else 1
 
@@ -254,7 +301,60 @@ class ZStack():
             ...
         """
 
-        return len(self.Pixels.shape) == 3
+        if ( self.Pixels is None ):
+            return False
+
+        return len(self.Pixels.shape) >= 3
+
+    def SplitTimeSeries(self: ZStack) -> typing.Sequence[ZStack]:
+        """
+        SplitTimeSeries
+
+        This function...
+
+        Return (Sequence[ZStack]):
+            ...
+        """
+
+        TimePoints: typing.List[ZStack] = []
+
+        #   Z,Y,X,T,C
+        if ( len(self.Pixels.shape) == 5 ):
+            for T in range(self.Pixels.shape[3]):
+                t: ZStack = ZStack(LogWriter=self._LogWriter, Name=f"{self.Name} - {T=:}")
+                t.Pixels = self.Pixels[:,:,:,T,:].copy()
+                if ( t.Pixels.shape[-1] == 1 ):
+                    t.Pixels = np.squeeze(t.Pixels, axis=-1)
+                TimePoints.append(t)
+        else:
+            TimePoints = [self]
+
+        return TimePoints
+
+    def SplitChannels(self: ZStack) -> typing.Sequence[ZStack]:
+        """
+        SplitChannels
+
+        This function...
+
+        Return (Sequence[ZStack]):
+            ...
+        """
+
+        Channels: typing.List[ZStack] = []
+
+        #   Z,Y,X,T,C
+        if ( len(self.Pixels.shape) == 5 ):
+            for C in range(self.Pixels.shape[4]):
+                c: ZStack = ZStack(LogWriter=self._LogWriter, Name=f"{self.Name} - {C=:}")
+                c.Pixels = self.Pixels[:,:,:,:,C].copy()
+                if ( c.Pixels.shape[-1] == 1 ):
+                    c.Pixels = np.squeeze(c.Pixels, axis=-1)
+                Channels.append(c)
+        else:
+            Channels = [self]
+
+        return Channels
 
     def Display(self: ZStack) -> None:
         """
@@ -323,10 +423,11 @@ class ZStack():
             #   Search for the requested series name within the file, iterating
             #   over each of the sub-images within the file..
             for Index, Series in enumerate(LifStack.image_list):
-                if ( SeriesName.lower() in str(Series['name']).lower() ):
+                if ( SeriesName.lower() == str(Series['name']).lower() ):
 
                     #   Apply this name to the Z-Stack, for recordkeeping
-                    self.SetName(str(Series['name']))
+                    if ( self.Name is None ) or ( self.Name == "" ):
+                        self.SetName(str(Series['name']))
 
                     #   Extract out the individual layers of the z-stack from the series...
                     Images: LifImage = LifStack.get_image(Index)
@@ -335,21 +436,23 @@ class ZStack():
                     #   These correspond to the (x, y, z) size of the images, as well as the
                     #   possible time and colour-channel sequences.
                     X, Y, Z, T, C = Images.dims.x, Images.dims.y, Images.dims.z, Images.dims.t, Images.channels
-                    if ( T > 1 ) or ( C > 1 ):
-                        self._LogWriter.Warnln(f"Failed to open Z-Stack from LIF file, multiple channels or time-points are not currently supported...")
-                        return False
 
                     #   Identify the bit depth of the stack...
                     BitDepth: int = Images.bit_depth[0]
 
                     #   Ensure the pixel array is created with the correct size and bit depth to support the image data...
                     BitDepth = int(math.ceil(BitDepth / 8.0) * 8)
-                    self.Pixels = np.zeros(shape=(Z, Y, X), dtype=f"uint{BitDepth}")
+                    self.Pixels = np.zeros(shape=(Z, Y, X, T, C), dtype=f"uint{BitDepth}")
 
-                    for Index, Layer in enumerate(Images.get_iter_z()):
-                        self.Pixels[Index,:] = Layer
+                    for t in range(T):
+                        for c in range(C):
+                            for z, Layer in enumerate(Images.get_iter_z(t=t, c=c)):
+                                self.Pixels[z,:,:,t,c] = Layer
         except:
             return False
+
+        if ( self.Pixels.shape[3] == 1 ) and ( self.Pixels.shape[4] == 1 ):
+            self.Pixels = np.squeeze(self.Pixels, (3,4))
 
         return True
 
@@ -571,11 +674,13 @@ class ZStack():
 
         if ( self.Pixels is None ):
             self._LogWriter.Warnln(f"Z Stack [ {self.Name} ] contains no pixel data...")
-            self.Pixels = np.array([])
-            return True
+            return False
 
-        self._LogWriter.Println(f"Writing out Z-Stack as file [ {self.Name}.tif ]...")
-        return cv2.imwritemulti(os.path.join(Folder, f"{self.Name}.tif"), [x for x in self.Pixels])
+        SeriesName: str = self.Name.replace("/", "-")
+        SeriesName: str = SeriesName.replace("\\", "-")
+
+        self._LogWriter.Println(f"Writing out Z-Stack as file [ {Folder}/{SeriesName}.tif ]...")
+        return cv2.imwritemulti(os.path.join(Folder, f"{SeriesName}.tif"), [Utils.ConvertTo8Bit(x) for x in self.Pixels])
 
     #   ...
 

@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+
+#   Author: Joseph Sadden
+#   Date:   5th March, 2025
+
+#   Script Purpose: This script splits a LIF file into a set of TIFF files,
+#                       one for each series of the LIF file.
+
+#   Import the necessary standard library modules
+from __future__ import annotations
+import typing
+
+import argparse
+import os
+import sys
+
+#   ...
+
+#   Import the necessary third-part modules
+from readlif.reader import LifFile, LifImage
+#   ...
+
+#   Import the desired locally written modules
+from MTG_Common import Logger
+from MTG_Common import ZStack
+#   ...
+
+#   Define the globals to set by the command-line arguments
+#   ...
+
+#   Main
+#       This is the main entry point of the script.
+def main() -> None:
+
+    Parser: argparse.ArgumentParser = argparse.ArgumentParser()
+    Parser.add_argument("--file",     dest="InputFile", metavar="file-path", type=str, required=True,                 help="The file path to the *.LIF file to split into individual *.TIFF stacks.")
+    Parser.add_argument("--describe", dest="Describe",  action="store_true",           required=False, default=False, help="Only describe the series names within the *.LIF file and exit.")
+
+    Arguments: argparse.Namespace = Parser.parse_args()
+
+    InputFile: str = Arguments.InputFile
+    DescribeOnly: bool = Arguments.Describe
+
+    #   Open and parse the file into a LifFile instance...
+    LifStack: LifFile = LifFile(InputFile)
+
+    #   Identify all of the series names within the file.
+    SeriesNames: typing.List[str] = [x["name"] for x in LifStack.image_list]
+
+    print(f"Found the following series within the *.LIF file...")
+    [print(f"Series Name: {x} - {LifStack.get_image(Index).dims} - Channels: {LifStack.get_image(Index).channels}") for (Index, x) in enumerate(SeriesNames)]
+
+    if ( DescribeOnly ):
+        return 0
+
+    for Series in SeriesNames:
+        Stack: ZStack.ZStack = ZStack.ZStack(Logger.Logger(), Name=f"{os.path.basename(InputFile)} - {Series}")
+        Stack.OpenLIFFile(InputFile, Series)
+        Channels: typing.Sequence[ZStack.ZStack] = Stack.SplitChannels()
+        for Channel in Channels:
+            Times: typing.Sequence[ZStack.ZStack] = Channel.SplitTimeSeries()
+            for Time in Times:
+                Time.SaveTIFF(os.path.dirname(InputFile))
+
+    return
+
+#   Allow this script to be called from the command-line and execute the main function.
+#   If anything needs to happen before executing main, add it here before the call.
+if __name__ == "__main__":
+    main()
