@@ -339,6 +339,17 @@ class QuantificationResults():
         self.ColourAnnotatedNeuriteLengths.SaveTIFF(Folder)
         self.ColourAnnotatedNeuriteOrientations.SaveTIFF(Folder)
 
+        with open(os.path.join(Config.OutputDirectory, f"Neurite Orientations By Layer.csv"), "w+") as NeuriteOrientationsFile:
+            BinCount: int = Config.DistinctOrientations
+            NeuriteOrientationsFile.writelines(",".join([
+                f"{x}" for x in range(0, 180, int(180 / BinCount))
+            ] + ["\n\n"]))
+            for Layer in self.NeuriteOrientations:
+                hist, bins = np.histogram(Layer, bins=BinCount)
+                NeuriteOrientationsFile.writelines(",".join([
+                    f"{h}" for h in hist
+                ]) + "\n")
+
         return True
 
 
@@ -363,11 +374,11 @@ def main() -> int:
         LogWriter.Println(f"Processing Layer [ {Index+1}/{len(Config.FluorescentImage.Layers())} ]")
 
         #   Take the fluorescent image and segment out the neurite growth pixels
-        Neurites: np.ndarray = ProcessFluorescent(Layer, DRGBodyMask, WellEdgeMask)
+        Neurites: np.ndarray = ProcessFluorescent(Layer.copy(), DRGBodyMask, WellEdgeMask)
 
         #   If the user has selected they would like to apply manual ROI selection to exclude specific noise regions,
         #   perform this now.
-        Neurites, ManualExclusionMask = ApplyManualROI(Neurites, Layer)
+        Neurites, ManualExclusionMask = ApplyManualROI(Neurites, Layer.copy())
         DisplayAndSaveImage(Utils.ConvertTo8Bit(ManualExclusionMask), "Polygon Exclusion Mask", Config.DryRun, Config.HeadlessMode)
         DisplayAndSaveImage(Utils.ConvertTo8Bit(Neurites), "Polygon Exclusion Masked Image", Config.DryRun, Config.HeadlessMode)
         Results.ManuallySelectedFluorescent.Append(Utils.ConvertTo8Bit(Neurites))
@@ -376,8 +387,9 @@ def main() -> int:
         Results.NeuriteDistances.append(QuantifyNeuriteLengths(Neurites, CentroidLocation))
 
         FeatureSizePx: float = 50 / 0.7644
-        DistinctOrientations: int = 90
-        Results.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer, Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
+        Config.DistinctOrientations = 90
+        DistinctOrientations = Config.DistinctOrientations
+        Results.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer.copy(), Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
 
     GenerateNeuriteLengthVisualization(Results.OriginalFluorescent, Results.ManuallySelectedFluorescent, Results.NeuriteDistances, CentroidLocation)
 
@@ -1032,7 +1044,7 @@ def QuantifyNeuriteOrientations(BaseImage: np.ndarray, NeuritePixels: np.ndarray
     Mask, RawOrientations = ApplyEllipticalConvolution(NeuritePixels, DistinctOrientations, EllipticalKernel)
 
     Mask[NeuritePixels == 0] = 0
-    OrientationVisualization: np.ndarray = CreateOrientationVisualization(BaseImage, RawOrientations, Mask)
+    OrientationVisualization: np.ndarray = CreateOrientationVisualization(Utils.ConvertTo8Bit(BaseImage), RawOrientations, Mask)
 
     OrientationVisualization = cv2.circle(OrientationVisualization, CentroidLocation, 10, (0, 0, 255), -1)
     DisplayAndSaveImage(OrientationVisualization, "Colour Annotated Neurite Orientations", Config.DryRun, Config.HeadlessMode)
@@ -1043,7 +1055,7 @@ def QuantifyNeuriteOrientations(BaseImage: np.ndarray, NeuritePixels: np.ndarray
     OrientationPlot, _= Angles.Update(Orientations, MeanOrientation, AngularStDev, Count, AlignmentFraction, Config.HeadlessMode)
     DisplayAndSaveImage(Utils.FigureToImage(OrientationPlot), "Neurite Orientations", Config.DryRun, Config.HeadlessMode)
 
-    return RawOrientations
+    return RawOrientations[Mask != 0].flatten()
 
 def CreateQuantificationFigures(NeuriteLengths: np.ndarray) -> None:
     """
