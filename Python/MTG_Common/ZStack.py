@@ -111,7 +111,7 @@ class ZStack():
                 raise NotImplementedError(f"Z-Stacks from [ {os.path.splitext(Filename)[1].lower()} ] files is not yet supported!")
 
     @staticmethod
-    def FromLIF(Filename: str, SeriesName: str = "LVCC") -> ZStack:
+    def FromLIF(Filename: str, *, SeriesName: str = "", SeriesIndex: int = -1, ChannelIndex: int = -1) -> ZStack:
         """
         FromLIF
 
@@ -122,6 +122,10 @@ class ZStack():
             ...
         SeriesName:
             ...
+        SeriesIndex:
+            ...
+        ChannelIndex:
+            ...
 
         Return (ZStack):
             ...
@@ -129,7 +133,7 @@ class ZStack():
 
         Stack: ZStack = ZStack()
 
-        Success: bool = Stack.OpenLIFFile(Filename, SeriesName)
+        Success: bool = Stack.OpenLIFFile(Filename, SeriesName=SeriesName, SeriesIndex=SeriesIndex, ChannelIndex=ChannelIndex)
         if ( Success ):
             return Stack
 
@@ -390,7 +394,7 @@ class ZStack():
 
         return
 
-    def OpenLIFFile(self: ZStack, Filename: str, SeriesName: str = "") -> bool:
+    def OpenLIFFile(self: ZStack, Filename: str, *, SeriesName: str = "", SeriesIndex: int = -1, ChannelIndex: int = -1) -> bool:
         """
         OpenLIFFile
 
@@ -399,6 +403,10 @@ class ZStack():
         Filename:
             ...
         SeriesName:
+            ...
+        SeriesIndex:
+            ...
+        ChannelIndex:
             ...
 
         Return (bool):
@@ -411,7 +419,7 @@ class ZStack():
             return False
 
         #   Assert the arguments are provided...
-        if ( SeriesName is None ) or ( SeriesName == "" ):
+        if (( SeriesName is None ) or ( SeriesName == "" )) and ( SeriesName < 0 ):
             self._LogWriter.Errorln(f"Failed to open Z-Stack from LIF file, no image series provided.")
             return False
 
@@ -420,34 +428,43 @@ class ZStack():
             #   Open and parse the file into a LifFile instance...
             LifStack: LifFile = LifFile(Filename)
 
-            #   Search for the requested series name within the file, iterating
-            #   over each of the sub-images within the file..
-            for Index, Series in enumerate(LifStack.image_list):
-                if ( SeriesName.lower() == str(Series['name']).lower() ):
+            #   Define the variable to hold the actual stack extracted from the file.
+            Stack: LifImage = None
 
-                    #   Apply this name to the Z-Stack, for recordkeeping
-                    if ( self.Name is None ) or ( self.Name == "" ):
-                        self.SetName(str(Series['name']))
+            if ( SeriesIndex >= 0 ):
+                Stack = LifStack.get_image(SeriesIndex)
+                self.SetName(Stack.name)
+            elif ( SeriesName != "" ):
+                for Index, Series in enumerate(LifStack.image_list):
+                    if ( Series['name'].lower() == SeriesName.lower() ):
+                        Stack = LifStack.get_image(Index)
+                        self.SetName(SeriesName)
+                        break
+                else:
+                    self._LogWriter.Errorln(f"No series was found by the name [ {SeriesName} ]...")
+                    return False
 
-                    #   Extract out the individual layers of the z-stack from the series...
-                    Images: LifImage = LifStack.get_image(Index)
+            #   Get the dimensions of the resulting series.
+            #   These correspond to the (x, y, z) size of the images, as well as the
+            #   possible time and colour-channel sequences.
+            X, Y, Z, T, C = Stack.dims.x, Stack.dims.y, Stack.dims.z, Stack.dims.t, Stack.channels
 
-                    #   Get the dimensions of the resulting series.
-                    #   These correspond to the (x, y, z) size of the images, as well as the
-                    #   possible time and colour-channel sequences.
-                    X, Y, Z, T, C = Images.dims.x, Images.dims.y, Images.dims.z, Images.dims.t, Images.channels
+            #   Identify the bit depth of the stack...
+            BitDepth: int = Stack.bit_depth[0]
 
-                    #   Identify the bit depth of the stack...
-                    BitDepth: int = Images.bit_depth[0]
+            #   Ensure the pixel array is created with the correct size and bit depth to support the image data...
+            BitDepth = int(math.ceil(BitDepth / 8.0) * 8)
+            self.Pixels = np.zeros(shape=(Z, Y, X, T, C), dtype=f"uint{BitDepth}")
 
-                    #   Ensure the pixel array is created with the correct size and bit depth to support the image data...
-                    BitDepth = int(math.ceil(BitDepth / 8.0) * 8)
-                    self.Pixels = np.zeros(shape=(Z, Y, X, T, C), dtype=f"uint{BitDepth}")
+            for t in range(T):
+                if ( ChannelIndex >= 0 ):
+                    for z, Layer in enumerate(Stack.get_iter_z(t=t, c=ChannelIndex)):
+                        self.Pixels[z,:,:,t,ChannelIndex] = Layer
+                else:
+                    for c in range(C):
+                        for z, Layer in enumerate(Stack.get_iter_z(t=t, c=c)):
+                            self.Pixels[z,:,:,t,c] = Layer
 
-                    for t in range(T):
-                        for c in range(C):
-                            for z, Layer in enumerate(Images.get_iter_z(t=t, c=c)):
-                                self.Pixels[z,:,:,t,c] = Layer
         except:
             return False
 

@@ -36,31 +36,40 @@ def main() -> None:
     Parser.add_argument("--file",     dest="InputFile", metavar="file-path", type=str, required=True,                 help="The file path to the *.LIF file to split into individual *.TIFF stacks.")
     Parser.add_argument("--describe", dest="Describe",  action="store_true",           required=False, default=False, help="Only describe the series names within the *.LIF file and exit.")
 
+    Parser.add_argument("--series-name",   dest="SeriesName",   metavar="SeriesName",   type=str, required=False, default="", help="The name of the specific series to extract.")
+    Parser.add_argument("--series-index",  dest="SeriesIndex",  metavar="SeriesIndex",  type=int, required=False, default=-1, help="The index of the specific series to extract.")
+    Parser.add_argument("--channel-index", dest="ChannelIndex", metavar="ChannelIndex", type=int, required=False, default=-1, help="The index of the channel within the series to extract.")
+
     Arguments: argparse.Namespace = Parser.parse_args()
 
     InputFile: str = Arguments.InputFile
     DescribeOnly: bool = Arguments.Describe
-
-    #   Open and parse the file into a LifFile instance...
-    LifStack: LifFile = LifFile(InputFile)
-
-    #   Identify all of the series names within the file.
-    SeriesNames: typing.List[str] = [x["name"] for x in LifStack.image_list]
-
-    print(f"Found the following series within the *.LIF file...")
-    [print(f"Series Name: {x} - {LifStack.get_image(Index).dims} - Channels: {LifStack.get_image(Index).channels}") for (Index, x) in enumerate(SeriesNames)]
+    SeriesName: str = Arguments.SeriesName
+    SeriesIndex: str = Arguments.SeriesIndex
+    ChannelIndex: str = Arguments.ChannelIndex
 
     if ( DescribeOnly ):
+        #   Open and parse the file into a LifFile instance...
+        LifStack: LifFile = LifFile(InputFile)
+
+        #   Identify all of the series names within the file.
+        SeriesNames: typing.List[str] = [x["name"] for x in LifStack.image_list]
+
+        print(f"File [ {os.path.basename(InputFile)} ] contains the following series:")
+        [print(f"Series Name: {x} - {LifStack.get_image(Index).dims} - Channels: {LifStack.get_image(Index).channels}") for (Index, x) in enumerate(SeriesNames)]
+
         return 0
 
-    for Series in SeriesNames:
-        Stack: ZStack.ZStack = ZStack.ZStack(Logger.Logger(), Name=f"{os.path.basename(InputFile)} - {Series}")
-        Stack.OpenLIFFile(InputFile, Series)
-        Channels: typing.Sequence[ZStack.ZStack] = Stack.SplitChannels()
-        for Channel in Channels:
-            Times: typing.Sequence[ZStack.ZStack] = Channel.SplitTimeSeries()
-            for Time in Times:
-                Time.SaveTIFF(os.path.dirname(InputFile))
+    else:
+        Stack: ZStack.ZStack = ZStack.ZStack(Logger.Logger(), Name=f"{os.path.basename(InputFile)} - {SeriesName=:},{SeriesIndex=:}")
+        if ( not Stack.OpenLIFFile(InputFile, SeriesName=SeriesName, SeriesIndex=SeriesIndex, ChannelIndex=ChannelIndex) ):
+            return -1
+
+        if ( ChannelIndex < 0 ):
+            for Channel in Stack.SplitChannels():
+                Channel.SaveTIFF(os.path.dirname(InputFile))
+        else:
+            Stack.SaveTIFF(os.path.dirname(InputFile))
 
     return
 
