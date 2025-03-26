@@ -419,7 +419,7 @@ class ZStack():
             return False
 
         #   Assert the arguments are provided...
-        if (( SeriesName is None ) or ( SeriesName == "" )) and ( SeriesName < 0 ):
+        if (( SeriesName is None ) or ( SeriesName == "" )) and ( SeriesIndex < 0 ):
             self._LogWriter.Errorln(f"Failed to open Z-Stack from LIF file, no image series provided.")
             return False
 

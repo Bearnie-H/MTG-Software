@@ -91,7 +91,7 @@ The script generates a total of five outputs when not operating in **--dry-run**
  2. A video (or still), showing the distribution of orientation angles within the image. This is normalized such that the mean angle of the histogram is 0 degrees, and the plot shows the distribution relative to the mean angle.
  3. A video showing the mean orientation angle and angular standard deviation as a function of time (or layer, in the case of a Z-Stack). This shows the actual mean angle, with 0 degrees corresponding to the horizontal.
  4. A .CSV file containing the numerical values for the time associated with each image, the mean angle, the angular standard deviation, measurement count, and the fraction of measurement values within one standard deviation of the mean.
- 5. A .JSON file containing a breakdown of all of the configuration settings and provided values which the script was run with. This is useful for checking previous analysis attempts on a given file to see what parameters appeared to work well, or provide tracing for oprimizing the parameters for a given file or set of files.
+ 5. A .JSON file containing a breakdown of all of the configuration settings and provided values which the script was run with. This is useful for checking previous analysis attempts on a given file to see what parameters appeared to work well, or provide tracing for optimizing the parameters for a given file or set of files.
 
 ## Understanding "Good Alignment"
 

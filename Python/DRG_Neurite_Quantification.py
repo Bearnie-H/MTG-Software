@@ -10,6 +10,7 @@
 #   Import the necessary standard library modules
 from __future__ import annotations
 import argparse
+from datetime import datetime
 import itertools
 import os
 import sys
@@ -29,9 +30,10 @@ from scipy.signal import correlate
 from MTG_Common import Logger
 from MTG_Common import Utils
 from MTG_Common import ZStack
+from MTG_Common.DRG_Quantification import DRGExperimentalCondition
 from Alignment_Analysis import PrepareEllipticalKernel, ApplyEllipticalConvolution, CreateOrientationVisualization, ComputeAlignmentMetric, AngleTracker
 
-DEBUG_DISPLAY_ENABLED: bool = True
+DEBUG_DISPLAY_ENABLED: bool = False
 DEBUG_DISPLAY_TIMEOUT: float = 0.25
 
 #   Add a sequence number to the images as generated and exported from this script.
@@ -109,6 +111,40 @@ class Configuration():
         ])
 
     ### Public Methods
+    def ExtractFromCondition(self: Configuration, ExperimentalCondition: DRGExperimentalCondition) -> Configuration:
+        """
+        ExtractFromCondition
+
+        This function...
+
+        ExperimentalCondition:
+            ...
+
+        Return (None):
+            ...
+        """
+
+        ValidCondition: bool = True
+
+        self.BrightFieldImageFile = ExperimentalCondition.LIFFilePath
+        self.BrightFieldImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.BrightFieldSeriesIndex, ChannelIndex=ExperimentalCondition.BrightFieldChannelIndex)
+        if ( self.BrightFieldImage is None ):
+            self._LogWriter.Errorln(f"Failed to open Bright Field Image!")
+            ValidCondition = False
+
+        self.FluorescentImageFile = ExperimentalCondition.LIFFilePath
+        self.FluorescentImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.NeuriteSeriesIndex, ChannelIndex=ExperimentalCondition.NeuriteChannelIndex)
+        if ( self.FluorescentImage is None ):
+            self._LogWriter.Errorln(f"Failed to open Fluorescent Image!")
+            ValidCondition = False
+
+        #   ...
+
+        if ( not ValidCondition ):
+            raise ValueError(f"Failed to properly extract analysis configuration state from the Experimental Condition details!")
+
+        return self
+
     def ExtractArguments(self: Configuration, Arguments: argparse.Namespace) -> None:
         """
         ExtractArguments
@@ -128,7 +164,7 @@ class Configuration():
 
         self.ApplyManualROISelection = Arguments.ManualROI
 
-        self.OutputDirectory = Arguments.OutputDirectory    #   TODO: disambiguate by time of execution
+        self.OutputDirectory = Arguments.OutputDirectory + " - " + datetime.strftime(datetime.now(), f"%Y-%m-%d %H-%M-%S")    #   TODO: disambiguate by time of execution
 
         #   ...
 
@@ -327,28 +363,28 @@ class QuantificationResults():
                 os.makedirs(Folder, 0o755, exist_ok=True)
 
 
-        self.OriginalBrightField.SetName("Bright Field").SaveTIFF(Folder)
-        Utils.WriteImage(self.BrightFieldMinProjection, os.path.join(Folder, "Bright Field Minimum Intensity.tif"))
-        Utils.WriteImage(self.BrightFieldBinarized, os.path.join(Folder, "Bright Field Binarized.tif"))
-        Utils.WriteImage(self.BrightFieldExclusionMask, os.path.join(Folder, "Bright Field Exclusion Mask.tif"))
-        self.OriginalFluorescent.SaveTIFF(Folder)
-        self.BinarizedFluorescent.SaveTIFF(Folder)
-        self.MaskedFluorescent.SaveTIFF(Folder)
-        self.FilteredFluorescent.SaveTIFF(Folder)
-        self.ManuallySelectedFluorescent.SaveTIFF(Folder)
-        self.ColourAnnotatedNeuriteLengths.SaveTIFF(Folder)
-        self.ColourAnnotatedNeuriteOrientations.SaveTIFF(Folder)
+            self.OriginalBrightField.SetName("Bright Field").SaveTIFF(Folder)
+            Utils.WriteImage(self.BrightFieldMinProjection, os.path.join(Folder, "Bright Field Minimum Intensity.tif"))
+            Utils.WriteImage(self.BrightFieldBinarized, os.path.join(Folder, "Bright Field Binarized.tif"))
+            Utils.WriteImage(self.BrightFieldExclusionMask, os.path.join(Folder, "Bright Field Exclusion Mask.tif"))
+            self.OriginalFluorescent.SaveTIFF(Folder)
+            self.BinarizedFluorescent.SaveTIFF(Folder)
+            self.MaskedFluorescent.SaveTIFF(Folder)
+            self.FilteredFluorescent.SaveTIFF(Folder)
+            self.ManuallySelectedFluorescent.SaveTIFF(Folder)
+            self.ColourAnnotatedNeuriteLengths.SaveTIFF(Folder)
+            self.ColourAnnotatedNeuriteOrientations.SaveTIFF(Folder)
 
-        with open(os.path.join(Config.OutputDirectory, f"Neurite Orientations By Layer.csv"), "w+") as NeuriteOrientationsFile:
-            BinCount: int = Config.DistinctOrientations
-            NeuriteOrientationsFile.writelines(",".join([
-                f"{x}" for x in range(0, 180, int(180 / BinCount))
-            ] + ["\n\n"]))
-            for Layer in self.NeuriteOrientations:
-                hist, bins = np.histogram(Layer, bins=BinCount)
+            with open(os.path.join(Config.OutputDirectory, f"Neurite Orientations By Layer.csv"), "w+") as NeuriteOrientationsFile:
+                BinCount: int = Config.DistinctOrientations
                 NeuriteOrientationsFile.writelines(",".join([
-                    f"{h}" for h in hist
-                ]) + "\n")
+                    f"{x}" for x in range(0, 180, int(180 / BinCount))
+                ] + ["\n\n"]))
+                for Layer in self.NeuriteOrientations:
+                    hist, bins = np.histogram(Layer, bins=BinCount)
+                    NeuriteOrientationsFile.writelines(",".join([
+                        f"{h}" for h in hist
+                    ]) + "\n")
 
         return True
 
@@ -361,6 +397,8 @@ Results: QuantificationResults = QuantificationResults(LogWriter=LogWriter)
 #   Main
 #       This is the main entry point of the script.
 def main() -> int:
+
+    global Config
 
     #   This script will take in two images, a MIP from the fluorescence Z-stack and a bright-field image
     #   of the same size, magnification, and ROI.
@@ -397,7 +435,7 @@ def main() -> int:
 
     #   Save out the configuration state for possible later review.
     Config.Save(Text=True, JSON=True)
-    Results.Save(Folder=Config.OutputDirectory, DryRun=False)
+    Results.Save(Folder=Config.OutputDirectory)
 
     return 0
 
