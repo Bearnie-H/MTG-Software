@@ -27,15 +27,19 @@ def NormalizePathSeparators(Path: str, Separator: str = "/") -> str:
     """
     NormalizePathSeparators
 
-    This function...
+    This function normalizes the path separators within the file path for the LIF
+    file to process, so that differences due to platform or file system type
+    do not affect the ability to find the files to process.
 
     Path:
-        ...
+        The current, unsantized and normalized path to normalize
     Separator:
-        ...
+        The path separator to use in the final normalized path. If empty,
+        the default for the currently running system will be used.
 
     Return (str):
-        ...
+        The resulting normalized and sanitized file path with consistent
+        path separators.
     """
 
     if ( Separator is None ) or ( Separator == "" ):
@@ -50,15 +54,20 @@ def TryParseDatetime(Input: str, Format: str, ErrorMessage: str = "") -> datetim
     """
     TryParseDatetime
 
-    This function...
+    This function attempts to parse a datetime object from a given string,
+    according to a provided format string. See documentation for strptime().
 
     Input:
-        ...
+        The raw datestamp string to parse.
     Format:
-        ...
+        The format string describing how to parse the Input string.
+        See strptime().
+    ErrorMessage:
+        An optional error message to print to stdout if the parsing fails.
 
     Return (datetime | None):
-        ...
+        If the Input string is successfully parsed according to Format,
+        a valid datetime object is returned, otherwise None.
     """
 
     try:
@@ -72,13 +81,16 @@ def TryParseInteger(Input: str, ErrorMessage: str = "") -> int | None:
     """
     TryParseInteger
 
-    This function...
+    This function attempts to parse Input as an integer value.
 
     Input:
-        ...
+        The raw string to attempt to parse as an integer.
+    ErrorMessage:
+        An optional error message to print to stdout if the parsing fails.
 
     Return (int | None):
-        ...
+        The resulting integer value, if successfully parsed, otherwise None.
+        An empty or missing Input string defaults to 0.
     """
 
     if ( Input is None ) or ( Input == "" ):
@@ -95,13 +107,17 @@ def TryParseFloat(Input: str, ErrorMessage: str = "") -> float | None:
     """
     TryParseFloat
 
-    This function...
+    This function attempts to parse the Input string as a floating point
+    value.
 
     Input:
-        ...
+        The raw string to attempt to parse.
+    ErrorMessage:
+        An optional error message to print to stdout if the parsing fails.
 
     Return (float | None):
-        ...
+        The resulting floating point value, if successfully parsed, otherwise None.
+        An empty or missing Input string defaults to 0.0.
     """
 
     if ( Input is None ) or ( Input == "" ):
@@ -118,13 +134,16 @@ def TryParseBool(Input: str, ErrorMessage: str = "") -> bool | None:
     """
     TryParseBool
 
-    This function...
+    This function attempts to parse the given Input string as a boolean value.
 
     Input:
-        ...
+        The raw string to attempt to parse, accoring to str2bool().
+    ErrorMessage:
+        An optional error message to print to stdout if the parsing fails.
 
     Return (bool | None):
-        ...
+        The resulting boolean value, if successfully parsed, otherwise None.
+        An empty or missing Input string defaults to False.
     """
 
     if ( Input is None ) or ( Input == "" ):
@@ -137,11 +156,32 @@ def TryParseBool(Input: str, ErrorMessage: str = "") -> bool | None:
             print(f"Boolean Parse Error: {ErrorMessage} - {e}")
         return None
 
+def TryParseString(Input: str) -> str | None:
+    """
+    TryParseString
+
+    This function maintains the pattern of the TryParse_() functions, but for strings.
+    As we don't care about the content during parsing, this simply guarantees that empty strings
+    are replaced with None.
+
+    Input:
+        The raw string to check.
+
+    Return (str | None):
+        Either the original string, or None if empty.
+    """
+
+    if ( Input is None ) or ( Input == "" ):
+        return None
+
+    return Input
+
 class DRGExperimentalCondition():
     """
     DRGExperimentalCondition
 
-    This class...
+    This class represents the full set of experimental variables and conditions
+    for the DRG neurite growth body of work.
     """
 
     LIFFilePath: str
@@ -169,7 +209,7 @@ class DRGExperimentalCondition():
     GelMAPercentage: int
     DegreeOfFunctionalization: int
 
-    Polymer: str    #   ???
+    Polymer: str    #   For Nasrin, to do with how her gels crosslink?
 
     Crosslinker: str    #   RuSPS or Riboflavin
 
@@ -226,13 +266,21 @@ class DRGExperimentalCondition():
         """
         ExtractFields
 
-        This function...
+        This function extracts the values for this class from the top-level spreadsheet
+        defining the set of conditions and variables used for this experiments. This is
+        a simple in-order process where the sequence of columns MUST match the order in
+        which they are pulled rom the provided fields sequence. These values are only
+        validated in terms of data type, with no logic to check for value. Missing or empty
+        fields will be default initialized to a sensible and consistent "zero-value".
 
         Fields:
-            ...
+            The sequence of fields to use to fill out the member variables of this
+            particular class instance. These must be in the order as described below,
+            and the body of this function MUST be modified to account for any added or removed
+            columns, and ensure that the ordering matches.
 
         Return (self):
-            ...
+            The same experimental condition instance is returned, allowing chaining of operations.
         """
 
         ColumnIndex: int = 0
@@ -246,15 +294,15 @@ class DRGExperimentalCondition():
         self.BrightFieldChannelIndex, ColumnIndex       = (TryParseInteger(Fields[ColumnIndex], "Column: [ BrightFieldChannelIndex ]")), (ColumnIndex + 1)
         self.NeuriteSeriesIndex, ColumnIndex            = (TryParseInteger(Fields[ColumnIndex], "Column: [ NeuriteSeriesIndex ]")), (ColumnIndex + 1)
         self.NeuriteChannelIndex, ColumnIndex           = (TryParseInteger(Fields[ColumnIndex], "Column: [ NeuriteChannelIndex ]")), (ColumnIndex + 1)
-        self.BaseGel, ColumnIndex                       = (Fields[ColumnIndex]), (ColumnIndex + 1)
+        self.BaseGel, ColumnIndex                       = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
         self.GelMAPercentage, ColumnIndex               = (TryParseInteger(Fields[ColumnIndex], "Column: [ GelMAPercentage ]")), (ColumnIndex + 1)
         self.DegreeOfFunctionalization, ColumnIndex     = (TryParseInteger(Fields[ColumnIndex], "Column: [ DegreeOfFunctionalization ]")), (ColumnIndex + 1)
-        self.Polymer, ColumnIndex                       = (Fields[ColumnIndex]), (ColumnIndex + 1)
-        self.Crosslinker, ColumnIndex                   = (Fields[ColumnIndex]), (ColumnIndex + 1)
-        self.Peptide, ColumnIndex                       = (Fields[ColumnIndex]), (ColumnIndex + 1)
-        self.PeptideIn, ColumnIndex                     = (Fields[ColumnIndex]), (ColumnIndex + 1)
+        self.Polymer, ColumnIndex                       = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
+        self.Crosslinker, ColumnIndex                   = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
+        self.Peptide, ColumnIndex                       = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
+        self.PeptideIn, ColumnIndex                     = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
         self.PeptideConcentration, ColumnIndex          = (TryParseFloat(Fields[ColumnIndex], "Column: [ PeptideConcentration ]")), (ColumnIndex + 1)
-        self.DilutionMedia, ColumnIndex                 = (Fields[ColumnIndex]), (ColumnIndex + 1)
+        self.DilutionMedia, ColumnIndex                 = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
         self.FBSInclusion, ColumnIndex                  = (TryParseBool(Fields[ColumnIndex], "Column: [ FBSInclusion ]")), (ColumnIndex + 1)
         self.GelIlluminationTime, ColumnIndex           = (TryParseFloat(Fields[ColumnIndex], "Column: [ GelIlluminationTime ]")), (ColumnIndex + 1)
         self.RutheniumConcentration, ColumnIndex        = (TryParseFloat(Fields[ColumnIndex], "Column: [ RutheniumConcentration ]")), (ColumnIndex + 1)
@@ -279,18 +327,21 @@ class DRGExperimentalCondition():
         """
         SetFolderBase
 
-        This function...
+        This function sets the folder prefix for the LIF File member variable, to allow
+        the spreadsheet to reference a directory structure without a root. This
+        prefix is added to the LIF file path to provide an absolute path to the
+        file when it needs to be processed or opened.
 
         Folder:
-            ...
+            The base folder, from the filesystem root, to where the directory tree of the
+            LIF File column of the spreadsheet is referenced from.
 
         Return (self):
-            ...
+            The same instance of this class, with the LIF File path member variable updated
+            to account for the provided base folder.
         """
 
         self.LIFFilePath = os.path.join(Folder, self.LIFFilePath)
-
-        #   ...
 
         return self
 
@@ -298,13 +349,23 @@ class DRGExperimentalCondition():
         """
         Validate
 
-        This function...
+        This function performs the necessary logical validation of the content
+        and dependency tree of the values within this instance. This guarantees that the
+        data as extracted from the spreadsheet to describe a single experimental trial
+        is sensible and sufficiently complete to allow the necessary grouping and
+        comparisons of the results.
 
         Return (bool):
-            ...
+            A boolean indicating whether or not the data within this instance is
+            valid and should be analyzed.
         """
 
         IsValid: bool = True
+
+        #   Check if the requested file exists
+        if ( not os.path.exists(self.LIFFilePath) ):
+            print(f"LIF file [ {self.LIFFilePath} ] does not exist or is not accessible!")
+            IsValid = False
 
         #   ...
 
@@ -314,10 +375,14 @@ class DRGExperimentalCondition():
         """
         Describe
 
-        This function...
+        This function provides a human-readable description of the entirety of
+        the experimental data within this instance. This is solely for human
+        consumption for verification and checking, and not to be used as
+        authoritative records of the contents of an experimental trial.
 
         Return (str):
-            ...
+            A string containing a human-readable description of the experimental
+            condition used to initialize this instance.
         """
 
         return "\n".join([

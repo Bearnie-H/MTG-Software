@@ -115,28 +115,38 @@ class Configuration():
         """
         ExtractFromCondition
 
-        This function...
+        This function allows for the setup of the global Configuration instance
+        in a batch-processing context. This extracts the necessary details from
+        the DRGExperimentalCondition instance into this Configuration.
 
         ExperimentalCondition:
-            ...
+            An instance of the DRGExperimentalCondition which contains the
+            necessary information for describing a particular experimental
+            trial.
 
-        Return (None):
-            ...
+        Return (self):
+            A reference to the filled-out Configuration instance.
         """
 
         ValidCondition: bool = True
 
-        self.BrightFieldImageFile = ExperimentalCondition.LIFFilePath
-        self.BrightFieldImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.BrightFieldSeriesIndex, ChannelIndex=ExperimentalCondition.BrightFieldChannelIndex)
-        if ( self.BrightFieldImage is None ):
-            self._LogWriter.Errorln(f"Failed to open Bright Field Image!")
+        if ( not os.path.exists(ExperimentalCondition.LIFFilePath) ):
             ValidCondition = False
+            self._LogWriter.Errorln(f"LIF File does not exist or could not be found!")
+        else:
+            self.BrightFieldImageFile = ExperimentalCondition.LIFFilePath
+            self.BrightFieldImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.BrightFieldSeriesIndex, ChannelIndex=ExperimentalCondition.BrightFieldChannelIndex)
+            if ( self.BrightFieldImage is None ):
+                self._LogWriter.Errorln(f"Failed to open Bright Field Image!")
+                ValidCondition = False
 
-        self.FluorescentImageFile = ExperimentalCondition.LIFFilePath
-        self.FluorescentImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.NeuriteSeriesIndex, ChannelIndex=ExperimentalCondition.NeuriteChannelIndex)
-        if ( self.FluorescentImage is None ):
-            self._LogWriter.Errorln(f"Failed to open Fluorescent Image!")
-            ValidCondition = False
+            self.FluorescentImageFile = ExperimentalCondition.LIFFilePath
+            self.FluorescentImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.NeuriteSeriesIndex, ChannelIndex=ExperimentalCondition.NeuriteChannelIndex)
+            if ( self.FluorescentImage is None ):
+                self._LogWriter.Errorln(f"Failed to open Fluorescent Image!")
+                ValidCondition = False
+
+            self.OutputDirectory = os.path.splitext(ExperimentalCondition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
 
         #   ...
 

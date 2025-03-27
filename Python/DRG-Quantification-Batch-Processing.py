@@ -3,8 +3,11 @@
 #   Author: Joseph Sadden
 #   Date:   21st March, 2025
 
-#   Script Purpose: ...
-#                       ...
+#   Script Purpose: This script provides the interface to run
+#                       the DRG_Neurite_Quantification.py script
+#                       over a large number of LIF files, using
+#                       details and conditions as described in a
+#                       dedicated spreadsheet.
 
 #   Import the necessary standard library modules
 from __future__ import annotations
@@ -33,6 +36,7 @@ LogWriter: Logger = Logger(Prefix="DRG Neurite Quantification Batch Analysis")
 #       This is the main entry point of the script.
 def main() -> None:
 
+    #   Prepare the two command-line flags (so far) this tool will accept.
     Flags: argparse.ArgumentParser = argparse.ArgumentParser()
 
     Flags.add_argument("--spreadsheet", dest="Spreadsheet", metavar="file-path", type=str, required=True, help="The file path to the *.CSV file containing all of the experimental conditions to process.")
@@ -43,8 +47,11 @@ def main() -> None:
     InputFile: str = Arguments.Spreadsheet
     FolderBase: str = Arguments.FolderBase
 
+    #   Parse the spreadsheet, identifying and validating all of the experimental conditions
+    #   described within.
     ExperimentalConditions: typing.Sequence[DRGExperimentalCondition] = ParseSpreadsheet(InputFile, FolderBase)
 
+    #   For each of the valid conditions, actually process the LIF file.
     AnalyzeConditions(ExperimentalConditions)
 
     return
@@ -53,8 +60,18 @@ def ParseSpreadsheet(FilePath: str, FolderBase: str) -> typing.Sequence[DRGExper
     """
     ParseSpreadsheet
 
-    This function...
+    This function reads the provided spreadsheet line by line, splitting out the
+    fields of each row in commas and attempting to parse out each row into an
+    instance of the DRGExperimentalCondition class.
 
+    FilePath:
+        The full file path to the spreadsheet file to read and parse data from.
+    FolderBase:
+        The folder from which all of the LIF files in the spreadsheet should be referenced from.
+
+    Return (Sequence[DRGExperimentalCondition]):
+        A sequence (list) of DRGExperimentalCondition instances which have been
+        parsed and validated from the spreadsheet, ready to be further processed.
     """
 
     ExperimentalConditions: typing.Sequence[DRGExperimentalCondition] = []
@@ -66,7 +83,6 @@ def ParseSpreadsheet(FilePath: str, FolderBase: str) -> typing.Sequence[DRGExper
             Condition: DRGExperimentalCondition = DRGExperimentalCondition().ExtractFields(Row.strip().split(",")).SetFolderBase(FolderBase)
             if ( Condition.Validate() ):
                 ExperimentalConditions.append(Condition)
-                # Condition.Describe()
                 LogWriter.Println(f"Successufully parsed row [ {RowIndex+1} ].")
             else:
                 LogWriter.Errorln(f"Failed to parse row [ {RowIndex+1} ]!")
@@ -77,8 +93,17 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
     """
     AnalyzeConditions
 
-    This function...
+    This function passes the details from the DRGExperimentalCondition to the
+    DRG_Neurite_Quantification.py script to run the analysis on the provided
+    LIF file.
 
+    ExperimentalConditions:
+        The set of DRGExperimentalCondition instances parsed and validated,
+        and ready to be processed.
+
+    Return (None):
+        None, the analysis generates it's own outputs and stores them
+        based off the path to the LIF file being processed.
     """
 
     ConditionCount: int = len(ExperimentalConditions)
