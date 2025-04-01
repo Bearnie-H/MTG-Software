@@ -33,9 +33,9 @@ from MTG_Common import ZStack
 from MTG_Common.DRG_Quantification import *
 from Alignment_Analysis import PrepareEllipticalKernel, ApplyEllipticalConvolution, CreateOrientationVisualization, ComputeAlignmentMetric, AngleTracker
 
-DEBUG_DISPLAY_ENABLED: bool = True
-# DEBUG_DISPLAY_TIMEOUT: float = 0.25
-DEBUG_DISPLAY_TIMEOUT: float = 0
+DEBUG_DISPLAY_ENABLED: bool = False
+DEBUG_DISPLAY_TIMEOUT: float = 0.25
+# DEBUG_DISPLAY_TIMEOUT: float = 0
 
 #   Add a sequence number to the images as generated and exported from this script.
 ImageSequenceNumber: int = 1
@@ -781,18 +781,18 @@ def ComputeDRGMask(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[int, 
         #   This area is generally in units of pixels, so we want to eliminate things which are "small"
         ComponentArea = Stats[ComponentID, cv2.CC_STAT_AREA]
         if ( ComponentArea <= MinimumComponentArea ):
-            LogWriter.Println(f"Component [ {ComponentIndex}/{len(OrderedComponents[:,0])} ] rejected from DRG mask with too small of an area.")
+            # LogWriter.Println(f"Component [ {ComponentIndex}/{len(OrderedComponents[:,0])} ] rejected from DRG mask with too small of an area.")
             continue
 
         Width, Height = Stats[ComponentID, cv2.CC_STAT_WIDTH], Stats[ComponentID, cv2.CC_STAT_HEIGHT]
         if ( Width >= MaximumComponentExtent ) or ( Height >= MaximumComponentExtent ):
-            LogWriter.Println(f"Component [ {ComponentIndex}/{len(OrderedComponents[:,0])} ] rejected from DRG mask with too large of a height or width.")
+            # LogWriter.Println(f"Component [ {ComponentIndex}/{len(OrderedComponents[:,0])} ] rejected from DRG mask with too large of a height or width.")
             continue
 
         #   Next, check if this component is "close" to the DRG Centroid identified earlier
         Distance: float = np.linalg.norm(np.array(DRGCentroid) - np.array(Centroids[ComponentID]))
         if ( Distance >= MaximumDistanceThreshold ):
-            LogWriter.Println(f"Component [ {ComponentIndex}/{len(OrderedComponents[:,0])} ] rejected from DRG mask as too far from DRG centroid.")
+            # LogWriter.Println(f"Component [ {ComponentIndex}/{len(OrderedComponents[:,0])} ] rejected from DRG mask as too far from DRG centroid.")
             continue
 
         DRGMask[Labels == ComponentID] = 0
@@ -892,7 +892,7 @@ def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
     #   A simple check for the ratio of 0's to 1's is the mean value of the
     #   entire image.
     DRGBodyFraction: float = 1 - np.mean(DRGBodyMask)
-    if ( DRGBodyFraction < 0.05 ) or ( DRGBodyFraction >= 0.40 ):
+    if ( DRGBodyFraction < 0.05 ) or ( DRGBodyFraction > 0.75 ):
         MaskStatus |= DRG_StatusBodyMaskFailed
         LogWriter.Warnln(f"DRG Body mask coverage fraction is concerningly high (or low)! [ {DRGBodyFraction:.2f} ]")
     #   ...
