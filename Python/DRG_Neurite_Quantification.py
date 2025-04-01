@@ -489,8 +489,8 @@ def ManualPreviewImages(BrightFieldProjection: np.ndarray, FluorescentProjection
 
     KeyCode: int = Utils.DisplayImages(
         [
-            ("Bright Field Minimum Intensity Projection", BrightFieldProjection),
-            ("Fluorescent Maximum Intensity Projection", FluorescentProjection),
+            ("Bright Field Minimum Intensity Projection", Utils.ConvertTo8Bit(BrightFieldProjection)),
+            ("Fluorescent Maximum Intensity Projection", Utils.ConvertTo8Bit(FluorescentProjection)),
         ],
         0,
         True,
