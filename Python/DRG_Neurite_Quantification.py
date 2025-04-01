@@ -424,6 +424,9 @@ Results: QuantificationResults = QuantificationResults(LogWriter=LogWriter)
 #       This is the main entry point of the script.
 def main() -> int:
 
+    global ImageSequenceNumber
+    ImageSequenceNumber = 1
+
     if ( Config.ManualPreview ):
         if ( Status := ManualPreviewImages(Config.BrightFieldImage.MinimumIntensityProjection(), Config.FluorescentImage.MaximumIntensityProjection()) != 0 ):
             return Status
