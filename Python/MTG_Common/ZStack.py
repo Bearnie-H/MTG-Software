@@ -433,12 +433,15 @@ class ZStack():
 
             if ( SeriesIndex >= 0 ):
                 Stack = LifStack.get_image(SeriesIndex)
-                self.SetName(Stack.name)
+                if ( self.Name == "" ):
+                    self.SetName(Stack.name)
+
             elif ( SeriesName != "" ):
                 for Index, Series in enumerate(LifStack.image_list):
                     if ( Series['name'].lower() == SeriesName.lower() ):
                         Stack = LifStack.get_image(Index)
-                        self.SetName(SeriesName)
+                        if ( self.Name == "" ):
+                            self.SetName(SeriesName)
                         break
                 else:
                     self._LogWriter.Errorln(f"No series was found by the name [ {SeriesName} ]...")
@@ -454,12 +457,17 @@ class ZStack():
 
             #   Ensure the pixel array is created with the correct size and bit depth to support the image data...
             BitDepth = int(math.ceil(BitDepth / 8.0) * 8)
-            self.Pixels = np.zeros(shape=(Z, Y, X, T, C), dtype=f"uint{BitDepth}")
+            self.Pixels: np.ndarray = None
+            if ( ChannelIndex >= 0 ):
+                #   For specifically requested channel, just allocate for one.
+                self.Pixels = np.zeros(shape=(Z, Y, X, T, 1), dtype=f"uint{BitDepth}")
+            else:
+                self.Pixels = np.zeros(shape=(Z, Y, X, T, C), dtype=f"uint{BitDepth}")
 
             for t in range(T):
                 if ( ChannelIndex >= 0 ):
                     for z, Layer in enumerate(Stack.get_iter_z(t=t, c=ChannelIndex)):
-                        self.Pixels[z,:,:,t,ChannelIndex] = Layer
+                        self.Pixels[z,:,:,t,0] = Layer
                 else:
                     for c in range(C):
                         for z, Layer in enumerate(Stack.get_iter_z(t=t, c=c)):
@@ -468,6 +476,8 @@ class ZStack():
         except:
             return False
 
+        #   If there is no depth in the "Time" or "Channel" dimensions, then
+        #   squeeze them down to a basic Z stack.
         if ( self.Pixels.shape[3] == 1 ) and ( self.Pixels.shape[4] == 1 ):
             self.Pixels = np.squeeze(self.Pixels, (3,4))
 

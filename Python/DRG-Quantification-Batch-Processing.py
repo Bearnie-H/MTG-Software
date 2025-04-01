@@ -23,7 +23,7 @@ import traceback
 
 #   Import the desired locally written modules
 from MTG_Common.Logger import Logger
-from MTG_Common.DRG_Quantification import DRGExperimentalCondition
+from MTG_Common.DRG_Quantification import *
 import DRG_Neurite_Quantification
 #   ...
 
@@ -41,15 +41,20 @@ def main() -> None:
 
     Flags.add_argument("--spreadsheet", dest="Spreadsheet", metavar="file-path", type=str, required=True, help="The file path to the *.CSV file containing all of the experimental conditions to process.")
     Flags.add_argument("--folder-base", dest="FolderBase", metavar="file-path", type=str, required=True, help="The path to the base folder from which the \"FilePath\" column of the spreadsheet is referenced.")
+    Flags.add_argument("--pre-check", dest="ManualPreCheck", action="store_true", required=False, default=False, help="Manually preview the image results to check for whether or not the images should even be processed.")
 
     Arguments: argparse.Namespace = Flags.parse_args()
 
     InputFile: str = Arguments.Spreadsheet
     FolderBase: str = Arguments.FolderBase
+    ManualPreview: bool = Arguments.ManualPreCheck
 
     #   Parse the spreadsheet, identifying and validating all of the experimental conditions
     #   described within.
     ExperimentalConditions: typing.Sequence[DRGExperimentalCondition] = ParseSpreadsheet(InputFile, FolderBase)
+
+    if ( ManualPreview ):
+        ExperimentalConditions = ManuallyPreviewConditions(ExperimentalConditions)
 
     #   For each of the valid conditions, actually process the LIF file.
     AnalyzeConditions(ExperimentalConditions)
@@ -77,19 +82,61 @@ def ParseSpreadsheet(FilePath: str, FolderBase: str) -> typing.Sequence[DRGExper
     ExperimentalConditions: typing.Sequence[DRGExperimentalCondition] = []
 
     with open(FilePath, "r") as Spreadsheet:
-        for RowIndex, Row in enumerate(Spreadsheet.readlines()[1:]):
+        for RowIndex, Row in enumerate(Spreadsheet.readlines()[1:], start=1):
 
-            LogWriter.Println(f"Parsing row [ {RowIndex+1} ] for experimental details...")
+            LogWriter.Println(f"Parsing row [ {RowIndex} ] for experimental details...")
             Condition: DRGExperimentalCondition = DRGExperimentalCondition().ExtractFields(Row.strip().split(",")).SetFolderBase(FolderBase)
             if ( Condition.Validate() ):
-                ExperimentalConditions.append(Condition)
-                LogWriter.Println(f"Successufully parsed row [ {RowIndex+1} ].")
+                LogWriter.Println(f"Successufully validated row [ {RowIndex} ].")
+                Condition.AnalysisStatus = DRG_StatusNotYetProcessed
             else:
-                LogWriter.Errorln(f"Failed to parse row [ {RowIndex+1} ]!")
+                LogWriter.Errorln(f"Failed to validate row [ {RowIndex} ]!")
+                Condition.AnalysisStatus = DRG_StatusValidationFailed
+
+        ExperimentalConditions.append(Condition)
 
     return ExperimentalConditions
 
-def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCondition]) -> None:
+def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCondition]) -> typing.Sequence[DRGExperimentalCondition]:
+    """
+    ManuallyPreviewConditions
+
+    This function...
+
+    ExperimentalCondition:
+        ...
+
+    Return (Sequence[DRGExperimentalCondition]):
+        ...
+    """
+
+    ConditionCount: int = len(ExperimentalConditions)
+
+    for ConditionIndex, Condition in enumerate(ExperimentalConditions, start=1):
+
+        if ( Condition.AnalysisStatus & DRG_StatusValidationFailed != 0 ):
+            continue
+
+        LogWriter.Println(f"Starting manual preview of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
+        try:
+
+            DRG_Neurite_Quantification.LogWriter = Logger(OutputStream=LogWriter.RawStream(), Prefix=f"DRG Batch Analysis (Manual Preview) - {os.path.basename(Condition.LIFFilePath)} ({ConditionIndex}/{ConditionCount})")
+            DRG_Neurite_Quantification.Config = DRG_Neurite_Quantification.Configuration(LogWriter=DRG_Neurite_Quantification.LogWriter).ExtractFromCondition(Condition)
+            DRG_Neurite_Quantification.Config.ManualPreview = True
+            DRG_Neurite_Quantification.Results = DRG_Neurite_Quantification.QuantificationResults(LogWriter=DRG_Neurite_Quantification.LogWriter)
+
+            if ( DRG_Neurite_Quantification.main() == 0 ):
+                LogWriter.Println(f"Preview accepted for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
+            else:
+                LogWriter.Errorln(f"Preview rejected for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
+                Condition.AnalysisStatus |= DRG_StatusPreviewRejected
+        except Exception as e:
+            LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
+            Condition.AnalysisStatus |= DRG_StatusUnknownException
+
+    return ExperimentalConditions
+
+def AnalyzeConditions(FolderBase: str, ExperimentalConditions: typing.Sequence[DRGExperimentalCondition]) -> None:
     """
     AnalyzeConditions
 
@@ -106,22 +153,36 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
         based off the path to the LIF file being processed.
     """
 
-    ConditionCount: int = len(ExperimentalConditions)
+    StatusReportFilename: str = f"DRG Batch Analysis Status Reporting - {datetime.now().strftime("%Y-%m-%d")}.csv"
+    LogWriter.Println(f"Creating status report file [ {StatusReportFilename} ] to track execution status of experimental conditions...")
 
-    for ConditionIndex, Condition in enumerate(ExperimentalConditions):
-        LogWriter.Println(f"Starting analysis of experimental condition [ {ConditionIndex+1}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
-        try:
-            DRG_Neurite_Quantification.LogWriter = Logger(OutputStream=LogWriter.RawStream(), Prefix=f"DRG Batch Analysis - {os.path.basename(Condition.LIFFilePath)} ({ConditionIndex+1}/{ConditionCount})")
-            DRG_Neurite_Quantification.Config = DRG_Neurite_Quantification.Configuration(LogWriter=DRG_Neurite_Quantification.LogWriter).ExtractFromCondition(Condition)
-            DRG_Neurite_Quantification.Results = DRG_Neurite_Quantification.QuantificationResults(LogWriter=DRG_Neurite_Quantification.LogWriter)
-            if ( DRG_Neurite_Quantification.main() == 0 ):
-                LogWriter.Println(f"Finished analysis of experimental condition [ {ConditionIndex+1}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
-            else:
-                LogWriter.Errorln(f"Analysis failed for experimental condition [ {ConditionIndex+1}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
-        except Exception as e:
-            LogWriter.Errorln(f"Exception raised in row ({ConditionIndex+1}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
+    with open(os.path.join(FolderBase, StatusReportFilename), "+w") as StatusReport:
 
-    return
+        ConditionCount: int = len(ExperimentalConditions)
+        for ConditionIndex, Condition in enumerate(ExperimentalConditions, start=1):
+
+            if ( Condition.AnalysisStatus & DRG_StatusValidationFailed == 0 ) and ( Condition.AnalysisStatus & DRG_StatusPreviewRejected == 0 ):
+
+                LogWriter.Println(f"Starting analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
+                try:
+
+                    DRG_Neurite_Quantification.LogWriter = Logger(OutputStream=LogWriter.RawStream(), Prefix=f"DRG Batch Analysis - {os.path.basename(Condition.LIFFilePath)} ({ConditionIndex}/{ConditionCount})")
+                    DRG_Neurite_Quantification.Config = DRG_Neurite_Quantification.Configuration(LogWriter=DRG_Neurite_Quantification.LogWriter).ExtractFromCondition(Condition)
+                    DRG_Neurite_Quantification.Results = DRG_Neurite_Quantification.QuantificationResults(LogWriter=DRG_Neurite_Quantification.LogWriter)
+
+                    if (( AnalysisStatus := DRG_Neurite_Quantification.main() ) == DRG_StatusSuccess ):
+                        LogWriter.Println(f"Finished analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
+                        Condition.AnalysisStatus = DRG_StatusSuccess
+                    else:
+                        LogWriter.Errorln(f"Analysis failed for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
+                        Condition.AnalysisStatus |= AnalysisStatus
+                except Exception as e:
+                    LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
+                    Condition.AnalysisStatus |= DRG_StatusUnknownException
+
+        StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)}\n")
+
+    return ExperimentalConditions
 
 
 #   Allow this script to be called from the command-line and execute the main function.

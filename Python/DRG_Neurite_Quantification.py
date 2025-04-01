@@ -30,22 +30,15 @@ from scipy.signal import correlate
 from MTG_Common import Logger
 from MTG_Common import Utils
 from MTG_Common import ZStack
-from MTG_Common.DRG_Quantification import DRGExperimentalCondition
+from MTG_Common.DRG_Quantification import *
 from Alignment_Analysis import PrepareEllipticalKernel, ApplyEllipticalConvolution, CreateOrientationVisualization, ComputeAlignmentMetric, AngleTracker
 
-DEBUG_DISPLAY_ENABLED: bool = False
-DEBUG_DISPLAY_TIMEOUT: float = 0.25
+DEBUG_DISPLAY_ENABLED: bool = True
+# DEBUG_DISPLAY_TIMEOUT: float = 0.25
+DEBUG_DISPLAY_TIMEOUT: float = 0
 
 #   Add a sequence number to the images as generated and exported from this script.
 ImageSequenceNumber: int = 1
-
-#   Add in top-level return codes for the status of processing the script.
-#   These signal to the environment whether or not everything processed
-#   correctly, or if the script encountered an error during processing.
-STATUS_SUCCESS: int                         = 0
-STATUS_ARGUMENT_VALIDATION_FAILURE: int     = 1
-STATUS_BRIGHTFIELD_FAILURE: int             = 2
-STATUS_FLUORESCENT_FAILURE: int             = 3
 
 class Configuration():
     """
@@ -61,6 +54,12 @@ class Configuration():
     BrightFieldImage: ZStack.ZStack
     MIPImageFile: str
     FluorescentImage: ZStack.ZStack
+
+    ManualPreview: bool
+    DRGBodyMaskFilename: str
+    DRGBodyMask: np.ndarray
+    WellInteriorMaskFilename: str
+    WellInteriorMask: np.ndarray
 
     ApplyManualROISelection: bool
 
@@ -87,6 +86,12 @@ class Configuration():
         self.BrightFieldImage = None
         self.FluorescentImageFile = ""
         self.FluorescentImage = None
+
+        self.ManualPreview = False
+        self.DRGBodyMaskFilename = ""
+        self.DRGBodyMask = None
+        self.WellInteriorMaskFilename = ""
+        self.WellInteriorMask = None
 
         self.ApplyManualROISelection = False
 
@@ -173,6 +178,9 @@ class Configuration():
         self.FluorescentImageFile = Arguments.MIPImage
 
         self.ApplyManualROISelection = Arguments.ManualROI
+        self.ManualPreview = Arguments.PreCheck
+        self.DRGBodyMaskFilename = Arguments.DRGBodyMask
+        self.WellInteriorMaskFilename = Arguments.WellInteriorMask
 
         self.OutputDirectory = Arguments.OutputDirectory + " - " + datetime.strftime(datetime.now(), f"%Y-%m-%d %H-%M-%S")    #   TODO: disambiguate by time of execution
 
@@ -223,6 +231,14 @@ class Configuration():
         else:
             self.FluorescentImage = ZStack.ZStack.FromFile(self.FluorescentImageFile)
             self._LogWriter.Println(f"Working with fluorescent image file [ {self.FluorescentImageFile} ]...")
+
+        if ( self.DRGBodyMaskFilename != "" ):
+            self.DRGBodyMask = cv2.imread(self.DRGBodyMaskFilename)
+            self._LogWriter.Println(f"Working with DRG Body mask image file [ {self.DRGBodyMaskFilename} ]...")
+
+        if ( self.WellInteriorMaskFilename != "" ):
+            self.WellInteriorMask = cv2.imread(self.WellInteriorMaskFilename)
+            self._LogWriter.Println(f"Working with well interior mask image file [ {self.WellInteriorMaskFilename} ]...")
 
         if ( self.ApplyManualROISelection ) and ( self.HeadlessMode ):
             self.ApplyManualROISelection = False
@@ -408,7 +424,9 @@ Results: QuantificationResults = QuantificationResults(LogWriter=LogWriter)
 #       This is the main entry point of the script.
 def main() -> int:
 
-    global Config
+    if ( Config.ManualPreview ):
+        if ( Status := ManualPreviewImages(Config.BrightFieldImage.MinimumIntensityProjection(), Config.FluorescentImage.MaximumIntensityProjection()) != 0 ):
+            return Status
 
     #   This script will take in two images, a MIP from the fluorescence Z-stack and a bright-field image
     #   of the same size, magnification, and ROI.
@@ -417,6 +435,9 @@ def main() -> int:
     #   as well as to generate a mask to remove the DRG body from the fluorescent MIP.
     Results.OriginalBrightField = Config.BrightFieldImage
     CentroidLocation, DRGBodyMask, WellEdgeMask = ProcessBrightField(Config.BrightFieldImage.MinimumIntensityProjection())
+
+    if (( MasksStatus := SanityCheckMasks(DRGBodyMask, WellEdgeMask) ) != 0 ):
+        return MasksStatus
 
     for Index, Layer in enumerate(Config.FluorescentImage.Layers()):
         LogWriter.Println(f"Processing Layer [ {Index+1}/{len(Config.FluorescentImage.Layers())} ]")
@@ -445,9 +466,41 @@ def main() -> int:
 
     #   Save out the configuration state for possible later review.
     Config.Save(Text=True, JSON=True)
-    Results.Save(Folder=Config.OutputDirectory)
+    Results.Save(Folder=Config.OutputDirectory, DryRun=Config.DryRun)
 
     return 0
+
+def ManualPreviewImages(BrightFieldProjection: np.ndarray, FluorescentProjection: np.ndarray) -> int:
+    """
+    ManualPreviewImages
+
+    This function...
+
+    BrightFieldProjection:
+        ...
+    FluorescentProjection:
+        ...
+
+    Return (int):
+        ...
+    """
+
+    LogWriter.Println(f"Manually previewing DRG images. Should these be processed further? (y/N)")
+
+    KeyCode: int = Utils.DisplayImages(
+        [
+            ("Bright Field Minimum Intensity Projection", BrightFieldProjection),
+            ("Fluorescent Maximum Intensity Projection", FluorescentProjection),
+        ],
+        0,
+        True,
+        True
+    )
+
+    if ( KeyCode in [ord(x) for x in 'yY'] ):
+        return 0
+    else:
+        return DRG_StatusPreviewRejected
 
 def DisplayAndSaveImage(Image: np.ndarray, Description: str, DryRun: bool, Headless: bool) -> None:
     """
@@ -464,6 +517,9 @@ def DisplayAndSaveImage(Image: np.ndarray, Description: str, DryRun: bool, Headl
     Return (None):
         None, the image is displayed and/or saved, as permitted by the --headless and --dry-run options.
     """
+
+    #   Turn off intermediate artefact display or saving.
+    # return
 
     global ImageSequenceNumber
 
@@ -520,33 +576,48 @@ def ProcessBrightField(BrightFieldImage: np.ndarray) -> typing.Tuple[typing.Tupl
     DisplayAndSaveImage(BinarizedImage, f"Binarized Image ({ThresholdLevel if ThresholdLevel >= 0 else float('NaN'):.0f})", Config.DryRun, Config.HeadlessMode)
     Results.BrightFieldBinarized = BinarizedImage
 
-    #   Using this binarized image, identify the centroid of the DRG body
-    Centroid: typing.Tuple[int, int] = EstimateCentroid(BinarizedImage)
+    Centroid: typing.Tuple[int, int] = (0, 0)
+    if ( Config.DRGBodyMask is not None ):
+        Centroid = EstimateCentroid(Config.DRGBodyMask.copy())
+    else:
+        #   Using this binarized image, identify the centroid of the DRG body
+        Centroid: typing.Tuple[int, int] = EstimateCentroid(BinarizedImage)
+
     #   Annotate where the centroid of the DRG body is found to be, and display this to the user...
     CentroidAnnotated: np.ndarray = cv2.circle(Utils.GreyscaleToBGR(Image.copy()), Centroid, 10, (0, 0, 255), -1)
     DisplayAndSaveImage(CentroidAnnotated, "Centroid Annotated DRG Body", Config.DryRun, Config.HeadlessMode)
     Results.BodyCentroidLocation = Centroid
 
-    #   With the centroid identified, review the bright field image and compute a mask which covers the
-    #   body of the DRG.
-    DRGBodyMask: np.ndarray = ComputeDRGMask(BinarizedImage, Centroid)
+    DRGBodyMask: np.ndarray = None
+    if ( Config.DRGBodyMask is not None ):
+        #   With the centroid identified, review the bright field image and compute a mask which covers the
+        #   body of the DRG.
+        DRGBodyMask: np.ndarray = Config.DRGBodyMask.copy()
+    else:
+        DRGBodyMask: np.ndarray = ComputeDRGMask(BinarizedImage, Centroid)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(DRGBodyMask), "DRG Body Mask", Config.DryRun, Config.HeadlessMode)
 
-    #   Compute the mask of the well edge within the image, as this is typically the source of more noise signals than anywhere else
-    WellEdgeMask: np.ndarray = ComputeWellEdgeMask(BinarizedImage, Centroid)
+    WellEdgeMask: np.ndarray = None
+    if ( Config.WellInteriorMask is not None ):
+        WellEdgeMask = Config.WellInteriorMask.copy()
+    else:
+        #   Compute the mask of the well edge within the image, as this is typically the source of more noise signals than anywhere else
+        WellEdgeMask: np.ndarray = ComputeWellEdgeMask(BinarizedImage, Centroid)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(WellEdgeMask), "Well Edge Mask", Config.DryRun, Config.HeadlessMode)
 
     Results.BrightFieldExclusionMask = Utils.ConvertTo8Bit(DRGBodyMask * WellEdgeMask)
 
     return (Centroid, DRGBodyMask, WellEdgeMask)
 
-def BinarizeBrightField(Image: np.ndarray) -> typing.Tuple[np.ndarray, int]:
+def BinarizeBrightField(Image: np.ndarray, LocalThresholding: bool = False) -> typing.Tuple[np.ndarray, int]:
     """
     BinarizeBrightField
 
     This function...
 
     Image:
+        ...
+    LocalThresholding:
         ...
 
     Return (Tuple):
@@ -556,12 +627,20 @@ def BinarizeBrightField(Image: np.ndarray) -> typing.Tuple[np.ndarray, int]:
             ...
     """
 
-    #   Just apply a basic Otsu's method segmentation.
-    ThresholdLevel, BinarizedImage = cv2.threshold(Image.copy(), 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+    if ( LocalThresholding ):
 
-    return BinarizedImage, ThresholdLevel
+        LocalThresholdKernelSize: int = int(round(min(Image.shape) * 0.1))
+        LocalThresholdOffset: float = 1.0
 
-def EstimateCentroid(ThresholdedImage: np.ndarray, CorrelationThreshold: float = 0.975, KernelStepSize: int = 10, InitialKernelSize: int = 11, CentroidJitterThreshold: int = 1) -> typing.Tuple[int, int]:
+        BinarizedImage: np.ndarray = cv2.adaptiveThreshold(Image, 0, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, LocalThresholdKernelSize, LocalThresholdOffset)
+        return BinarizedImage, -1
+
+    else:
+        #   Just apply a basic Otsu's method segmentation.
+        ThresholdLevel, BinarizedImage = cv2.threshold(Image.copy(), 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+        return BinarizedImage, ThresholdLevel
+
+def EstimateCentroid(ThresholdedImage: np.ndarray, CorrelationThreshold: float = 0.975, KernelStepSize: int = 10, InitialKernelSize: int = 51, CentroidJitterThreshold: int = 1) -> typing.Tuple[int, int]:
     """
     EstimateCentroid
 
@@ -628,10 +707,15 @@ def EstimateCentroid(ThresholdedImage: np.ndarray, CorrelationThreshold: float =
         ImageMoments = cv2.moments(CorrelationMap, binaryImage=False)
 
         #   Actually compute the centroid location
-        Centroid_X = int(ImageMoments["m10"] / ImageMoments["m00"])
-        Centroid_Y = int(ImageMoments["m01"] / ImageMoments["m00"])
+        if ( ImageMoments["m00"] != 0 ):
+            Centroid_X = int(ImageMoments["m10"] / ImageMoments["m00"])
+            Centroid_Y = int(ImageMoments["m01"] / ImageMoments["m00"])
+        else:
+            Centroid_X, Centroid_Y = 0, 0
 
+        #   DEBUGGING
         # Utils.DisplayImage(f"DRG Centroid Correlation Map: [ K={KernelSize} ]", cv2.circle(Utils.GreyscaleToBGR(Utils.ConvertTo8Bit(CorrelationMap.copy())), (Centroid_X, Centroid_Y), 10, (0, 0, 255), -1), DEBUG_DISPLAY_TIMEOUT, True, DEBUG_DISPLAY_ENABLED and ( not Config.HeadlessMode ))
+        #   DEBUGGING
 
         #   If the centroid does not exist, then the kernel is improperly sized so we exit.
         if ( Centroid_X == 0 ) and ( Centroid_Y == 0 ):
@@ -690,25 +774,32 @@ def ComputeDRGMask(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[int, 
     MaximumDistanceThreshold *= OrderedComponents[0,1]  #   Scale the maximum distance threshold by the distance between the centroid and the closest component.
 
     #   Look through each of the components identified and build up the mask of what to exclude from the fluorescent image
-    for ComponentID in OrderedComponents[:,0]:
+    for ComponentIndex, ComponentID in enumerate(OrderedComponents[:,0], start=1):
         ComponentID = int(ComponentID)
 
         #   Check the size of the component, to eliminate small spot-noise which often makes it through the thresholding
         #   This area is generally in units of pixels, so we want to eliminate things which are "small"
         ComponentArea = Stats[ComponentID, cv2.CC_STAT_AREA]
         if ( ComponentArea <= MinimumComponentArea ):
+            LogWriter.Println(f"Component [ {ComponentIndex}/{len(OrderedComponents[:,0])} ] rejected from DRG mask with too small of an area.")
             continue
 
         Width, Height = Stats[ComponentID, cv2.CC_STAT_WIDTH], Stats[ComponentID, cv2.CC_STAT_HEIGHT]
         if ( Width >= MaximumComponentExtent ) or ( Height >= MaximumComponentExtent ):
+            LogWriter.Println(f"Component [ {ComponentIndex}/{len(OrderedComponents[:,0])} ] rejected from DRG mask with too large of a height or width.")
             continue
 
         #   Next, check if this component is "close" to the DRG Centroid identified earlier
         Distance: float = np.linalg.norm(np.array(DRGCentroid) - np.array(Centroids[ComponentID]))
         if ( Distance >= MaximumDistanceThreshold ):
+            LogWriter.Println(f"Component [ {ComponentIndex}/{len(OrderedComponents[:,0])} ] rejected from DRG mask as too far from DRG centroid.")
             continue
 
         DRGMask[Labels == ComponentID] = 0
+
+        #   DEBUGGING
+        # Utils.DisplayImage(f"Current DRG Mask", Utils.ConvertTo8Bit(DRGMask), 0, True, True)
+        #   DEBUGGING
 
     #   Finally, clean up the edges of the mask with an Opening morphological transformation
     DRGMask = cv2.morphologyEx(DRGMask, cv2.MORPH_OPEN, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MorphologyKernelSize, MorphologyKernelSize)))
@@ -777,6 +868,44 @@ def ComputeWellEdgeMask(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuople
     WellEdgeMask = cv2.morphologyEx(WellEdgeMask, cv2.MORPH_OPEN, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MorphologyKernelSize, MorphologyKernelSize)))
 
     return WellEdgeMask
+
+def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
+    """
+    SanityCheckMasks
+
+    This function...
+
+    DRGBodyMask:
+        ...
+    WellEdgeMask:
+        ...
+
+    Return (int):
+        ...
+    """
+
+    MaskStatus: int = 0
+
+    #   The DRG Body mask is 0's where the body is, and 1's everywhere else.
+    #   A valid mask should have a "reasonable" fraction of the image covered,
+    #   but not too much or too little.
+    #   A simple check for the ratio of 0's to 1's is the mean value of the
+    #   entire image.
+    DRGBodyFraction: float = 1 - np.mean(DRGBodyMask)
+    if ( DRGBodyFraction < 0.05 ) or ( DRGBodyFraction >= 0.40 ):
+        MaskStatus |= DRG_StatusBodyMaskFailed
+        LogWriter.Warnln(f"DRG Body mask coverage fraction is concerningly high (or low)! [ {DRGBodyFraction:.2f} ]")
+    #   ...
+
+    #   As for the well interior mask, this should similarly constitute a meaningful
+    #   fraction of the area of the image. In this case, the interior of the well
+    #   is filled with 1's and the walls and exterior with 0's.
+    WellInteriorFraction: float = np.mean(WellEdgeMask)
+    if ( WellInteriorFraction < 0.10 ) or ( WellInteriorFraction > 0.80 ):
+        MaskStatus |= DRG_StatusWellMaskFailed
+        LogWriter.Warnln(f"Well interior mask coverage fraction is concerningly high (or low)! [ {WellInteriorFraction:.2f} ]")
+
+    return MaskStatus
 
 def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> np.ndarray:
     """
@@ -914,27 +1043,16 @@ def FilterNeuriteComponents(Image: np.ndarray, SpeckleAreaThreshold: int, Neurit
             Rectangle: cv2.RotatedRect = cv2.minAreaRect(Contours[0])
             (Centre, (Width, Height), Orientation) = Rectangle
 
+            if ( Width == 0 ) or ( Height == 0 ):
+                continue
+
             AspectRatio: float = np.max([Height, Width]) / np.min([Height, Width])
             BoundingArea: int = Height * Width
             FilledFraction: float = ComponentArea / BoundingArea
 
-            #   TESTING - Overlay the current component on the existing image.
-            # LogWriter.Println(f"Component: {ComponentID} - {AspectRatio=:.2f}, {FilledFraction=:.2f}")
-            # T: np.ndarray = Utils.GreyscaleToBGR(FilteredComponents.copy())
-            # T[:,:,0] = cv2.drawContours(np.zeros_like(FilteredComponents), [np.intp(cv2.boxPoints(Rectangle))], 0, 1, 1)
-            # T[Labels == ComponentID, 1] = 1
-            # Utils.DisplayImage(f"Candidate Next Component ({Index}/{OrderedComponents.shape[0]}) - {AspectRatio=:.2f}, {FilledFraction=:.2f}", Utils.ConvertTo8Bit(T), DEBUG_DISPLAY_TIMEOUT, True, DEBUG_DISPLAY_ENABLED and (not Config.HeadlessMode))
-
             if ( AspectRatio < NeuriteAspectRatioThreshold ):
                 if ( FilledFraction > NeuriteInfillFraction ):
-                    # LogWriter.Println(f"Infill Fraction [ {FilledFraction} ] too high!")
                     continue
-                else:
-                    # LogWriter.Println(f"Infill Fraction [ {FilledFraction} ] satisfactory!")
-                    pass
-            else:
-                # LogWriter.Println(f"Aspect Ratio [ {AspectRatio} ] satisfactory!")
-                pass
 
             FilteredComponents[Labels == ComponentID] = 1
 
@@ -1044,6 +1162,9 @@ def QuantifyNeuriteLengths(NeuritePixels: np.ndarray, Origin: typing.Tuple[int, 
 def GenerateNeuriteLengthVisualization(BaseImages: ZStack.ZStack, NeuritePixels: ZStack.ZStack, Distances: typing.Sequence[np.ndarray], Origin: typing.Tuple[int, int]) -> None:
 
     MaximumLength: float = np.max([np.max(x) for x in Distances])
+    if ( MaximumLength == 0 ):
+        LogWriter.Warnln(f"No neurites were identified!")
+        return
 
     for Index, (Layer, BaseImage, LayerDistances) in enumerate(zip(NeuritePixels.Layers(), BaseImages.Layers(), Distances)):
         NeuriteCoordinates = np.argwhere(Layer != 0)
@@ -1160,6 +1281,10 @@ def HandleArguments() -> bool:
     Flags.add_argument("--mip-image", dest="MIPImage",    metavar="file-path", type=str, required=True, help="The file path to the maximum intensity image computed from the fluorescent Z-stack to work with.")
     Flags.add_argument("--manual-roi", dest="ManualROI", action="store_true", required=False, default=False, help="...")
 
+    Flags.add_argument("--qualitative-pre-check", dest="PreCheck", action="store_true", required=False, default=False, help="Preview the images before processing, to check whether or not they are worth processing.")
+    Flags.add_argument("--drg-mask", dest="DRGBodyMask", metavar="file-path", type=str, required=False, default="", help="The file path to a pre-defined image mask to remove the DRG Body.")
+    Flags.add_argument("--well-mask", dest="WellInteriorMask", metavar="file-path", type=str, required=False, default="", help="The file path to a pre-defined image mask to include only the well interior.")
+
     #   Add in the flag specifying where the results generated by this script should be written out to.
     Flags.add_argument("--results-directory", dest="OutputDirectory", metavar="folder-path", type=str, required=False, default=os.getcwd(), help="The path to the base folder into which results will be written on a per-execution basis.")
     #   ...
@@ -1194,5 +1319,9 @@ if __name__ == "__main__":
             sys.exit(main())
         except Exception as e:
             LogWriter.Fatalln(f"Exception raised in main(): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
+            sys.exit(DRG_StatusUnknownException)
     else:
-        sys.exit(-1)
+        if ( Config.ValidateOnly ):
+            sys.exit(DRG_StatusSuccess)
+        else:
+            sys.exit(DRG_StatusValidationFailed)

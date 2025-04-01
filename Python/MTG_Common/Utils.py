@@ -478,7 +478,7 @@ def BGRToGreyscale(Image: np.ndarray = None) -> np.ndarray:
         The newly created greyscale pixel bitmap from the original image.
     """
 
-    if ( Image is None ) or ( len(Image.shape) == 2 ):
+    if ( Image is None ) or ( len(Image.shape) < 3 ):
         return Image
 
     return cv2.cvtColor(Image, cv2.COLOR_BGR2GRAY)

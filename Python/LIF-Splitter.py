@@ -60,7 +60,25 @@ def main() -> None:
 
         return 0
 
+    if (( SeriesName is None ) or ( SeriesName == "" )) and ( SeriesIndex == -1 ):
+            #   Open and parse the file into a LifFile instance...
+        LifStack: LifFile = LifFile(InputFile)
+
+        #   Identify all of the series names within the file.
+        SeriesNames: typing.List[str] = [x["name"] for x in LifStack.image_list]
+
+        for SeriesName in SeriesNames:
+            Stack: ZStack.ZStack = ZStack.ZStack(Logger.Logger(), Name=f"{os.path.basename(InputFile)} - {SeriesName=:},{SeriesIndex=:}")
+            if ( not Stack.OpenLIFFile(InputFile, SeriesName=SeriesName) ):
+                return -1
+
+            if ( ChannelIndex < 0 ):
+                for Channel in Stack.SplitChannels():
+                    Channel.SaveTIFF(os.path.dirname(InputFile))
+            else:
+                Stack.SaveTIFF(os.path.dirname(InputFile))
     else:
+
         Stack: ZStack.ZStack = ZStack.ZStack(Logger.Logger(), Name=f"{os.path.basename(InputFile)} - {SeriesName=:},{SeriesIndex=:}")
         if ( not Stack.OpenLIFFile(InputFile, SeriesName=SeriesName, SeriesIndex=SeriesIndex, ChannelIndex=ChannelIndex) ):
             return -1
