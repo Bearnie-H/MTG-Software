@@ -53,7 +53,7 @@ def main() -> None:
     #   described within.
     ExperimentalConditions: typing.Sequence[DRGExperimentalCondition] = ParseSpreadsheet(InputFile, FolderBase)
 
-    StatusReportFilename: str = f"DRG Batch Analysis Status Reporting - {datetime.now().strftime("%Y-%m-%d")}.csv"
+    StatusReportFilename: str = f'DRG Batch Analysis Status Reporting - {datetime.now().strftime("%Y-%m-%d")}.csv'
     LogWriter.Println(f"Creating status report file [ {StatusReportFilename} ] to track execution status of experimental conditions...")
     with open(os.path.join(FolderBase, StatusReportFilename), "+w") as StatusReport:
         if ( ManualPreview ):
