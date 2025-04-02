@@ -182,7 +182,7 @@ class Configuration():
         self.DRGBodyMaskFilename = Arguments.DRGBodyMask
         self.WellInteriorMaskFilename = Arguments.WellInteriorMask
 
-        self.OutputDirectory = Arguments.OutputDirectory + " - " + datetime.strftime(datetime.now(), f"%Y-%m-%d %H-%M-%S")    #   TODO: disambiguate by time of execution
+        self.OutputDirectory = Arguments.OutputDirectory + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
 
         #   ...
 
@@ -233,11 +233,11 @@ class Configuration():
             self._LogWriter.Println(f"Working with fluorescent image file [ {self.FluorescentImageFile} ]...")
 
         if ( self.DRGBodyMaskFilename != "" ):
-            self.DRGBodyMask = cv2.imread(self.DRGBodyMaskFilename)
+            self.DRGBodyMask = Utils.GammaCorrection(cv2.imread(self.DRGBodyMaskFilename), Minimum=0, Maximum=1)
             self._LogWriter.Println(f"Working with DRG Body mask image file [ {self.DRGBodyMaskFilename} ]...")
 
         if ( self.WellInteriorMaskFilename != "" ):
-            self.WellInteriorMask = cv2.imread(self.WellInteriorMaskFilename)
+            self.WellInteriorMask = Utils.GammaCorrection(cv2.imread(self.WellInteriorMaskFilename), Minimum=0, Maximum=1)
             self._LogWriter.Println(f"Working with well interior mask image file [ {self.WellInteriorMaskFilename} ]...")
 
         if ( self.ApplyManualROISelection ) and ( self.HeadlessMode ):
@@ -471,7 +471,7 @@ def main() -> int:
     Config.Save(Text=True, JSON=True)
     Results.Save(Folder=Config.OutputDirectory, DryRun=Config.DryRun)
 
-    return 0
+    return DRG_StatusSuccess
 
 def ManualPreviewImages(BrightFieldProjection: np.ndarray, FluorescentProjection: np.ndarray) -> int:
     """
@@ -1323,8 +1323,7 @@ if __name__ == "__main__":
         except Exception as e:
             LogWriter.Fatalln(f"Exception raised in main(): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
             sys.exit(DRG_StatusUnknownException)
-    else:
-        if ( Config.ValidateOnly ):
-            sys.exit(DRG_StatusSuccess)
-        else:
-            sys.exit(DRG_StatusValidationFailed)
+
+    if ( Config.ValidateOnly ):
+        sys.exit(DRG_StatusSuccess)
+    sys.exit(DRG_StatusValidationFailed)

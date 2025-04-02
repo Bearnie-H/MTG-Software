@@ -176,14 +176,14 @@ def TryParseString(Input: str) -> str | None:
 
     return Input
 
-DRG_StatusSuccess:          int = 0
-DRG_StatusNotYetProcessed:  int = 1 << 1
-DRG_StatusValidationFailed: int = 1 << 2
-DRG_StatusPreviewRejected:  int = 1 << 3
-DRG_StatusBodyMaskFailed:   int = 1 << 4
-DRG_StatusWellMaskFailed:   int = 1 << 5
-DRG_StatusNoNeurites:       int = 1 << 6
-DRG_StatusUnknownException: int = 1 << 7
+DRG_StatusSuccess:          int = 1 << 1
+DRG_StatusNotYetProcessed:  int = 1 << 2
+DRG_StatusValidationFailed: int = 1 << 3
+DRG_StatusPreviewRejected:  int = 1 << 4
+DRG_StatusBodyMaskFailed:   int = 1 << 5
+DRG_StatusWellMaskFailed:   int = 1 << 6
+DRG_StatusNoNeurites:       int = 1 << 7
+DRG_StatusUnknownException: int = 1 << 8
 
 def DRGStatus_ToString(StatusCode: int) -> str:
     """
@@ -199,20 +199,23 @@ def DRGStatus_ToString(StatusCode: int) -> str:
     """
 
     StatusCodeMapping: typing.Dict[int, str] = {
-        DRG_StatusSuccess: "Success. ",
-        DRG_StatusNotYetProcessed: "Not Yet Processed. ",
-        DRG_StatusValidationFailed: "Parameter Validation Failure. ",
-        DRG_StatusPreviewRejected: "Rejected During Manual Preview. ",
-        DRG_StatusBodyMaskFailed: "DRG Body Mask Generation Failure. ",
-        DRG_StatusWellMaskFailed: "Well Interior Mask Generation Failure. ",
-        DRG_StatusNoNeurites: "No Neurites Identified. ",
-        DRG_StatusUnknownException: "Unknown Exception Occurred. ",
+        DRG_StatusSuccess: "Success.",
+        DRG_StatusNotYetProcessed: "Not Yet Processed.",
+        DRG_StatusValidationFailed: "Parameter Validation Failure.",
+        DRG_StatusPreviewRejected: "Rejected During Manual Preview.",
+        DRG_StatusBodyMaskFailed: "DRG Body Mask Generation Failure.",
+        DRG_StatusWellMaskFailed: "Well Interior Mask Generation Failure.",
+        DRG_StatusNoNeurites: "No Neurites Identified.",
+        DRG_StatusUnknownException: "Unknown Exception Occurred.",
     }
 
     Output: str = ""
     for Code in sorted(StatusCodeMapping.keys()):
         if (( Code & StatusCode ) != 0 ):
-            Output += StatusCodeMapping[Code]
+            if ( Output == "" ):
+                Output += StatusCodeMapping[Code]
+            else:
+                Output += f" {StatusCodeMapping[Code]}"
 
     if ( Output == "" ):
         Output = "Unknown Status. "
