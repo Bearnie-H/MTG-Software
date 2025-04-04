@@ -137,7 +137,7 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
                 Condition.AnalysisStatus |= DRG_StatusUnknownException
 
-        StatusReport.write(f"{Condition.LIFFilePath},{DRG_Neurite_Quantification.Config.OutputDirectory},{DRGStatus_ToString(Condition.AnalysisStatus)}\n")
+        StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)}\n")
 
     return ExperimentalConditions
 
@@ -181,7 +181,7 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
                 Condition.AnalysisStatus |= DRG_StatusUnknownException
 
-        StatusReport.write(f"{Condition.LIFFilePath},{DRG_Neurite_Quantification.Config.OutputDirectory},{DRGStatus_ToString(Condition.AnalysisStatus)}\n")
+        StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)}\n")
 
     return ExperimentalConditions
 

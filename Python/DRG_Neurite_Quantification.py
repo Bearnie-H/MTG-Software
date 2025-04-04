@@ -96,6 +96,8 @@ class Configuration():
 
         self.ApplyManualROISelection = False
 
+        self.OutputDirectory = None
+
         self.LogFile = ""
         self.QuietMode = False
         self.DryRun = False
