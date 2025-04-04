@@ -442,8 +442,13 @@ def main() -> int:
     Results.OriginalBrightField = Config.BrightFieldImage
     CentroidLocation, DRGBodyMask, WellEdgeMask = ProcessBrightField(Config.BrightFieldImage.MinimumIntensityProjection())
 
-    if (( MasksStatus := SanityCheckMasks(DRGBodyMask, WellEdgeMask) ) != 0 ):
-        return MasksStatus
+    if (( MasksStatus := SanityCheckMasks(DRGBodyMask, WellEdgeMask) ) != DRG_StatusSuccess ):
+
+        #   Try to use the alternative mask generation algorithms?
+        CentroidLocation, DRGBodyMask, WellEdgeMask = ProcessBrightField(Config.BrightFieldImage.MinimumIntensityProjection(), AlternativeMaskGeneration=True)
+
+        if (( MasksStatus := SanityCheckMasks(DRGBodyMask, WellEdgeMask) ) != DRG_StatusSuccess ):
+            return MasksStatus
 
     for Index, Layer in enumerate(Config.FluorescentImage.Layers()):
         LogWriter.Println(f"Processing Layer [ {Index+1}/{len(Config.FluorescentImage.Layers())} ]")
@@ -543,7 +548,7 @@ def DisplayAndSaveImage(Image: np.ndarray, Description: str, DryRun: bool, Headl
 
     return
 
-def ProcessBrightField(BrightFieldImage: np.ndarray) -> typing.Tuple[typing.Tuple[int, int], np.ndarray, np.ndarray]:
+def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: bool = False) -> typing.Tuple[typing.Tuple[int, int], np.ndarray, np.ndarray]:
     """
     ProcessBrightField
 
@@ -600,8 +605,10 @@ def ProcessBrightField(BrightFieldImage: np.ndarray) -> typing.Tuple[typing.Tupl
         #   body of the DRG.
         DRGBodyMask: np.ndarray = Config.DRGBodyMask.copy()
     else:
-        # DRGBodyMask: np.ndarray = ComputeDRGMask(BinarizedImage, Centroid)
-        DRGBodyMask: np.ndarray = ComputeDRGMask_Alt1(BinarizedImage, Centroid)
+        if ( AlternativeMaskGeneration ):
+            DRGBodyMask: np.ndarray = ComputeDRGMask_Alt1(BinarizedImage, Centroid)
+        else:
+            DRGBodyMask: np.ndarray = ComputeDRGMask(BinarizedImage, Centroid)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(DRGBodyMask), "DRG Body Mask", Config.DryRun, Config.HeadlessMode)
 
     WellEdgeMask: np.ndarray = None
@@ -609,8 +616,10 @@ def ProcessBrightField(BrightFieldImage: np.ndarray) -> typing.Tuple[typing.Tupl
         WellEdgeMask = Config.WellInteriorMask.copy()
     else:
         #   Compute the mask of the well edge within the image, as this is typically the source of more noise signals than anywhere else
-        # WellEdgeMask: np.ndarray = ComputeWellEdgeMask(BinarizedImage, Centroid)
-        WellEdgeMask: np.ndarray = ComputeWellEdgeMask_Alt1(BinarizedImage * DRGBodyMask, Centroid)
+        if ( AlternativeMaskGeneration ):
+            WellEdgeMask: np.ndarray = ComputeWellEdgeMask_Alt1(BinarizedImage * DRGBodyMask, Centroid)
+        else:
+            WellEdgeMask: np.ndarray = ComputeWellEdgeMask(BinarizedImage, Centroid)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(WellEdgeMask), "Well Edge Mask", Config.DryRun, Config.HeadlessMode)
 
     Results.BrightFieldExclusionMask = Utils.ConvertTo8Bit(DRGBodyMask * WellEdgeMask)
