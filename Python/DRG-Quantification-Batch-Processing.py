@@ -56,7 +56,7 @@ def main() -> None:
     StatusReportFilename: str = f'DRG Batch Analysis Status Reporting - {datetime.now().strftime("%Y-%m-%d")}.csv'
     LogWriter.Println(f"Creating status report file [ {StatusReportFilename} ] to track execution status of experimental conditions...")
     with open(os.path.join(FolderBase, StatusReportFilename), "+w") as StatusReport:
-        StatusReport.write(f"Analysis File,Execution Status\n")
+        StatusReport.write(f"Analysis File,Execution Status,Status Code\n")
 
         if ( ManualPreview ):
             ExperimentalConditions = ManuallyPreviewConditions(ExperimentalConditions, StatusReport)
@@ -133,13 +133,13 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
                 if ( DRG_Neurite_Quantification.main() == DRG_StatusSuccess ):
                     LogWriter.Println(f"Preview accepted for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
                 else:
-                    LogWriter.Errorln(f"Preview rejected for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
+                    LogWriter.Errorln(f"Preview rejected for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] - [ {DRGStatus_ToString(Condition.AnalysisStatus)} ({Condition.AnalysisStatus})].")
                     Condition.AnalysisStatus |= DRG_StatusPreviewRejected
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
                 Condition.AnalysisStatus |= DRG_StatusUnknownException
 
-        StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)}\n")
+        StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)},{Condition.AnalysisStatus}\n")
 
     return ExperimentalConditions
 
@@ -178,12 +178,12 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
                 if ( Condition.AnalysisStatus == DRG_StatusSuccess ):
                     LogWriter.Println(f"Successfully finished analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
                 else:
-                    LogWriter.Errorln(f"Analysis failed for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
+                    LogWriter.Errorln(f"Analysis failed for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] - [ {DRGStatus_ToString(Condition.AnalysisStatus)} ({Condition.AnalysisStatus})].")
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
                 Condition.AnalysisStatus |= DRG_StatusUnknownException
 
-        StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)}\n")
+        StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)},{Condition.AnalysisStatus}\n")
 
     return ExperimentalConditions
 

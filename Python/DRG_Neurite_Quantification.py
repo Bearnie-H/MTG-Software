@@ -431,8 +431,7 @@ def main() -> int:
     ImageSequenceNumber = 1
 
     if ( Config.ManualPreview ):
-        if ( Status := ManualPreviewImages(Config.BrightFieldImage.MinimumIntensityProjection(), Config.FluorescentImage.MaximumIntensityProjection()) != DRG_StatusPreviewAccepted ):
-            return Status
+        return ManualPreviewImages(Config.BrightFieldImage.MinimumIntensityProjection(), Config.FluorescentImage.MaximumIntensityProjection())
 
     #   This script will take in two images, a MIP from the fluorescence Z-stack and a bright-field image
     #   of the same size, magnification, and ROI.
