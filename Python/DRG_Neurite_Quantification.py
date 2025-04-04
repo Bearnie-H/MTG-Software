@@ -146,17 +146,17 @@ class Configuration():
             self.BrightFieldImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.BrightFieldSeriesIndex, ChannelIndex=ExperimentalCondition.BrightFieldChannelIndex)
             if ( self.BrightFieldImage is None ):
                 self._LogWriter.Errorln(f"Failed to open Bright Field Image!")
+                ExperimentalCondition.AnalysisStatus |= DRG_NoBrightFieldImage
                 ValidCondition = False
 
             self.FluorescentImageFile = ExperimentalCondition.LIFFilePath
             self.FluorescentImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.NeuriteSeriesIndex, ChannelIndex=ExperimentalCondition.NeuriteChannelIndex)
             if ( self.FluorescentImage is None ):
                 self._LogWriter.Errorln(f"Failed to open Fluorescent Image!")
+                ExperimentalCondition.AnalysisStatus |= DRG_NoFluorescentImage
                 ValidCondition = False
 
             self.OutputDirectory = os.path.splitext(ExperimentalCondition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
-
-        #   ...
 
         if ( not ValidCondition ):
             raise ValueError(f"Failed to properly extract analysis configuration state from the Experimental Condition details!")
@@ -431,7 +431,7 @@ def main() -> int:
     ImageSequenceNumber = 1
 
     if ( Config.ManualPreview ):
-        if ( Status := ManualPreviewImages(Config.BrightFieldImage.MinimumIntensityProjection(), Config.FluorescentImage.MaximumIntensityProjection()) != 0 ):
+        if ( Status := ManualPreviewImages(Config.BrightFieldImage.MinimumIntensityProjection(), Config.FluorescentImage.MaximumIntensityProjection()) != DRG_StatusPreviewAccepted ):
             return Status
 
     #   This script will take in two images, a MIP from the fluorescence Z-stack and a bright-field image
@@ -446,7 +446,6 @@ def main() -> int:
 
         #   Try to use the alternative mask generation algorithms?
         CentroidLocation, DRGBodyMask, WellEdgeMask = ProcessBrightField(Config.BrightFieldImage.MinimumIntensityProjection(), AlternativeMaskGeneration=True)
-
         if (( MasksStatus := SanityCheckMasks(DRGBodyMask, WellEdgeMask) ) != DRG_StatusSuccess ):
             return MasksStatus
 
@@ -509,7 +508,7 @@ def ManualPreviewImages(BrightFieldProjection: np.ndarray, FluorescentProjection
     )
 
     if ( KeyCode in [ord(x) for x in 'yY'] ):
-        return 0
+        return DRG_StatusPreviewAccepted
     else:
         return DRG_StatusPreviewRejected
 
@@ -1029,13 +1028,19 @@ def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
 
     MaskStatus: int = 0
 
+    DRGMaskMinArea: float = 0.025
+    DRGMaskMaxArea: float = 0.50
+
+    WellInteriorMinArea: float = 0.15
+    WellInteriorMaxArea: float = 0.85
+
     #   The DRG Body mask is 0's where the body is, and 1's everywhere else.
     #   A valid mask should have a "reasonable" fraction of the image covered,
     #   but not too much or too little.
     #   A simple check for the ratio of 0's to 1's is the mean value of the
     #   entire image.
     DRGBodyFraction: float = 1 - np.mean(DRGBodyMask)
-    if ( DRGBodyFraction < 0.05 ) or ( DRGBodyFraction > 0.75 ):
+    if ( DRGBodyFraction < DRGMaskMinArea ) or ( DRGBodyFraction > DRGMaskMaxArea ):
         MaskStatus |= DRG_StatusBodyMaskFailed
         LogWriter.Warnln(f"DRG Body mask coverage fraction is concerningly high (or low)! [ {DRGBodyFraction:.2f} ]")
     #   ...
@@ -1044,7 +1049,7 @@ def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
     #   fraction of the area of the image. In this case, the interior of the well
     #   is filled with 1's and the walls and exterior with 0's.
     WellInteriorFraction: float = np.mean(WellEdgeMask)
-    if ( WellInteriorFraction < 0.10 ) or ( WellInteriorFraction > 0.80 ):
+    if ( WellInteriorFraction < WellInteriorMinArea ) or ( WellInteriorFraction > WellInteriorMaxArea ):
         MaskStatus |= DRG_StatusWellMaskFailed
         LogWriter.Warnln(f"Well interior mask coverage fraction is concerningly high (or low)! [ {WellInteriorFraction:.2f} ]")
 
@@ -1466,4 +1471,5 @@ if __name__ == "__main__":
 
     if ( Config.ValidateOnly ):
         sys.exit(DRG_StatusSuccess)
+
     sys.exit(DRG_StatusValidationFailed)

@@ -94,6 +94,7 @@ def TryParseInteger(Input: str, ErrorMessage: str = "") -> int | None:
     """
 
     if ( Input is None ) or ( Input == "" ):
+        print(f"Note: Integer Value Empty: {ErrorMessage}.")
         Input = "0"
 
     try:
@@ -121,6 +122,7 @@ def TryParseFloat(Input: str, ErrorMessage: str = "") -> float | None:
     """
 
     if ( Input is None ) or ( Input == "" ):
+        print(f"Note: Float Value Empty: {ErrorMessage}.")
         Input = "0.0"
 
     try:
@@ -147,6 +149,7 @@ def TryParseBool(Input: str, ErrorMessage: str = "") -> bool | None:
     """
 
     if ( Input is None ) or ( Input == "" ):
+        print(f"Note: Boolean Value Empty: {ErrorMessage}.")
         Input = "False"
 
     try:
@@ -179,11 +182,14 @@ def TryParseString(Input: str) -> str | None:
 DRG_StatusSuccess:          int = 1 << 1
 DRG_StatusNotYetProcessed:  int = 1 << 2
 DRG_StatusValidationFailed: int = 1 << 3
-DRG_StatusPreviewRejected:  int = 1 << 4
-DRG_StatusBodyMaskFailed:   int = 1 << 5
-DRG_StatusWellMaskFailed:   int = 1 << 6
-DRG_StatusNoNeurites:       int = 1 << 7
-DRG_StatusUnknownException: int = 1 << 8
+DRG_NoBrightFieldImage:     int = 1 << 4
+DRG_NoFluorescentImage:     int = 1 << 5
+DRG_StatusPreviewAccepted:  int = 1 << 6
+DRG_StatusPreviewRejected:  int = 1 << 7
+DRG_StatusBodyMaskFailed:   int = 1 << 8
+DRG_StatusWellMaskFailed:   int = 1 << 9
+DRG_StatusNoNeurites:       int = 1 << 10
+DRG_StatusUnknownException: int = 1 << 11
 
 def DRGStatus_ToString(StatusCode: int) -> str:
     """
@@ -202,6 +208,9 @@ def DRGStatus_ToString(StatusCode: int) -> str:
         DRG_StatusSuccess: "Success.",
         DRG_StatusNotYetProcessed: "Not Yet Processed.",
         DRG_StatusValidationFailed: "Parameter Validation Failure.",
+        DRG_NoBrightFieldImage: "No Bright Field Image In LIF File.",
+        DRG_NoFluorescentImage: "No Fluorescent Image In LIF File.",
+        DRG_StatusPreviewAccepted: "Manual Preview Accepted.",
         DRG_StatusPreviewRejected: "Rejected During Manual Preview.",
         DRG_StatusBodyMaskFailed: "DRG Body Mask Generation Failure.",
         DRG_StatusWellMaskFailed: "Well Interior Mask Generation Failure.",
@@ -218,7 +227,7 @@ def DRGStatus_ToString(StatusCode: int) -> str:
                 Output += f" {StatusCodeMapping[Code]}"
 
     if ( Output == "" ):
-        Output = "Unknown Status. "
+        Output = "Unknown Status."
 
     return Output
 

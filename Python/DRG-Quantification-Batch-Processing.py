@@ -56,6 +56,8 @@ def main() -> None:
     StatusReportFilename: str = f'DRG Batch Analysis Status Reporting - {datetime.now().strftime("%Y-%m-%d")}.csv'
     LogWriter.Println(f"Creating status report file [ {StatusReportFilename} ] to track execution status of experimental conditions...")
     with open(os.path.join(FolderBase, StatusReportFilename), "+w") as StatusReport:
+        StatusReport.write(f"Analysis File,Execution Status\n")
+
         if ( ManualPreview ):
             ExperimentalConditions = ManuallyPreviewConditions(ExperimentalConditions, StatusReport)
 
@@ -128,7 +130,7 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
                 DRG_Neurite_Quantification.Config.OutputDirectory = os.path.splitext(Condition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
                 DRG_Neurite_Quantification.Results = DRG_Neurite_Quantification.QuantificationResults(LogWriter=DRG_Neurite_Quantification.LogWriter)
 
-                if ( DRG_Neurite_Quantification.main() == 0 ):
+                if ( DRG_Neurite_Quantification.main() == DRG_StatusSuccess ):
                     LogWriter.Println(f"Preview accepted for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
                 else:
                     LogWriter.Errorln(f"Preview rejected for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
@@ -168,15 +170,15 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
 
                 DRG_Neurite_Quantification.LogWriter = Logger(OutputStream=LogWriter.RawStream(), Prefix=f"DRG Batch Analysis - {os.path.basename(Condition.LIFFilePath)} ({ConditionIndex}/{ConditionCount})")
                 DRG_Neurite_Quantification.Config = DRG_Neurite_Quantification.Configuration(LogWriter=DRG_Neurite_Quantification.LogWriter).ExtractFromCondition(Condition)
+                DRG_Neurite_Quantification.Config.ManualPreview = False
                 DRG_Neurite_Quantification.Config.OutputDirectory = os.path.splitext(Condition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
                 DRG_Neurite_Quantification.Results = DRG_Neurite_Quantification.QuantificationResults(LogWriter=DRG_Neurite_Quantification.LogWriter)
 
-                if (( AnalysisStatus := DRG_Neurite_Quantification.main() ) == DRG_StatusSuccess ):
-                    LogWriter.Println(f"Finished analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
-                    Condition.AnalysisStatus = DRG_StatusSuccess
+                Condition.AnalysisStatus = DRG_Neurite_Quantification.main()
+                if ( Condition.AnalysisStatus == DRG_StatusSuccess ):
+                    LogWriter.Println(f"Successfully finished analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
                 else:
                     LogWriter.Errorln(f"Analysis failed for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
-                    Condition.AnalysisStatus |= AnalysisStatus
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
                 Condition.AnalysisStatus |= DRG_StatusUnknownException
