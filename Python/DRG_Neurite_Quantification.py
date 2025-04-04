@@ -847,6 +847,10 @@ def ComputeDRGMask_Alt1(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[
         if ( cv2.pointPolygonTest(BoundingBox, DRGCentroid, False) > 0 ):
             FilteredComponentIndices.append(ComponentID)
 
+    if ( len(FilteredComponentIndices) == 0 ):
+        LogWriter.Errorln(f"Failed to identify a component with the DRG Centroid located inside!")
+        return np.zeros_like(ThresholdedImage)
+
     #   If there are multiple such components, identify the one with the smallest
     #   moment of inertia, i.e. the one most spatially concentrated about the
     #   centroid of the component
