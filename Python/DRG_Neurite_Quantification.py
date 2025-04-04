@@ -25,6 +25,7 @@ from matplotlib.widgets import PolygonSelector
 import numpy as np
 import cv2
 from scipy.signal import correlate
+import scipy.stats
 
 #   Import the desired locally written modules
 from MTG_Common import Logger
@@ -597,7 +598,8 @@ def ProcessBrightField(BrightFieldImage: np.ndarray) -> typing.Tuple[typing.Tupl
         #   body of the DRG.
         DRGBodyMask: np.ndarray = Config.DRGBodyMask.copy()
     else:
-        DRGBodyMask: np.ndarray = ComputeDRGMask(BinarizedImage, Centroid)
+        # DRGBodyMask: np.ndarray = ComputeDRGMask(BinarizedImage, Centroid)
+        DRGBodyMask: np.ndarray = ComputeDRGMask_Alt1(BinarizedImage, Centroid)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(DRGBodyMask), "DRG Body Mask", Config.DryRun, Config.HeadlessMode)
 
     WellEdgeMask: np.ndarray = None
@@ -605,7 +607,8 @@ def ProcessBrightField(BrightFieldImage: np.ndarray) -> typing.Tuple[typing.Tupl
         WellEdgeMask = Config.WellInteriorMask.copy()
     else:
         #   Compute the mask of the well edge within the image, as this is typically the source of more noise signals than anywhere else
-        WellEdgeMask: np.ndarray = ComputeWellEdgeMask(BinarizedImage, Centroid)
+        # WellEdgeMask: np.ndarray = ComputeWellEdgeMask(BinarizedImage, Centroid)
+        WellEdgeMask: np.ndarray = ComputeWellEdgeMask_Alt1(BinarizedImage * DRGBodyMask, Centroid)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(WellEdgeMask), "Well Edge Mask", Config.DryRun, Config.HeadlessMode)
 
     Results.BrightFieldExclusionMask = Utils.ConvertTo8Bit(DRGBodyMask * WellEdgeMask)
@@ -808,6 +811,79 @@ def ComputeDRGMask(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[int, 
     DRGMask = cv2.morphologyEx(DRGMask, cv2.MORPH_OPEN, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MorphologyKernelSize, MorphologyKernelSize)))
     return DRGMask
 
+def ComputeDRGMask_Alt1(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[int, int]) -> np.ndarray:
+    """
+    ComputeDRGMask_Alt1
+
+    This function...
+
+    ThresholdedImage:
+        ...
+    DRGCentroid:
+        ...
+
+    Return (np.ndarray):
+        ...
+    """
+
+    Mask: np.ndarray = np.zeros_like(Utils.BGRToGreyscale(ThresholdedImage))
+
+    #   First, identify the connected components of the image.
+    ComponentCount, Labels, Stats, Centroids = cv2.connectedComponentsWithStats(ThresholdedImage, connectivity=8)
+
+    #   Next, remove any and all components occupying less than 1% of the area of the image
+    FilteredComponentIndices: typing.List[int] = [
+        x for x in range(1, ComponentCount) if Stats[x, cv2.CC_STAT_AREA] >= (0.01 * np.prod(ThresholdedImage.shape))
+    ]
+
+    #   Next, find any components where the previously identified DRG centroid is within
+    #   the component's bounding box
+    ComponentIDs, FilteredComponentIndices = FilteredComponentIndices, []
+    for ComponentID in ComponentIDs:
+        x, y, w, h = Stats[ComponentID, cv2.CC_STAT_LEFT], Stats[ComponentID, cv2.CC_STAT_TOP], Stats[ComponentID, cv2.CC_STAT_WIDTH], Stats[ComponentID, cv2.CC_STAT_HEIGHT]
+        BoundingBox = np.array([[x,y], [x+w, y], [x+w, y+h], [x, y+h]])
+        if ( cv2.pointPolygonTest(BoundingBox, DRGCentroid, False) > 0 ):
+            FilteredComponentIndices.append(ComponentID)
+
+    #   If there are multiple such components, identify the one with the smallest
+    #   moment of inertia, i.e. the one most spatially concentrated about the
+    #   centroid of the component
+    DRGComponentIndex = sorted([
+        (
+            x,
+            cv2.HuMoments(
+                cv2.moments(
+                    (Labels == x).astype(np.uint8)
+                )
+            )[0]
+        ) for x in FilteredComponentIndices
+    ], key=lambda x: x[1])[0][0]
+
+    #   With the single component containing the DRG centroid identified, now we just need
+    #   to filter this down to ensure we only keep pixels of the actual DRG body and
+    #   remove any segments of the well wall which are attached to the body itself.
+    #
+    #   To do this, consider the L2 normed distances of all identified pixels
+    #   from the centroid. Within the body of the DRG, we expect to see more points
+    #   at larger distances, as the shape is approximately circular. Once we start to
+    #   examine radii larger than the radius of the DRG, the counts should decrease again,
+    #   with a tail depending on what else is connected to this component.
+    MaskCoordinates: np.ndarray = np.argwhere(Labels == DRGComponentIndex)
+    Distances: np.ndarray = np.hypot(MaskCoordinates[:,0] - DRGCentroid[1], MaskCoordinates[:,1] - DRGCentroid[0])
+    DistanceCounts: np.ndarray = np.histogram(Distances, bins=int(round(np.max(Distances))))[0]
+    Skewness: np.ndarray = np.array([scipy.stats.skew(DistanceCounts[:x]) if x > np.argmax(DistanceCounts) else 0 for x in range(len(DistanceCounts))])
+    MinIndex: int = np.argmin(Skewness)
+    Threshold: int = MinIndex + np.argmin(Skewness[MinIndex:] <= 0)
+
+    #   Generate the mask from the component and restrict it to only the circle we associate
+    #   with the DRG body.
+    Mask[Labels == DRGComponentIndex] = 1
+    Mask *= cv2.circle(np.zeros_like(Mask), DRGCentroid, Threshold, 1, -1)
+
+    #   Now, invert this mask to follow the expected format of an exclusion mask, i.e.
+    #   zeros where we want to remove and ones where we want to keep.
+    return (~Mask - 254)
+
 def ComputeWellEdgeMask(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuople[int, int]) -> np.ndarray:
     """
     ComputeWellEdgeMask
@@ -871,6 +947,55 @@ def ComputeWellEdgeMask(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuople
     WellEdgeMask = cv2.morphologyEx(WellEdgeMask, cv2.MORPH_OPEN, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MorphologyKernelSize, MorphologyKernelSize)))
 
     return WellEdgeMask
+
+def ComputeWellEdgeMask_Alt1(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[int, int]) -> np.ndarray:
+    """
+    ComputeWellEdgeMask_Alt1
+
+    This function...
+
+    ThresholdedImage:
+        ...
+
+    Return (np.ndarray):
+        ...
+    """
+
+    Mask: np.ndarray = np.zeros_like(ThresholdedImage)
+
+    #   First, again we segment into connected components, but this time with a
+    #   much smaller allowed area threshold as we're okay with relatively small
+    #   regions of chip-edge making it through this selection.
+    ComponentCount, Labels, Stats, Centroids = cv2.connectedComponentsWithStats(ThresholdedImage, connectivity=8)
+
+    #   Next, remove any and all components occupying less than 0.05% of the area of the image
+    FilteredComponentIndices: typing.List[int] = [
+        x for x in range(1, ComponentCount) if Stats[x, cv2.CC_STAT_AREA] >= (0.0005 * np.prod(ThresholdedImage.shape))
+    ]
+
+    #   Write out these filtered components to a new mask
+    FilteredComponentMask: np.ndarray = np.ones_like(ThresholdedImage)
+    for ID in FilteredComponentIndices:
+        FilteredComponentMask[Labels == ID] = 0
+
+    #   Apply a very large-kernel close operation to close any little speckle noise
+    #   on the interior of any components
+    KernelSize: int = int(round(0.02 * np.min(ThresholdedImage.shape)))
+    FilteredComponentMask = cv2.morphologyEx(FilteredComponentMask, cv2.MORPH_ERODE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (KernelSize, KernelSize)))
+
+    Contours, Hierarchy = cv2.findContours(FilteredComponentMask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    SortedContours = sorted([
+            x for x in Contours
+        ],
+        key=lambda x: cv2.contourArea(x),
+        reverse=True
+    )
+
+    for Index, Contour in enumerate(SortedContours, start=1):
+        if ( cv2.pointPolygonTest(Contour, DRGCentroid, False) > 0 ):
+            Mask = cv2.drawContours(Mask, [Contour], 0, 1, -1)
+
+    return Mask
 
 def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
     """
