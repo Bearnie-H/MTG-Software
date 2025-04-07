@@ -615,7 +615,7 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
     else:
         #   Compute the mask of the well edge within the image, as this is typically the source of more noise signals than anywhere else
         if ( AlternativeMaskGeneration ):
-            WellEdgeMask: np.ndarray = ComputeWellEdgeMask_Alt1(BinarizedImage * DRGBodyMask, Centroid)
+            WellEdgeMask: np.ndarray = ComputeWellEdgeMask_Alt1(BinarizedImage, DRGBodyMask, Centroid)
         else:
             WellEdgeMask: np.ndarray = ComputeWellEdgeMask(BinarizedImage, Centroid)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(WellEdgeMask), "Well Edge Mask", Config.DryRun, Config.HeadlessMode)
@@ -961,7 +961,7 @@ def ComputeWellEdgeMask(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuople
 
     return WellEdgeMask
 
-def ComputeWellEdgeMask_Alt1(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[int, int]) -> np.ndarray:
+def ComputeWellEdgeMask_Alt1(ThresholdedImage: np.ndarray, DRGBodyMask: np.ndarray, DRGCentroid: typing.Tuple[int, int]) -> np.ndarray:
     """
     ComputeWellEdgeMask_Alt1
 
@@ -990,6 +990,7 @@ def ComputeWellEdgeMask_Alt1(ThresholdedImage: np.ndarray, DRGCentroid: typing.T
     FilteredComponentMask: np.ndarray = np.ones_like(ThresholdedImage)
     for ID in FilteredComponentIndices:
         FilteredComponentMask[Labels == ID] = 0
+        # Utils.DisplayImage(f"Current Components", Utils.ConvertTo8Bit(FilteredComponentMask), 0, True, True)
 
     #   Apply a very large-kernel close operation to close any little speckle noise
     #   on the interior of any components
@@ -998,16 +999,28 @@ def ComputeWellEdgeMask_Alt1(ThresholdedImage: np.ndarray, DRGCentroid: typing.T
 
     Contours, Hierarchy = cv2.findContours(FilteredComponentMask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     SortedContours = sorted([
-            x for x in Contours
+            x for x in Contours if cv2.contourArea(x) >= 0.01 * np.prod(ThresholdedImage.shape)
         ],
         key=lambda x: cv2.contourArea(x),
         reverse=True
     )
 
-    for Index, Contour in enumerate(SortedContours, start=1):
+    ContourMoments: np.ndarray = np.array([cv2.HuMoments(cv2.moments(cv2.drawContours(np.zeros_like(Mask), [x], 0, 255, -1), True))[0] for x in SortedContours])
+
+    for Index, Contour in enumerate(SortedContours):
+        # Utils.DisplayImage(f"Current Test Contour", Utils.ConvertTo8Bit(cv2.drawContours(np.zeros_like(Mask), [Contour], 0, 1, -1)), 0, True, True)
+
+        #   If the contour contains the DRG centroid, then this is clearly the interior of the well
+        #   and we can use this region directly.
         if ( cv2.pointPolygonTest(Contour, DRGCentroid, False) > 0 ):
             Mask = cv2.drawContours(Mask, [Contour], 0, 1, -1)
+        #   Otherwise, if this region does not contain the DRG centroid, we then need to look more carefully.
+        #   Check whether this is the contour with minimal moment of inertia
+        elif ( ContourMoments[Index] == np.min(ContourMoments) ):
+            Mask = cv2.drawContours(Mask, [Contour], 0, 1, -1)
+        # Utils.DisplayImage(f"Current Mask", Utils.ConvertTo8Bit(Mask), 0, True, True)
 
+    # Utils.DisplayImage(f"Current Mask", Utils.ConvertTo8Bit(Mask), 0, True, True)
     return Mask
 
 def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
@@ -1051,6 +1064,10 @@ def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
     if ( WellInteriorFraction < WellInteriorMinArea ) or ( WellInteriorFraction > WellInteriorMaxArea ):
         MaskStatus |= DRG_StatusWellMaskFailed
         LogWriter.Warnln(f"Well interior mask coverage fraction is concerningly high (or low)! [ {WellInteriorFraction:.2f} ]")
+
+    #   If both masks are acceptable, return a success code.
+    if ( MaskStatus == 0 ):
+        return DRG_StatusSuccess
 
     return MaskStatus
 
