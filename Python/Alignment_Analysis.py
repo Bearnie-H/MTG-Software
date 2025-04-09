@@ -617,7 +617,9 @@ def ComputeAlignmentMetric(Orientations: np.ndarray) -> typing.Tuple[int, float,
 
     #   Find the count of orientations with angles within 1 standard deviation of the mean orientation, and divide by the total number of measurements
     #   to get an alignment fraction value
-    AlignmentFraction: float = float(len(ShiftedOrientations[abs(ShiftedOrientations) <= AngularStDev]) / MeasurementCount)
+    AlignmentFraction: float = 0
+    if ( MeasurementCount > 0 ):
+        AlignmentFraction = float(len(ShiftedOrientations[abs(ShiftedOrientations) <= AngularStDev]) / MeasurementCount)
 
     return (MeasurementCount, AlignmentFraction, AngularMean, AngularStDev, Orientations)
 

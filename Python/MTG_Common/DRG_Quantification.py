@@ -179,9 +179,10 @@ def TryParseString(Input: str) -> str | None:
 
     return Input
 
-DRG_StatusSuccess:          int = 1 << 1
-DRG_StatusNotYetProcessed:  int = 1 << 2
-DRG_StatusValidationFailed: int = 1 << 3
+DRG_StatusSuccess:          int = 1 << 0
+DRG_StatusNotYetProcessed:  int = 1 << 1
+DRG_StatusValidationFailed: int = 1 << 2
+DRG_StatusNoLIFFile:        int = 1 << 3
 DRG_NoBrightFieldImage:     int = 1 << 4
 DRG_NoFluorescentImage:     int = 1 << 5
 DRG_StatusPreviewAccepted:  int = 1 << 6
@@ -190,6 +191,7 @@ DRG_StatusBodyMaskFailed:   int = 1 << 8
 DRG_StatusWellMaskFailed:   int = 1 << 9
 DRG_StatusNoNeurites:       int = 1 << 10
 DRG_StatusUnknownException: int = 1 << 11
+DRG_StatusIntentionalAbort: int = 1 << 12
 
 def DRGStatus_ToString(StatusCode: int) -> str:
     """
@@ -205,17 +207,19 @@ def DRGStatus_ToString(StatusCode: int) -> str:
     """
 
     StatusCodeMapping: typing.Dict[int, str] = {
-        DRG_StatusSuccess: "Success.",
-        DRG_StatusNotYetProcessed: "Not Yet Processed.",
-        DRG_StatusValidationFailed: "Parameter Validation Failure.",
-        DRG_NoBrightFieldImage: "No Bright Field Image In LIF File.",
-        DRG_NoFluorescentImage: "No Fluorescent Image In LIF File.",
-        DRG_StatusPreviewAccepted: "Manual Preview Accepted.",
-        DRG_StatusPreviewRejected: "Rejected During Manual Preview.",
-        DRG_StatusBodyMaskFailed: "DRG Body Mask Generation Failure.",
-        DRG_StatusWellMaskFailed: "Well Interior Mask Generation Failure.",
-        DRG_StatusNoNeurites: "No Neurites Identified.",
-        DRG_StatusUnknownException: "Unknown Exception Occurred.",
+        DRG_StatusSuccess:              "Success.",
+        DRG_StatusNotYetProcessed:      "Not Yet Processed.",
+        DRG_StatusValidationFailed:     "Parameter Validation Failure.",
+        DRG_StatusNoLIFFile:            "LIF File Could Not Be Found.",
+        DRG_NoBrightFieldImage:         "No Bright Field Image In LIF File.",
+        DRG_NoFluorescentImage:         "No Fluorescent Image In LIF File.",
+        DRG_StatusPreviewAccepted:      "Manual Preview Accepted.",
+        DRG_StatusPreviewRejected:      "Rejected During Manual Preview.",
+        DRG_StatusBodyMaskFailed:       "DRG Body Mask Generation Failure.",
+        DRG_StatusWellMaskFailed:       "Well Interior Mask Generation Failure.",
+        DRG_StatusNoNeurites:           "No Neurites Identified.",
+        DRG_StatusUnknownException:     "Unknown Exception Occurred.",
+        DRG_StatusIntentionalAbort:     "Intentionally Ended Early."
     }
 
     Output: str = ""

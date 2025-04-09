@@ -48,16 +48,19 @@ def main() -> None:
     SeriesIndex: str = Arguments.SeriesIndex
     ChannelIndex: str = Arguments.ChannelIndex
 
+    if ( os.path.dirname(InputFile) == "" ):
+        InputFile = os.path.join(os.getcwd(), InputFile)
+
+    #   Open and parse the file into a LifFile instance...
+    LifStack: LifFile = LifFile(InputFile)
+
+    #   Identify all of the series names within the file.
+    SeriesNames: typing.List[str] = [x["name"] for x in LifStack.image_list]
+
+    print(f"File [ {os.path.basename(InputFile)} ] contains the following series:")
+    [print(f"Series Name: {x} - {LifStack.get_image(Index).dims} - Channels: {LifStack.get_image(Index).channels}") for (Index, x) in enumerate(SeriesNames)]
+
     if ( DescribeOnly ):
-        #   Open and parse the file into a LifFile instance...
-        LifStack: LifFile = LifFile(InputFile)
-
-        #   Identify all of the series names within the file.
-        SeriesNames: typing.List[str] = [x["name"] for x in LifStack.image_list]
-
-        print(f"File [ {os.path.basename(InputFile)} ] contains the following series:")
-        [print(f"Series Name: {x} - {LifStack.get_image(Index).dims} - Channels: {LifStack.get_image(Index).channels}") for (Index, x) in enumerate(SeriesNames)]
-
         return 0
 
     if (( SeriesName is None ) or ( SeriesName == "" )) and ( SeriesIndex == -1 ):

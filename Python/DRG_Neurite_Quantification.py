@@ -96,7 +96,7 @@ class Configuration():
 
         self.ApplyManualROISelection = False
 
-        self.OutputDirectory = None
+        self.OutputDirectory = ""
 
         self.LogFile = ""
         self.QuietMode = False
@@ -141,25 +141,26 @@ class Configuration():
         if ( not os.path.exists(ExperimentalCondition.LIFFilePath) ):
             ValidCondition = False
             self._LogWriter.Errorln(f"LIF File does not exist or could not be found!")
+            ExperimentalCondition.AnalysisStatus |= DRG_StatusNoLIFFile
         else:
             self.BrightFieldImageFile = ExperimentalCondition.LIFFilePath
             self.BrightFieldImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.BrightFieldSeriesIndex, ChannelIndex=ExperimentalCondition.BrightFieldChannelIndex)
             if ( self.BrightFieldImage is None ):
-                self._LogWriter.Errorln(f"Failed to open Bright Field Image!")
+                self._LogWriter.Errorln(f"Failed to open Bright Field Image with Series and Channel Indices [ {ExperimentalCondition.BrightFieldSeriesIndex},{ExperimentalCondition.BrightFieldChannelIndex} ]!")
                 ExperimentalCondition.AnalysisStatus |= DRG_NoBrightFieldImage
                 ValidCondition = False
 
             self.FluorescentImageFile = ExperimentalCondition.LIFFilePath
             self.FluorescentImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.NeuriteSeriesIndex, ChannelIndex=ExperimentalCondition.NeuriteChannelIndex)
             if ( self.FluorescentImage is None ):
-                self._LogWriter.Errorln(f"Failed to open Fluorescent Image!")
+                self._LogWriter.Errorln(f"Failed to open Fluorescent Image with Series and Channel Indices [ {ExperimentalCondition.NeuriteSeriesIndex},{ExperimentalCondition.NeuriteChannelIndex} ]!")
                 ExperimentalCondition.AnalysisStatus |= DRG_NoFluorescentImage
                 ValidCondition = False
 
             self.OutputDirectory = os.path.splitext(ExperimentalCondition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
 
         if ( not ValidCondition ):
-            raise ValueError(f"Failed to properly extract analysis configuration state from the Experimental Condition details!")
+            raise ValueError(f"Failed to properly extract analysis configuration state from the Experimental Condition details - {' '.join([DRGStatus_ToString(ExperimentalCondition.AnalysisStatus)])}!")
 
         return self
 
@@ -400,20 +401,34 @@ class QuantificationResults():
             self.BinarizedFluorescent.SaveTIFF(Folder)
             self.MaskedFluorescent.SaveTIFF(Folder)
             self.FilteredFluorescent.SaveTIFF(Folder)
-            self.ManuallySelectedFluorescent.SaveTIFF(Folder)
+            if ( Config.ApplyManualROISelection ):
+                self.ManuallySelectedFluorescent.SaveTIFF(Folder)
             self.ColourAnnotatedNeuriteLengths.SaveTIFF(Folder)
             self.ColourAnnotatedNeuriteOrientations.SaveTIFF(Folder)
 
+            with open(os.path.join(Config.OutputDirectory, f"Neurite Lengths by Layer.csv"), "w+") as NeuriteLengthsFile:
+                BinCount: int = int(round(max([np.max(x) if len(x) > 0 else 0 for x in self.NeuriteDistances])))
+                if ( BinCount > 0 ):
+                    NeuriteLengthsFile.writelines(",".join([
+                        f"{x}" for x in range(0, BinCount)
+                    ] + ["\n\n"]))
+                    for Layer in self.NeuriteDistances:
+                        hist, _ = np.histogram(Layer, bins=BinCount)
+                        NeuriteLengthsFile.writelines(",".join([
+                            f"{h}" for h in hist
+                        ]) + "\n")
+
             with open(os.path.join(Config.OutputDirectory, f"Neurite Orientations By Layer.csv"), "w+") as NeuriteOrientationsFile:
                 BinCount: int = Config.DistinctOrientations
-                NeuriteOrientationsFile.writelines(",".join([
-                    f"{x}" for x in range(0, 180, int(180 / BinCount))
-                ] + ["\n\n"]))
-                for Layer in self.NeuriteOrientations:
-                    hist, bins = np.histogram(Layer, bins=BinCount)
+                if ( BinCount > 0 ):
                     NeuriteOrientationsFile.writelines(",".join([
-                        f"{h}" for h in hist
-                    ]) + "\n")
+                        f"{x}" for x in range(0, 180, int(180 / BinCount))
+                    ] + ["\n\n"]))
+                    for Layer in self.NeuriteOrientations:
+                        hist, bins = np.histogram(Layer, bins=BinCount)
+                        NeuriteOrientationsFile.writelines(",".join([
+                            f"{h}" for h in hist
+                        ]) + "\n")
 
         return True
 
@@ -441,12 +456,17 @@ def main() -> int:
     Results.OriginalBrightField = Config.BrightFieldImage
     CentroidLocation, DRGBodyMask, WellEdgeMask = ProcessBrightField(Config.BrightFieldImage.MinimumIntensityProjection())
 
-    if (( MasksStatus := SanityCheckMasks(DRGBodyMask, WellEdgeMask) ) != DRG_StatusSuccess ):
+    MasksStatus = SanityCheckMasks(DRGBodyMask, WellEdgeMask)
+    if ( MasksStatus != DRG_StatusSuccess ):
 
         #   Try to use the alternative mask generation algorithms?
+        LogWriter.Println(f"Attempting to generate masks with alternative algorithms...")
         CentroidLocation, DRGBodyMask, WellEdgeMask = ProcessBrightField(Config.BrightFieldImage.MinimumIntensityProjection(), AlternativeMaskGeneration=True)
-        if (( MasksStatus := SanityCheckMasks(DRGBodyMask, WellEdgeMask) ) != DRG_StatusSuccess ):
+        MasksStatus = SanityCheckMasks(DRGBodyMask, WellEdgeMask)
+        if ( MasksStatus != DRG_StatusSuccess ):
+            LogWriter.Warnln(f"Alternative mask generation algorithms also failed!")
             return MasksStatus
+        LogWriter.Println(f"Alternative mask generation algorithms succeeded.")
 
     for Index, Layer in enumerate(Config.FluorescentImage.Layers()):
         LogWriter.Println(f"Processing Layer [ {Index+1}/{len(Config.FluorescentImage.Layers())} ]")
@@ -457,8 +477,9 @@ def main() -> int:
         #   If the user has selected they would like to apply manual ROI selection to exclude specific noise regions,
         #   perform this now.
         Neurites, ManualExclusionMask = ApplyManualROI(Neurites, Layer.copy())
-        DisplayAndSaveImage(Utils.ConvertTo8Bit(ManualExclusionMask), "Polygon Exclusion Mask", Config.DryRun, Config.HeadlessMode)
-        DisplayAndSaveImage(Utils.ConvertTo8Bit(Neurites), "Polygon Exclusion Masked Image", Config.DryRun, Config.HeadlessMode)
+        if ( Config.ApplyManualROISelection ):
+            DisplayAndSaveImage(Utils.ConvertTo8Bit(ManualExclusionMask), "Polygon Exclusion Mask", Config.DryRun, Config.HeadlessMode)
+            DisplayAndSaveImage(Utils.ConvertTo8Bit(Neurites), "Polygon Exclusion Masked Image", Config.DryRun, Config.HeadlessMode)
         Results.ManuallySelectedFluorescent.Append(Utils.ConvertTo8Bit(Neurites))
 
         #   With the centroid location and neurite pixels now identified, quantify the distribution of lengths of neurites
@@ -476,6 +497,9 @@ def main() -> int:
     #   Save out the configuration state for possible later review.
     Config.Save(Text=True, JSON=True)
     Results.Save(Folder=Config.OutputDirectory, DryRun=Config.DryRun)
+
+    if ( max(np.max(x) if len(x) > 0 else 0 for x in Results.NeuriteDistances) == 0 ):
+        return DRG_StatusNoNeurites
 
     return DRG_StatusSuccess
 
@@ -528,7 +552,7 @@ def DisplayAndSaveImage(Image: np.ndarray, Description: str, DryRun: bool, Headl
     """
 
     #   Turn off intermediate artefact display or saving.
-    # return
+    return
 
     global ImageSequenceNumber
 
@@ -568,6 +592,8 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
             A numpy mask equal in size to the bright field image, which can be used to mask in the
             interior region of the chip wells wtihin the fluorescent image.s
     """
+
+    LogWriter.Println(f"Starting to process Bright-Field image...")
 
     #   First, convert the bright field image to a full-range 8-bit image and assert that it is greyscale.
     Image: np.ndarray = Utils.ConvertTo8Bit(Utils.BGRToGreyscale(BrightFieldImage))
@@ -622,6 +648,7 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
 
     Results.BrightFieldExclusionMask = Utils.ConvertTo8Bit(DRGBodyMask * WellEdgeMask)
 
+    LogWriter.Println(f"Finished processing Bright-Field Image.")
     return (Centroid, DRGBodyMask, WellEdgeMask)
 
 def BinarizeBrightField(Image: np.ndarray, LocalThresholding: bool = False) -> typing.Tuple[np.ndarray, int]:
@@ -982,14 +1009,14 @@ def ComputeWellEdgeMask_Alt1(ThresholdedImage: np.ndarray, DRGBodyMask: np.ndarr
     ComponentCount, Labels, Stats, Centroids = cv2.connectedComponentsWithStats(ThresholdedImage, connectivity=8)
 
     #   Next, remove any and all components occupying less than 0.05% of the area of the image
-    FilteredComponentIndices: typing.List[int] = [
+    FilteredComponentIndices: typing.List[int] = list(sorted([
         x for x in range(1, ComponentCount) if Stats[x, cv2.CC_STAT_AREA] >= (0.0005 * np.prod(ThresholdedImage.shape))
-    ]
+    ], key=lambda x: Stats[x, cv2.CC_STAT_AREA], reverse=True))
 
     #   Write out these filtered components to a new mask
     FilteredComponentMask: np.ndarray = np.ones_like(ThresholdedImage)
-    for ID in FilteredComponentIndices:
-        FilteredComponentMask[Labels == ID] = 0
+    for ComponentID in FilteredComponentIndices:
+        FilteredComponentMask[Labels == ComponentID] = 0
         # Utils.DisplayImage(f"Current Components", Utils.ConvertTo8Bit(FilteredComponentMask), 0, True, True)
 
     #   Apply a very large-kernel close operation to close any little speckle noise
@@ -999,7 +1026,7 @@ def ComputeWellEdgeMask_Alt1(ThresholdedImage: np.ndarray, DRGBodyMask: np.ndarr
 
     Contours, Hierarchy = cv2.findContours(FilteredComponentMask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     SortedContours = sorted([
-            x for x in Contours if cv2.contourArea(x) >= 0.01 * np.prod(ThresholdedImage.shape)
+            x for x in Contours if (cv2.contourArea(x) >= 0.01 * np.prod(ThresholdedImage.shape)) and (cv2.pointPolygonTest(cv2.boxPoints(cv2.minAreaRect(x)).astype(np.int_), DRGCentroid, False) > 0)
         ],
         key=lambda x: cv2.contourArea(x),
         reverse=True
@@ -1008,16 +1035,25 @@ def ComputeWellEdgeMask_Alt1(ThresholdedImage: np.ndarray, DRGBodyMask: np.ndarr
     ContourMoments: np.ndarray = np.array([cv2.HuMoments(cv2.moments(cv2.drawContours(np.zeros_like(Mask), [x], 0, 255, -1), True))[0] for x in SortedContours])
 
     for Index, Contour in enumerate(SortedContours):
-        # Utils.DisplayImage(f"Current Test Contour", Utils.ConvertTo8Bit(cv2.drawContours(np.zeros_like(Mask), [Contour], 0, 1, -1)), 0, True, True)
+        ContourMask: np.ndarray = cv2.drawContours(np.zeros_like(Mask), [Contour], 0, 1, -1)
+        # Utils.DisplayImage(f"Current Test Contour", Utils.ConvertTo8Bit(ContourMask), 0, True, True)
 
+        #   Check if the contour contains the DRG centroid itself.
         #   If the contour contains the DRG centroid, then this is clearly the interior of the well
         #   and we can use this region directly.
         if ( cv2.pointPolygonTest(Contour, DRGCentroid, False) > 0 ):
             Mask = cv2.drawContours(Mask, [Contour], 0, 1, -1)
-        #   Otherwise, if this region does not contain the DRG centroid, we then need to look more carefully.
-        #   Check whether this is the contour with minimal moment of inertia
-        elif ( ContourMoments[Index] == np.min(ContourMoments) ):
+
+        #   Otherwise, if this region does not contain the DRG centroid, we then need to
+        #   look more carefully at what this region looks like and how it's distributed
+        #   over the image.
+
+        #   Check if the moment of inertia is less than the mean
+        #   of the components containing the centroid within the bounding box
+        elif ( ContourMoments[Index] <= np.mean(ContourMoments) ):
             Mask = cv2.drawContours(Mask, [Contour], 0, 1, -1)
+
+
         # Utils.DisplayImage(f"Current Mask", Utils.ConvertTo8Bit(Mask), 0, True, True)
 
     # Utils.DisplayImage(f"Current Mask", Utils.ConvertTo8Bit(Mask), 0, True, True)
@@ -1044,7 +1080,6 @@ def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
     DRGMaskMaxArea: float = 0.50
 
     WellInteriorMinArea: float = 0.15
-    WellInteriorMaxArea: float = 0.85
 
     #   The DRG Body mask is 0's where the body is, and 1's everywhere else.
     #   A valid mask should have a "reasonable" fraction of the image covered,
@@ -1061,9 +1096,9 @@ def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
     #   fraction of the area of the image. In this case, the interior of the well
     #   is filled with 1's and the walls and exterior with 0's.
     WellInteriorFraction: float = np.mean(WellEdgeMask)
-    if ( WellInteriorFraction < WellInteriorMinArea ) or ( WellInteriorFraction > WellInteriorMaxArea ):
+    if ( WellInteriorFraction < WellInteriorMinArea ):
         MaskStatus |= DRG_StatusWellMaskFailed
-        LogWriter.Warnln(f"Well interior mask coverage fraction is concerningly high (or low)! [ {WellInteriorFraction:.2f} ]")
+        LogWriter.Warnln(f"Well interior mask coverage fraction is concerningly low! [ {WellInteriorFraction:.2f} ]")
 
     #   If both masks are acceptable, return a success code.
     if ( MaskStatus == 0 ):
@@ -1325,7 +1360,7 @@ def QuantifyNeuriteLengths(NeuritePixels: np.ndarray, Origin: typing.Tuple[int, 
 
 def GenerateNeuriteLengthVisualization(BaseImages: ZStack.ZStack, NeuritePixels: ZStack.ZStack, Distances: typing.Sequence[np.ndarray], Origin: typing.Tuple[int, int]) -> None:
 
-    MaximumLength: float = np.max([np.max(x) for x in Distances])
+    MaximumLength: float = max([np.max(x) if len(x) > 0 else 0 for x in Distances])
     if ( MaximumLength == 0 ):
         LogWriter.Warnln(f"No neurites were identified!")
         return
