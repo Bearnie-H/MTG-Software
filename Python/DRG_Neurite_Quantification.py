@@ -232,6 +232,7 @@ class Configuration():
         self.DryRun = Arguments.DryRun
         self.ValidateOnly = Arguments.Validate
         self.HeadlessMode = Arguments.Headless
+        self.SaveIntermediates = Arguments.SaveIntermediates
 
         return
 
@@ -521,8 +522,6 @@ def main() -> int:
             return MasksStatus
         LogWriter.Println(f"Alternative mask generation algorithms succeeded.")
 
-    return DRG_StatusIntentionalAbort
-
     for Index, Layer in enumerate(Config.FluorescentImage.Layers()):
         LogWriter.Println(f"Processing Layer [ {Index+1}/{len(Config.FluorescentImage.Layers())} ]")
 
@@ -649,18 +648,18 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
 
     #   First, convert the bright field image to a full-range 8-bit image and assert that it is greyscale.
     Image: np.ndarray = Utils.ConvertTo8Bit(Utils.BGRToGreyscale(BrightFieldImage))
-    DisplayAndSaveImage(Image, "Initial Bright-Field Image", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(Image, "Initial Bright-Field Image", not Config.SaveIntermediates, Config.HeadlessMode)
     Results.BrightFieldMinProjection = Image
 
     #   Next, assert that the image is generally a bright background with a dark foreground
     if ( np.median(Image) < np.mean(Image) ):
         Image = -Image
-        DisplayAndSaveImage(Image, "Inverted Bright-Field Image", Config.SaveIntermediates, Config.HeadlessMode)
+        DisplayAndSaveImage(Image, "Inverted Bright-Field Image", not Config.SaveIntermediates, Config.HeadlessMode)
         Results.BrightFieldMinProjection = Image
 
     #   Create a copy of the image to binarize in order to perform the search for the centroid of the DRG body
     BinarizedImage, ThresholdLevel = BinarizeBrightField(Image.copy())
-    DisplayAndSaveImage(BinarizedImage, f"Binarized Image ({ThresholdLevel if ThresholdLevel >= 0 else float('NaN'):.0f})", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(BinarizedImage, f"Binarized Image ({ThresholdLevel if ThresholdLevel >= 0 else float('NaN'):.0f})", not Config.SaveIntermediates, Config.HeadlessMode)
     Results.BrightFieldBinarized = BinarizedImage
 
     Centroid: typing.Tuple[int, int] = (0, 0)
@@ -672,7 +671,7 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
 
     #   Annotate where the centroid of the DRG body is found to be, and display this to the user...
     CentroidAnnotated: np.ndarray = cv2.circle(Utils.GreyscaleToBGR(Image.copy()), Centroid, 10, (0, 0, 255), -1)
-    DisplayAndSaveImage(CentroidAnnotated, "Centroid Annotated DRG Body", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(CentroidAnnotated, "Centroid Annotated DRG Body", not Config.SaveIntermediates, Config.HeadlessMode)
     Results.BodyCentroidLocation = Centroid
 
     DRGBodyMask: np.ndarray = None
@@ -685,7 +684,7 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
             DRGBodyMask: np.ndarray = ComputeDRGMask_Alt1(BinarizedImage, Centroid)
         else:
             DRGBodyMask: np.ndarray = ComputeDRGMask(BinarizedImage, Centroid)
-    DisplayAndSaveImage(Utils.ConvertTo8Bit(DRGBodyMask), "DRG Body Mask", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(Utils.ConvertTo8Bit(DRGBodyMask), "DRG Body Mask", not Config.SaveIntermediates, Config.HeadlessMode)
 
     WellEdgeMask: np.ndarray = None
     if ( Config.WellInteriorMask is not None ):
@@ -696,7 +695,7 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
             WellEdgeMask: np.ndarray = ComputeWellEdgeMask_Alt1(BinarizedImage, DRGBodyMask, Centroid)
         else:
             WellEdgeMask: np.ndarray = ComputeWellEdgeMask(BinarizedImage, Centroid)
-    DisplayAndSaveImage(Utils.ConvertTo8Bit(WellEdgeMask), "Well Edge Mask", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(Utils.ConvertTo8Bit(WellEdgeMask), "Well Edge Mask", not Config.SaveIntermediates, Config.HeadlessMode)
 
     Results.BrightFieldExclusionMask = Utils.ConvertTo8Bit(DRGBodyMask * WellEdgeMask)
 
@@ -963,7 +962,7 @@ def ComputeDRGMask_Alt1(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[
     Ax.set_xlabel(f"Distance (px)")
     Ax.set_ylabel(f"Pixel Counts")
     Ax.plot(DistanceCounts)
-    DisplayAndSaveImage(Utils.FigureToImage(F), f"Pixel Counts versus Radial Distance", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(Utils.FigureToImage(F), f"Pixel Counts versus Radial Distance", not Config.SaveIntermediates, Config.HeadlessMode)
 
     F.clear()
     Ax = F.add_subplot(111)
@@ -974,11 +973,11 @@ def ComputeDRGMask_Alt1(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[
     Ax.vlines(MinIndex, ymin=np.min(Skewness), ymax=np.max(Skewness), colors='r', label=f"Minimum Skewness: {MinIndex}")
     Ax.vlines(ZeroCrossing, ymin=np.min(Skewness), ymax=np.max(Skewness), colors='g', label=f"Zero Skewness: {ZeroCrossing}")
     Ax.vlines(EffectiveRadius, ymin=np.min(Skewness), ymax=np.max(Skewness), colors='k', label=f"Effective DRG Radius: {EffectiveRadius}")
-    DisplayAndSaveImage(Utils.FigureToImage(F), f"DRG Mask Skewness versus Distance", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(Utils.FigureToImage(F), f"DRG Mask Skewness versus Distance", not Config.SaveIntermediates, Config.HeadlessMode)
 
-    DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, MinIndex, (0, 255, 0), 5), f"Annotated DRG Radius (Minimum Skewness)", Config.SaveIntermediates, Config.HeadlessMode)
-    DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, EffectiveRadius, (0, 255, 255), 5), f"Annotated DRG Radius (Effective Radius)", Config.SaveIntermediates, Config.HeadlessMode)
-    DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, ZeroCrossing, (0, 0, 255), 5), f"Annotated DRG Radius (Zero Skewness)", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, MinIndex, (0, 255, 0), 5), f"Annotated DRG Radius (Minimum Skewness)", not Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, EffectiveRadius, (0, 255, 255), 5), f"Annotated DRG Radius (Effective Radius)", not Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, ZeroCrossing, (0, 0, 255), 5), f"Annotated DRG Radius (Zero Skewness)", not Config.SaveIntermediates, Config.HeadlessMode)
     F.clear()
     ### DEBUGGING
 
@@ -1204,29 +1203,29 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
 
     #   First, convert the image to a full-range 8-bit image and assert that it is greyscale.
     Image: np.ndarray = Utils.ConvertTo8Bit(Utils.BGRToGreyscale(FluorescentImage))
-    DisplayAndSaveImage(Image, "Initial Fluorescent Image", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(Image, "Initial Fluorescent Image", not Config.SaveIntermediates, Config.HeadlessMode)
     Results.OriginalFluorescent.Append(Image)
 
     #   Apply an adaptive local threshold over the image to further select out the neurite pixels
     BinarizedImage: np.ndarray = BinarizeFluorescent(Image, AdaptiveKernelSize, AdaptiveOffset)
-    DisplayAndSaveImage(BinarizedImage, f"Binarized Fluorescent Image (k={AdaptiveKernelSize}, C={AdaptiveOffset})", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(BinarizedImage, f"Binarized Fluorescent Image (k={AdaptiveKernelSize}, C={AdaptiveOffset})", not Config.SaveIntermediates, Config.HeadlessMode)
     Results.BinarizedFluorescent.Append(BinarizedImage)
 
     #   Expand the original DRG Body mask again slightly, to not include artefacts from the "edge" introduced
     #   by applying the mask
     BinarizedImage = ApplyExclusionMask(BinarizedImage, cv2.erode(DRGBodyMask, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(MaskExpansionSize, MaskExpansionSize))))
-    DisplayAndSaveImage(BinarizedImage, f"DRG Body Mask Edge Removed", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(BinarizedImage, f"DRG Body Mask Edge Removed", not Config.SaveIntermediates, Config.HeadlessMode)
 
     #   Expand the original Well Edge mask again slightly, to not include artefacts from the "edge" introduced
     #   by applying the mask
     BinarizedImage = ApplyExclusionMask(BinarizedImage, cv2.erode(WellEdgeMask, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(MaskExpansionSize, MaskExpansionSize))))
-    DisplayAndSaveImage(BinarizedImage, f"Well Edge Mask Edge Removed", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(BinarizedImage, f"Well Edge Mask Edge Removed", not Config.SaveIntermediates, Config.HeadlessMode)
     Results.MaskedFluorescent.Append(BinarizedImage)
 
     #   Finally, separate out all of the components of the image and filter them to remove any which do not
     #   satisfy the expectations of neurites
     FilteredNeuriteComponents = FilterNeuriteComponents(BinarizedImage, SpeckleComponentAreaThreshold, NeuriteAspectRatioThreshold, NeuriteInfillFractionThreshold)
-    DisplayAndSaveImage(Utils.ConvertTo8Bit(FilteredNeuriteComponents), "Filtered Connected Components after Local Thresholding", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(Utils.ConvertTo8Bit(FilteredNeuriteComponents), "Filtered Connected Components after Local Thresholding", not Config.SaveIntermediates, Config.HeadlessMode)
     Results.FilteredFluorescent.Append(Utils.ConvertTo8Bit(FilteredNeuriteComponents))
 
     return FilteredNeuriteComponents
@@ -1441,7 +1440,7 @@ def GenerateNeuriteLengthVisualization(BaseImages: ZStack.ZStack, NeuritePixels:
         #   Add in the centroid location
         for Index, Distance in enumerate(LayerDistances):
             NeuriteLengthVisualization[NeuriteCoordinates[Index, 0], NeuriteCoordinates[Index, 1], :] = (180 * (Distance / MaximumLength), 255, 255)
-        DisplayAndSaveImage(cv2.cvtColor(NeuriteLengthVisualization, cv2.COLOR_HSV2BGR), "Neurite Length Visualization", Config.SaveIntermediates, Config.HeadlessMode)
+        DisplayAndSaveImage(cv2.cvtColor(NeuriteLengthVisualization, cv2.COLOR_HSV2BGR), "Neurite Length Visualization", not Config.SaveIntermediates, Config.HeadlessMode)
 
         Base: np.ndarray = Utils.GammaCorrection(Utils.GreyscaleToBGR(BaseImage.copy()).astype(np.float64), Minimum=0, Maximum=1.0)
         Foreground: np.ndarray = Utils.GammaCorrection(cv2.cvtColor(NeuriteLengthVisualization, cv2.COLOR_HSV2BGR).astype(np.float64), Minimum=0, Maximum=1.0)
@@ -1449,7 +1448,7 @@ def GenerateNeuriteLengthVisualization(BaseImages: ZStack.ZStack, NeuritePixels:
 
         Result = (Foreground * Alpha) + (Base * (1.0 - Alpha))
         Result = cv2.circle(Result, Origin, 10, (0, 0, 1.0), -1)
-        DisplayAndSaveImage(Utils.ConvertTo8Bit(Result), "Colour Annotated Identified Neurites", Config.SaveIntermediates, Config.HeadlessMode)
+        DisplayAndSaveImage(Utils.ConvertTo8Bit(Result), "Colour Annotated Identified Neurites", not Config.SaveIntermediates, Config.HeadlessMode)
         Results.ColourAnnotatedNeuriteLengths.Append(Utils.ConvertTo8Bit(Result))
 
     return
@@ -1482,13 +1481,13 @@ def QuantifyNeuriteOrientations(BaseImage: np.ndarray, NeuritePixels: np.ndarray
     OrientationVisualization: np.ndarray = CreateOrientationVisualization(Utils.ConvertTo8Bit(BaseImage), RawOrientations, Mask)
 
     OrientationVisualization = cv2.circle(OrientationVisualization, CentroidLocation, 10, (0, 0, 255), -1)
-    DisplayAndSaveImage(OrientationVisualization, "Colour Annotated Neurite Orientations", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(OrientationVisualization, "Colour Annotated Neurite Orientations", not Config.SaveIntermediates, Config.HeadlessMode)
     Results.ColourAnnotatedNeuriteOrientations.Append(OrientationVisualization)
 
     Count, AlignmentFraction, MeanOrientation, AngularStDev, Orientations = ComputeAlignmentMetric(RawOrientations[Mask != 0].flatten())
     Angles: AngleTracker = AngleTracker(LogWriter, Config.OutputDirectory, Video=False, DryRun=Config.DryRun).SetAngularResolution(180.0 / DistinctOrientations)
     OrientationPlot, _= Angles.Update(Orientations, MeanOrientation, AngularStDev, Count, AlignmentFraction, Config.HeadlessMode)
-    DisplayAndSaveImage(Utils.FigureToImage(OrientationPlot), "Neurite Orientations", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(Utils.FigureToImage(OrientationPlot), "Neurite Orientations", not Config.SaveIntermediates, Config.HeadlessMode)
 
     return RawOrientations[Mask != 0].flatten()
 
@@ -1524,7 +1523,7 @@ def CreateQuantificationFigures(NeuriteLengths: np.ndarray) -> None:
     A.vlines([mean + stdev, mean - stdev], ymin=0, ymax=np.max(n), label=f"1σ Length ({stdev:.0f}px)", color='k')
     A.legend()
 
-    DisplayAndSaveImage(Utils.FigureToImage(F), "Neurite Length Distribution", Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(Utils.FigureToImage(F), "Neurite Length Distribution", not Config.SaveIntermediates, Config.HeadlessMode)
 
     return
 
