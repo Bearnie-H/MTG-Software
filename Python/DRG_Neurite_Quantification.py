@@ -12,12 +12,15 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 import itertools
+import jsonpickle
 import os
+import platform
 import sys
 import traceback
 import typing
 
 #   Import the necessary third-part modules
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -88,15 +91,20 @@ class Configuration():
         self.FluorescentImageFile = ""
         self.FluorescentImage = None
 
+        self.OutputDirectory = ""
         self.ManualPreview = False
         self.DRGBodyMaskFilename = ""
         self.DRGBodyMask = None
         self.WellInteriorMaskFilename = ""
         self.WellInteriorMask = None
 
-        self.ApplyManualROISelection = False
+        ### +++
+        ### Add in all of the settings and values used for identifying a particular experimental condition
 
-        self.OutputDirectory = ""
+
+        ### ---
+
+        self.ApplyManualROISelection = False
 
         self.LogFile = ""
         self.QuietMode = False
@@ -116,6 +124,30 @@ class Configuration():
         """
 
         return "\n".join([
+            f"---------- Platform and Software Versioning ----------",
+            f"Python Version:                       {platform.python_version()}",
+            f"Analysis Platform:                    {platform.platform()}",
+            f"Numpy Version:                        {np.version.full_version}",
+            f"Matplotlib Version:                   {matplotlib.__version__}",
+            f"OpenCV Version:                       {cv2.getVersionString()}",
+            f"Scipy Version:                        {scipy.__version__}",
+            f"",
+            f"---------- Experimental Setup Parameters ----------",
+            f"Bright-Field Image Filename:          {os.path.basename(self.BrightFieldImageFile)}",
+            f"Fluorescent Image Filename:           {os.path.basename(self.FluorescentImageFile)}",
+            f"",
+            f"---------- Analysis Tuning and Variable Parameters ----------",
+            f"",
+            f"---------- Estimated Result Values ----------",
+            f"",
+            f"---------- Behaviour Enable Parameters ----------",
+            f"Headless Mode:                        {self.HeadlessMode}",
+            f"Dry-Run Mode:                         {self.DryRun}",
+            f"Validate Arguments Only:              {self.ValidateOnly}",
+            f"",
+            f"---------- Output Artefacts ----------",
+            f"Artefact Directory:                   {self.OutputDirectory}",
+            f"",
         ])
 
     ### Public Methods
@@ -158,6 +190,8 @@ class Configuration():
                 ValidCondition = False
 
             self.OutputDirectory = os.path.splitext(ExperimentalCondition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
+
+        #   ...
 
         if ( not ValidCondition ):
             raise ValueError(f"Failed to properly extract analysis configuration state from the Experimental Condition details - {' '.join([DRGStatus_ToString(ExperimentalCondition.AnalysisStatus)])}!")
@@ -288,11 +322,16 @@ class Configuration():
         Return (bool):
             Boolean for whether the save operation was successful.
         """
-        Success: bool = False
 
-        #   ...
+        Stringified: str = str(self)
 
-        return Success
+        if ( not self.DryRun ):
+            with open(os.path.join(self.OutputDirectory, f"Configuration Parameters.txt"), "w+") as ConfigFile:
+                ConfigFile.write(Stringified)
+        else:
+            LogWriter.Write(Stringified)
+
+        return True
 
     def _SaveJSON(self: Configuration) -> bool:
         """
@@ -303,11 +342,16 @@ class Configuration():
         Return (bool):
             Boolean for whether the save operation was successful.
         """
-        Success: bool = False
 
-        #   ...
+        Stringified: str = jsonpickle.encode(self, keys=True)
 
-        return Success
+        if ( not self.DryRun ):
+            with open(os.path.join(self.OutputDirectory, f"Configuration Parameters.json"), "w+") as ConfigFile:
+                ConfigFile.write(Stringified)
+        else:
+            LogWriter.Write(Stringified)
+
+        return True
 
 class QuantificationResults():
     """
