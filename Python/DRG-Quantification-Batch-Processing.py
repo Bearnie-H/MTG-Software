@@ -140,6 +140,7 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
                 Condition.AnalysisStatus |= DRG_StatusUnknownException
 
         StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)},{Condition.AnalysisStatus}\n")
+        StatusReport.flush()
 
     return ExperimentalConditions
 
@@ -184,6 +185,7 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
                 Condition.AnalysisStatus |= DRG_StatusUnknownException
 
         StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)},{Condition.AnalysisStatus}\n")
+        StatusReport.flush()
 
     return ExperimentalConditions
 
