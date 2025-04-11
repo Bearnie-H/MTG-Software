@@ -522,8 +522,6 @@ def main() -> int:
             return MasksStatus
         LogWriter.Println(f"Alternative mask generation algorithms succeeded.")
 
-    return DRG_StatusIntentionalAbort
-
     for Index, Layer in enumerate(Config.FluorescentImage.Layers()):
         LogWriter.Println(f"Processing Layer [ {Index+1}/{len(Config.FluorescentImage.Layers())} ]")
 
