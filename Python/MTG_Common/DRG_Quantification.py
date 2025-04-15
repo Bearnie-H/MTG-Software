@@ -23,7 +23,7 @@ import os
 #   ...
 
 #   Helper parsing functions to wrap and error handling in a consistent manner
-def NormalizePathSeparators(Path: str, Separator: str = "/") -> str:
+def NormalizePathSeparators(Path: str, Separator: str = os.pathsep) -> str:
     """
     NormalizePathSeparators
 
@@ -94,7 +94,7 @@ def TryParseInteger(Input: str, ErrorMessage: str = "") -> int | None:
     """
 
     if ( Input is None ) or ( Input == "" ):
-        print(f"Note: Integer Value Empty: {ErrorMessage}.")
+        print(f"Note: Integer Value Empty, Defaulting to [ 0 ]: {ErrorMessage}.")
         Input = "0"
 
     try:
@@ -122,7 +122,7 @@ def TryParseFloat(Input: str, ErrorMessage: str = "") -> float | None:
     """
 
     if ( Input is None ) or ( Input == "" ):
-        print(f"Note: Float Value Empty: {ErrorMessage}.")
+        print(f"Note: Float Value Empty, Defaulting to [ 0.0 ]: {ErrorMessage}.")
         Input = "0.0"
 
     try:
@@ -149,7 +149,7 @@ def TryParseBool(Input: str, ErrorMessage: str = "") -> bool | None:
     """
 
     if ( Input is None ) or ( Input == "" ):
-        print(f"Note: Boolean Value Empty: {ErrorMessage}.")
+        print(f"Note: Boolean Value Empty, Defaulting to [ False ]: {ErrorMessage}.")
         Input = "False"
 
     try:
@@ -226,7 +226,7 @@ def DRGStatus_ToString(StatusCode: int) -> str:
     for Code in sorted(StatusCodeMapping.keys()):
         if (( Code & StatusCode ) != 0 ):
             if ( Output == "" ):
-                Output += StatusCodeMapping[Code]
+                Output = StatusCodeMapping[Code]
             else:
                 Output += f" {StatusCodeMapping[Code]}"
 
@@ -305,7 +305,7 @@ class DRGExperimentalCondition():
     LamininConcentration: float
 
     ###
-
+    SkipProcessing: bool
     AnalysisStatus: int
 
 
@@ -321,6 +321,8 @@ class DRGExperimentalCondition():
         """
 
         #   ...
+
+        self.SkipProcessing = False
 
         return
 
@@ -348,41 +350,42 @@ class DRGExperimentalCondition():
 
         ColumnIndex: int = 0
 
-        self.LIFFilePath, ColumnIndex                   = (NormalizePathSeparators(Fields[ColumnIndex])), (ColumnIndex + 1)
-        self.ExperimentDate, ColumnIndex                = (TryParseDatetime(Fields[ColumnIndex], "%Y%m%d")), (ColumnIndex + 1)
-        self.CultureDuration, ColumnIndex               = (TryParseInteger(Fields[ColumnIndex], "Column: [ CultureDuration ]")), (ColumnIndex + 1)
-        self.SampleIndex, ColumnIndex                   = (TryParseInteger(Fields[ColumnIndex], "Column: [ SampleIndex ]")), (ColumnIndex + 1)
-        self.ImageResolution, ColumnIndex               = (TryParseFloat(Fields[ColumnIndex], "Column: [ ImageResolution ]")), (ColumnIndex + 1)
-        self.BrightFieldSeriesIndex, ColumnIndex        = (TryParseInteger(Fields[ColumnIndex], "Column: [ BrightFieldSeriesIndex ]")), (ColumnIndex + 1)
-        self.BrightFieldChannelIndex, ColumnIndex       = (TryParseInteger(Fields[ColumnIndex], "Column: [ BrightFieldChannelIndex ]")), (ColumnIndex + 1)
-        self.NeuriteSeriesIndex, ColumnIndex            = (TryParseInteger(Fields[ColumnIndex], "Column: [ NeuriteSeriesIndex ]")), (ColumnIndex + 1)
-        self.NeuriteChannelIndex, ColumnIndex           = (TryParseInteger(Fields[ColumnIndex], "Column: [ NeuriteChannelIndex ]")), (ColumnIndex + 1)
-        self.BaseGel, ColumnIndex                       = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
-        self.GelMAPercentage, ColumnIndex               = (TryParseInteger(Fields[ColumnIndex], "Column: [ GelMAPercentage ]")), (ColumnIndex + 1)
-        self.DegreeOfFunctionalization, ColumnIndex     = (TryParseInteger(Fields[ColumnIndex], "Column: [ DegreeOfFunctionalization ]")), (ColumnIndex + 1)
-        self.Polymer, ColumnIndex                       = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
-        self.Crosslinker, ColumnIndex                   = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
-        self.Peptide, ColumnIndex                       = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
-        self.PeptideIn, ColumnIndex                     = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
-        self.PeptideConcentration, ColumnIndex          = (TryParseFloat(Fields[ColumnIndex], "Column: [ PeptideConcentration ]")), (ColumnIndex + 1)
-        self.DilutionMedia, ColumnIndex                 = (TryParseString(Fields[ColumnIndex])), (ColumnIndex + 1)
-        self.FBSInclusion, ColumnIndex                  = (TryParseBool(Fields[ColumnIndex], "Column: [ FBSInclusion ]")), (ColumnIndex + 1)
-        self.GelIlluminationTime, ColumnIndex           = (TryParseFloat(Fields[ColumnIndex], "Column: [ GelIlluminationTime ]")), (ColumnIndex + 1)
-        self.RutheniumConcentration, ColumnIndex        = (TryParseFloat(Fields[ColumnIndex], "Column: [ RutheniumConcentration ]")), (ColumnIndex + 1)
-        self.SodiumPersulfateConcentration, ColumnIndex = (TryParseFloat(Fields[ColumnIndex], "Column: [ SodiumPersulfateConcentration ]")), (ColumnIndex + 1)
-        self.RiboflavinConcentration, ColumnIndex       = (TryParseFloat(Fields[ColumnIndex], "Column: [ RiboflavinConcentration ]")), (ColumnIndex + 1)
-        self.IKVAV, ColumnIndex                         = (TryParseBool(Fields[ColumnIndex], "Column: [ IKVAV ]")), (ColumnIndex + 1)
-        self.IKVAVConcentration, ColumnIndex            = (TryParseFloat(Fields[ColumnIndex], "Column: [ IKVAVConcentration ]")), (ColumnIndex + 1)
-        self.Gelatin, ColumnIndex                       = (TryParseBool(Fields[ColumnIndex], "Column: [ Gelatin ]")), (ColumnIndex + 1)
-        self.GelatinConcentration, ColumnIndex          = (TryParseFloat(Fields[ColumnIndex], "Column: [ GelatinConcentration ]")), (ColumnIndex + 1)
-        self.Glutathione, ColumnIndex                   = (TryParseBool(Fields[ColumnIndex], "Column: [ Glutathione ]")), (ColumnIndex + 1)
-        self.GlutathioneConcentration, ColumnIndex      = (TryParseFloat(Fields[ColumnIndex], "Column: [ GlutathioneConcentration ]")), (ColumnIndex + 1)
-        self.GDNF, ColumnIndex                          = (TryParseBool(Fields[ColumnIndex], "Column: [ GDNF ]")), (ColumnIndex + 1)
-        self.GDNFConcentration, ColumnIndex             = (TryParseFloat(Fields[ColumnIndex], "Column: [ GDNFConcentration ]")), (ColumnIndex + 1)
-        self.BDNF, ColumnIndex                          = (TryParseBool(Fields[ColumnIndex], "Column: [ BDNF ]")), (ColumnIndex + 1)
-        self.BDNFConcentration, ColumnIndex             = (TryParseFloat(Fields[ColumnIndex], "Column: [ BDNFConcentration ]")), (ColumnIndex + 1)
-        self.Laminin, ColumnIndex                       = (TryParseBool(Fields[ColumnIndex], "Column: [ LamininConcentration ]")), (ColumnIndex + 1)
-        self.LamininConcentration, ColumnIndex          = (TryParseFloat(Fields[ColumnIndex], "Column: [ Laminin ]")), (ColumnIndex + 1)
+        self.LIFFilePath, ColumnIndex                   = (NormalizePathSeparators(Fields[ColumnIndex])),                                              (ColumnIndex + 1)
+        self.SkipProcessing, ColumnIndex                = (TryParseBool(           Fields[ColumnIndex], "Column: [ SkipProcessing ]")),                (ColumnIndex + 1)
+        self.ExperimentDate, ColumnIndex                = (TryParseDatetime(       Fields[ColumnIndex], "%Y%m%d")),                                    (ColumnIndex + 1)
+        self.CultureDuration, ColumnIndex               = (TryParseInteger(        Fields[ColumnIndex], "Column: [ CultureDuration ]")),               (ColumnIndex + 1)
+        self.SampleIndex, ColumnIndex                   = (TryParseInteger(        Fields[ColumnIndex], "Column: [ SampleIndex ]")),                   (ColumnIndex + 1)
+        self.ImageResolution, ColumnIndex               = (TryParseFloat(          Fields[ColumnIndex], "Column: [ ImageResolution ]")),               (ColumnIndex + 1)
+        self.BrightFieldSeriesIndex, ColumnIndex        = (TryParseInteger(        Fields[ColumnIndex], "Column: [ BrightFieldSeriesIndex ]")),        (ColumnIndex + 1)
+        self.BrightFieldChannelIndex, ColumnIndex       = (TryParseInteger(        Fields[ColumnIndex], "Column: [ BrightFieldChannelIndex ]")),       (ColumnIndex + 1)
+        self.NeuriteSeriesIndex, ColumnIndex            = (TryParseInteger(        Fields[ColumnIndex], "Column: [ NeuriteSeriesIndex ]")),            (ColumnIndex + 1)
+        self.NeuriteChannelIndex, ColumnIndex           = (TryParseInteger(        Fields[ColumnIndex], "Column: [ NeuriteChannelIndex ]")),           (ColumnIndex + 1)
+        self.BaseGel, ColumnIndex                       = (TryParseString(         Fields[ColumnIndex])),                                              (ColumnIndex + 1)
+        self.GelMAPercentage, ColumnIndex               = (TryParseInteger(        Fields[ColumnIndex], "Column: [ GelMAPercentage ]")),               (ColumnIndex + 1)
+        self.DegreeOfFunctionalization, ColumnIndex     = (TryParseInteger(        Fields[ColumnIndex], "Column: [ DegreeOfFunctionalization ]")),     (ColumnIndex + 1)
+        self.Polymer, ColumnIndex                       = (TryParseString(         Fields[ColumnIndex])),                                              (ColumnIndex + 1)
+        self.Crosslinker, ColumnIndex                   = (TryParseString(         Fields[ColumnIndex])),                                              (ColumnIndex + 1)
+        self.Peptide, ColumnIndex                       = (TryParseString(         Fields[ColumnIndex])),                                              (ColumnIndex + 1)
+        self.PeptideIn, ColumnIndex                     = (TryParseString(         Fields[ColumnIndex])),                                              (ColumnIndex + 1)
+        self.PeptideConcentration, ColumnIndex          = (TryParseFloat(          Fields[ColumnIndex], "Column: [ PeptideConcentration ]")),          (ColumnIndex + 1)
+        self.DilutionMedia, ColumnIndex                 = (TryParseString(         Fields[ColumnIndex])),                                              (ColumnIndex + 1)
+        self.FBSInclusion, ColumnIndex                  = (TryParseBool(           Fields[ColumnIndex], "Column: [ FBSInclusion ]")),                  (ColumnIndex + 1)
+        self.GelIlluminationTime, ColumnIndex           = (TryParseFloat(          Fields[ColumnIndex], "Column: [ GelIlluminationTime ]")),           (ColumnIndex + 1)
+        self.RutheniumConcentration, ColumnIndex        = (TryParseFloat(          Fields[ColumnIndex], "Column: [ RutheniumConcentration ]")),        (ColumnIndex + 1)
+        self.SodiumPersulfateConcentration, ColumnIndex = (TryParseFloat(          Fields[ColumnIndex], "Column: [ SodiumPersulfateConcentration ]")), (ColumnIndex + 1)
+        self.RiboflavinConcentration, ColumnIndex       = (TryParseFloat(          Fields[ColumnIndex], "Column: [ RiboflavinConcentration ]")),       (ColumnIndex + 1)
+        self.IKVAV, ColumnIndex                         = (TryParseBool(           Fields[ColumnIndex], "Column: [ IKVAV ]")),                         (ColumnIndex + 1)
+        self.IKVAVConcentration, ColumnIndex            = (TryParseFloat(          Fields[ColumnIndex], "Column: [ IKVAVConcentration ]")),            (ColumnIndex + 1)
+        self.Gelatin, ColumnIndex                       = (TryParseBool(           Fields[ColumnIndex], "Column: [ Gelatin ]")),                       (ColumnIndex + 1)
+        self.GelatinConcentration, ColumnIndex          = (TryParseFloat(          Fields[ColumnIndex], "Column: [ GelatinConcentration ]")),          (ColumnIndex + 1)
+        self.Glutathione, ColumnIndex                   = (TryParseBool(           Fields[ColumnIndex], "Column: [ Glutathione ]")),                   (ColumnIndex + 1)
+        self.GlutathioneConcentration, ColumnIndex      = (TryParseFloat(          Fields[ColumnIndex], "Column: [ GlutathioneConcentration ]")),      (ColumnIndex + 1)
+        self.GDNF, ColumnIndex                          = (TryParseBool(           Fields[ColumnIndex], "Column: [ GDNF ]")),                          (ColumnIndex + 1)
+        self.GDNFConcentration, ColumnIndex             = (TryParseFloat(          Fields[ColumnIndex], "Column: [ GDNFConcentration ]")),             (ColumnIndex + 1)
+        self.BDNF, ColumnIndex                          = (TryParseBool(           Fields[ColumnIndex], "Column: [ BDNF ]")),                          (ColumnIndex + 1)
+        self.BDNFConcentration, ColumnIndex             = (TryParseFloat(          Fields[ColumnIndex], "Column: [ BDNFConcentration ]")),             (ColumnIndex + 1)
+        self.Laminin, ColumnIndex                       = (TryParseBool(           Fields[ColumnIndex], "Column: [ LamininConcentration ]")),          (ColumnIndex + 1)
+        self.LamininConcentration, ColumnIndex          = (TryParseFloat(          Fields[ColumnIndex], "Column: [ Laminin ]")),                       (ColumnIndex + 1)
 
         return self
 

@@ -119,7 +119,7 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
 
     for ConditionIndex, Condition in enumerate(ExperimentalConditions, start=1):
 
-        if ( Condition.AnalysisStatus & DRG_StatusValidationFailed == 0 ):
+        if ( Condition.AnalysisStatus & DRG_StatusValidationFailed == 0 ) and ( Condition.SkipProcessing == False ):
 
             LogWriter.Println(f"Starting manual preview of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
             try:
@@ -164,7 +164,7 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
     ConditionCount: int = len(ExperimentalConditions)
     for ConditionIndex, Condition in enumerate(ExperimentalConditions, start=1):
 
-        if (( Condition.AnalysisStatus & DRG_StatusValidationFailed ) == 0 ) and (( Condition.AnalysisStatus & DRG_StatusPreviewRejected ) == 0 ):
+        if (( Condition.AnalysisStatus & DRG_StatusValidationFailed ) == 0 ) and (( Condition.AnalysisStatus & DRG_StatusPreviewRejected ) == 0 )  and ( Condition.SkipProcessing == False ):
 
             LogWriter.Println(f"Starting analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
             try:

@@ -145,6 +145,7 @@ class Configuration():
             f"---------- Behaviour Enable Parameters ----------",
             f"Headless Mode:                        {self.HeadlessMode}",
             f"Dry-Run Mode:                         {self.DryRun}",
+            f"Intermediate Images Saved:            {self.SaveIntermediates}",
             f"Validate Arguments Only:              {self.ValidateOnly}",
             f"",
             f"---------- Output Artefacts ----------",
@@ -387,9 +388,6 @@ class QuantificationResults():
 
     NeuriteOrientations: typing.Sequence[np.ndarray]
     ColourAnnotatedNeuriteOrientations: ZStack.ZStack
-
-
-    #   ...
 
     def __init__(self: QuantificationResults, LogWriter: Logger.Logger) -> None:
         """
@@ -1523,7 +1521,7 @@ def CreateQuantificationFigures(NeuriteLengths: np.ndarray) -> None:
     A.vlines([mean + stdev, mean - stdev], ymin=0, ymax=np.max(n), label=f"1σ Length ({stdev:.0f}px)", color='k')
     A.legend()
 
-    DisplayAndSaveImage(Utils.FigureToImage(F), "Neurite Length Distribution", not Config.SaveIntermediates, Config.HeadlessMode)
+    DisplayAndSaveImage(Utils.FigureToImage(F), "Neurite Length Distribution", not Config.DryRun, Config.HeadlessMode)
 
     return
 
