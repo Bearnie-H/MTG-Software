@@ -621,7 +621,7 @@ def ComputeAlignmentMetric(Orientations: np.ndarray) -> typing.Tuple[int, float,
     if ( MeasurementCount > 0 ):
         AlignmentFraction = float(len(ShiftedOrientations[abs(ShiftedOrientations) <= AngularStDev]) / MeasurementCount)
 
-    return (MeasurementCount, AlignmentFraction, AngularMean, AngularStDev, Orientations)
+    return (int(MeasurementCount), float(AlignmentFraction), float(AngularMean), float(AngularStDev), Orientations)
 
 def RodsAdaptiveThreshold(Image: np.ndarray) -> np.ndarray:
     """

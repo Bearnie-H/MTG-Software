@@ -7,6 +7,8 @@ from __future__ import annotations
 
 #   Import standard library packages as required
 import typing
+
+import hashlib
 import os
 #   ...
 
@@ -778,3 +780,24 @@ def ReconstructImageFromSpectrum(*, Spectrum: np.ndarray = None) -> np.ndarray:
     Image = GammaCorrection(Image, Minimum=0, Maximum=255)
 
     return Image.astype(np.uint8)
+
+def Sha256Sum(Filename: str) -> str:
+    """
+    Sha256Sum
+
+    This function...
+
+    Filename:
+        ...
+
+    Return (str):
+        ...
+    """
+    Hasher = hashlib.sha256()
+    Buffer = bytearray(1024 * 8)
+    View = memoryview(Buffer)
+    with open(Filename, 'rb', buffering=0) as f:
+        for n in iter(lambda : f.readinto(View), 0):
+            Hasher.update(View[:n])
+
+    return Hasher.hexdigest()

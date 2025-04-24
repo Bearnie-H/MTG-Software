@@ -235,6 +235,24 @@ def DRGStatus_ToString(StatusCode: int) -> str:
 
     return Output
 
+class BaseGels(str):
+    BaseGel_Ultimatrix: str = "Ultimatrix"
+    BaseGel_GelMA: str = "GelMA"
+    BaseGel_H6: str = "?H6?"
+    BaseGel_H7: str = "?H7?"
+    BaseGel_H8: str = "?H8?"
+    BaseGel_PH15: str = "?PH15?"
+    BaseGel_PH16: str = "?PH16?"
+    BaseGel_PH18: str = "?PH18?"
+    BaseGel_PH19: str = "?PH19?"
+
+class GelMACrosslinkers(str):
+    GelMA_RuSPS: str = "RuSPS"
+    GelMA_Riboflavin: str = "Riboflavin"
+
+class NasrinCrosslinker(str):
+    NasrinGel_A: str = "??"
+
 class DRGExperimentalCondition():
     """
     DRGExperimentalCondition
@@ -388,6 +406,72 @@ class DRGExperimentalCondition():
         self.LamininConcentration, ColumnIndex          = (TryParseFloat(          Fields[ColumnIndex], "Column: [ Laminin ]")),                       (ColumnIndex + 1)
 
         return self
+
+    def FormatBaseGel(self: DRGExperimentalCondition) -> str:
+        """
+        FormatBaseGel
+
+        This function...
+
+        Return (str):
+            ...
+        """
+
+        match self.BaseGel.lower():
+            case BaseGels.BaseGel_Ultimatrix.lower():
+                return BaseGels.BaseGel_Ultimatrix
+            case BaseGels.BaseGel_GelMA.lower():
+                return BaseGels.BaseGel_GelMA
+            case BaseGels.BaseGel_H6.lower():
+                return BaseGels.BaseGel_H6
+            case BaseGels.BaseGel_H7.lower():
+                return BaseGels.BaseGel_H7
+            case BaseGels.BaseGel_H8.lower():
+                return BaseGels.BaseGel_H8
+            case BaseGels.BaseGel_PH15.lower():
+                return BaseGels.BaseGel_PH15
+            case BaseGels.BaseGel_PH16.lower():
+                return BaseGels.BaseGel_PH16
+            case BaseGels.BaseGel_PH18.lower():
+                return BaseGels.BaseGel_PH18
+            case BaseGels.BaseGel_PH19.lower():
+                return BaseGels.BaseGel_PH19
+            case _:
+                return f"Unknown - {self.BaseGel}"
+
+    def FormatGelMACrosslinker(self: DRGExperimentalCondition) -> str:
+        """
+        FormatGelMACrosslinker
+
+        This function...
+
+        Return (str):
+            ...
+        """
+
+        match self.Crosslinker.lower():
+            case GelMACrosslinkers.GelMA_RuSPS.lower():
+                return GelMACrosslinkers.GelMA_RuSPS
+            case GelMACrosslinkers.GelMA_Riboflavin.lower():
+                return GelMACrosslinkers.GelMA_Riboflavin
+            case _:
+                return f"Unknown - {self.Crosslinker}"
+
+    def FormatNasrinsCrosslinkers(self: DRGExperimentalCondition) -> str:
+        """
+        FormatNasrinsCrosslinkers
+
+        This function...
+
+        Return (str):
+            ...
+        """
+
+        match self.Polymer.lower():
+            case NasrinCrosslinker.NasrinGel_A.lower():
+                return NasrinCrosslinker.NasrinGel_A
+            case _:
+                return f"Unknown - {self.Polymer}"
 
     def SetFolderBase(self: DRGExperimentalCondition, Folder: str) -> DRGExperimentalCondition:
         """

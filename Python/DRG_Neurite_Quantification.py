@@ -69,6 +69,8 @@ class Configuration():
 
     OutputDirectory: str
 
+    DistinctOrientations: float
+
     LogFile: str
     QuietMode: bool
     DryRun: bool
@@ -291,33 +293,18 @@ class Configuration():
 
         return (Validated, self.ValidateOnly)
 
-    def Save(self: Configuration, Text: bool, JSON: bool) -> bool:
+    def Save(self: Configuration) -> bool:
         """
         Save
 
-        This function saves out the Configuration instance in either or both text or JSON format
+        This function saves out the Configuration instance
         for later review.
 
-        Text:
-            Boolean for whether to save a text copy of the Configuration instance.
-        JSON:
-            Boolean for whether to save a JSON copy of the Configuration instance.
-
         Return (bool):
-            Flag for whether the save operation(s) were successful.
+            Flag for whether the save operation was successful.
         """
 
-        Success: bool = True
-
-        if ( Text ):
-            Success &= self._SaveText()
-        if ( JSON ):
-            Success &= self._SaveJSON()
-
-        if ( not ( Text or JSON ) ):
-            self._LogWriter.Warnln(f"Save() method called without specifying Text or JSON format.")
-
-        return Success
+        return self._SaveText()
 
     ### Private Methods
     def _SaveText(self: Configuration) -> bool:
@@ -342,31 +329,9 @@ class Configuration():
 
         return True
 
-    def _SaveJSON(self: Configuration) -> bool:
-        """
-        _SaveJSON
-
-        This function specifically saves out the configuration in JSON format.
-
-        Return (bool):
-            Boolean for whether the save operation was successful.
-        """
-
-        Stringified: str = jsonpickle.encode(self, keys=True)
-
-        if ( not self.DryRun ):
-            if ( not os.path.exists(self.OutputDirectory) ):
-                os.makedirs(self.OutputDirectory, mode=0o775, exist_ok=True)
-            with open(os.path.join(self.OutputDirectory, f"Configuration Parameters.json"), "w+") as ConfigFile:
-                ConfigFile.write(Stringified)
-        else:
-            LogWriter.Write(Stringified)
-
-        return True
-
-class QuantificationResults():
+class QuantificationIntermediates():
     """
-    QuantificationResults
+    QuantificationIntermediates
 
     This class...
     """
@@ -384,12 +349,13 @@ class QuantificationResults():
     ManuallySelectedFluorescent: ZStack.ZStack
 
     NeuriteDistances: typing.Sequence[np.ndarray]
+    MaximumNeuriteDistance: int
     ColourAnnotatedNeuriteLengths: ZStack.ZStack
 
     NeuriteOrientations: typing.Sequence[np.ndarray]
     ColourAnnotatedNeuriteOrientations: ZStack.ZStack
 
-    def __init__(self: QuantificationResults, LogWriter: Logger.Logger) -> None:
+    def __init__(self: QuantificationIntermediates, LogWriter: Logger.Logger) -> None:
         """
         Constructor
 
@@ -415,6 +381,7 @@ class QuantificationResults():
         self.ManuallySelectedFluorescent = ZStack.ZStack(Name="Component Filtered Binarized Fluorescent with Manual ROI Selection")
 
         self.NeuriteDistances = []
+        self.MaximumNeuriteDistance = 0
         self.ColourAnnotatedNeuriteLengths = ZStack.ZStack(Name="Colour-Annotated Neurite Lengths")
 
         self.NeuriteOrientations = []
@@ -424,7 +391,7 @@ class QuantificationResults():
 
         return
 
-    def Save(self: QuantificationResults, Folder: str, DryRun: bool) -> bool:
+    def Save(self: QuantificationIntermediates, Folder: str, DryRun: bool) -> bool:
         """
         Save
 
@@ -484,11 +451,240 @@ class QuantificationResults():
 
         return True
 
+class QuantificationResults():
+    """
+    QuantificationResults
+
+    This class...
+    """
+
+    ### Public Members
+    SourceHash: str         #   A hash of the source file(s) used in generating these results
+
+    ExperimentDate: str     #   YYYY-MM-DD date
+    CultureDuration: int    #   How many days was the sample cultured for?
+    SampleIndex: int        #   Which sample number within the chip is this?
+    BaseGel: str            #   What gel was the sample cultured in?
+    DilutionMedia: str      #   What media is used to dilute the gels created?
+    IncludesFBS: bool       #   Does the media include Fetal Bovine Serum?
+
+    ##  ONLY APPLICABLE FOR GelMA
+    GelMAPercentage: float                  #   Value on the range [0, 1]
+    DegreeOfFunctionalization: float        #   Value on the range [0, 1]
+    GelMACrosslinker: str                   #   Either RuSPS or Riboflavin
+    RutheniumConcentration: float           #   Value in units of mM
+    SodiumPersulfateConcentration: float    #   Value in units of mM
+    RiboflavinConcentration: float          #   Value in units of mM
+    GelIlluminationDuration: float          #   Seconds
+
+    ##  ONLY APPLICABLE FOR NASRIN'S GELS
+    CrosslinkingPolymer: str    #   How do these gels crosslink?
+    Peptide: str                #   ???
+    PeptideIn: str              #   ???
+    PeptideConcentration: float #   ???
+
+    ##  Additives
+    IKVAVConcentration: float       #   Value in units of mM
+    GelatinConcentration: float     #   Value in units of mM
+    GlutathioneConcentration: float #   Value in units of mM
+    GDNFConcentration: float        #   Value in units of mM
+    BDNFConcentration: float        #   Value in units of mM
+    LamininConcentration: float     #   Value in units of mM
+
+    ##  Results and Quantification Metrics
+    DRGCentroidLocation: typing.List[int, int]              #   Where in the image is the centroid of the DRG Body? (X, Y) Pixel coordinates
+    InclusionMaskFraction:  float                           #   What fraction of the image is included in the final inclusion mask, i.e. what fraction of the image can neurites grow within?
+    NeuriteDistancesByLayer: typing.Dict[int, typing.List[int]]    #   Keys = Layer Index, Values = Count of Neurite Pixels at each integer distance from the centroid
+    MedianNeuriteDistancesByLayer: typing.Dict[int, int]            #   Keys = LayerIndex, Values = Median Distance Neurites Grew To
+    NeuriteDensityByLayer: typing.Dict[int, float]                 #   Keys = Layer Index, Values = Fraction of well interior occupied by neurite pixels
+    OrientationAngularResolution: float                     #   How many degrees are between each tested angle for the orientation results
+    NeuriteOrientationsByLayer: typing.Dict[int, typing.List[int]] #   Keys = Layer Index, Values = Count of neurite pixels of each tested orientation
+    OrientationMetricsByLayer: typing.Dict[int, typing.Tuple[int, float, float, float]] #   Keys = Layer Index, Values = (Count, AlignmentFraction, Mean, Stdev)
+    #   ...
+
+    ### Magic Methods
+    def __init__(self: QuantificationResults) -> None:
+        """
+        Constructor
+
+        This function...
+
+        Return (None):
+            ...
+        """
+
+        self.SourceHash                     = ""
+
+        self.ExperimentDate                 = "Unknown"
+        self.CultureDuration                = -1
+        self.SampleIndex                    = -1
+        self.BaseGel                        = "Unknown"
+        self.DilutionMedia                  = "Unknown"
+        self.IncludesFBS                    = False
+
+        self.GelMAPercentage                = -1.0
+        self.DegreeOfFunctionalization      = -1.0
+        self.GelMACrosslinker               = "N/A"
+        self.RutheniumConcentration         = -1.0
+        self.SodiumPersulfateConcentration  = -1.0
+        self.RiboflavinConcentration        = -1.0
+        self.GelIlluminationDuration        = -1.0
+
+        self.CrosslinkingPolymer            = "N/A"
+        self.Peptide                        = "N/A"
+        self.PeptideIn                      = "N/A"
+        self.PeptideConcentration           = "N/A"
+
+        self.IKVAVConcentration             = -1.0
+        self.GelatinConcentration           = -1.0
+        self.GlutathioneConcentration       = -1.0
+        self.GDNFConcentration              = -1.0
+        self.BDNFConcentration              = -1.0
+        self.LamininConcentration           = -1.0
+
+        self.DRGCentroidLocation            = [-1, -1]
+        self.InclusionMaskFraction          = -1.0
+        self.NeuriteDistancesByLayer        = {}
+        self.MedianNeuriteDistancesByLayer  = {}
+        self.NeuriteDensityByLayer          = {}
+        self.OrientationAngularResolution   = -1.0
+        self.NeuriteOrientationsByLayer     = {}
+        self.OrientationMetricsByLayer      = {}
+
+        return
+
+    ### Public Methods
+    def ExtractExperimentalDetails(self: QuantificationResults, ExperimentDetails: DRGExperimentalCondition) -> QuantificationResults:
+        """
+        ExtractExperimentalDetails
+
+        This function...
+
+        ExperimentDetails:
+            ...
+
+        Return (self):
+            ...
+        """
+
+        self.SourceHash = Utils.Sha256Sum(ExperimentDetails.LIFFilePath)
+
+        self.ExperimentDate = ExperimentDetails.ExperimentDate.strftime(f"%Y-%m-%d")
+        self.CultureDuration = ExperimentDetails.CultureDuration
+        self.SampleIndex = ExperimentDetails.SampleIndex
+        self.BaseGel = ExperimentDetails.FormatBaseGel()
+        self.DilutionMedia = ExperimentDetails.DilutionMedia
+        self.IncludesFBS = ExperimentDetails.FBSInclusion
+
+        if ( self.BaseGel ):
+            self.GelMAPercentage = ExperimentDetails.GelMAPercentage / 100.0
+            self.DegreeOfFunctionalization = ExperimentDetails.DegreeOfFunctionalization / 100.0
+            self.GelMACrosslinker = ExperimentDetails.FormatGelMACrosslinker()
+            self.RutheniumConcentration = ExperimentDetails.RutheniumConcentration
+            self.SodiumPersulfateConcentration = ExperimentDetails.SodiumPersulfateConcentration
+            self.RiboflavinConcentration = ExperimentDetails.RiboflavinConcentration
+            self.GelIlluminationDuration = ExperimentDetails.GelIlluminationTime
+        elif ( self.BaseGel ):
+            self.CrosslinkingPolymer = ExperimentDetails.FormatNasrinsCrosslinkers()
+            self.Peptide = ExperimentDetails.Peptide
+            self.PeptideIn = ExperimentDetails.PeptideIn
+            self.PeptideConcentration = ExperimentDetails.PeptideConcentration
+
+        self.IKVAVConcentration = ExperimentDetails.IKVAVConcentration
+        self.GelatinConcentration = ExperimentDetails.GelatinConcentration
+        self.GlutathioneConcentration = ExperimentDetails.GlutathioneConcentration
+        self.GDNFConcentration = ExperimentDetails.GDNFConcentration
+        self.BDNFConcentration = ExperimentDetails.BDNFConcentration
+        self.LamininConcentration = ExperimentDetails.LamininConcentration
+
+        return self
+
+    def FromIntermediates(self: QuantificationResults, Config: Configuration, Intermediates: QuantificationIntermediates) -> None:
+        """
+        FromIntermediates
+
+        This function...
+
+        Config:
+            ...
+        Intermediates:
+            ...
+
+        Return (None):
+            ...
+        """
+
+        #   Extract out the DRG Body Centroid location
+        self.DRGCentroidLocation = list(Intermediates.BodyCentroidLocation)
+
+        #   The inclusion mask fraction can be found as the number of non-zero pixels divided by the total pixels
+        self.InclusionMaskFraction = float(np.count_nonzero(Intermediates.BrightFieldExclusionMask) / np.prod(Intermediates.BrightFieldExclusionMask.shape))
+
+        self.NeuriteDistancesByLayer = {
+            f"{LayerIndex}": (np.histogram(Z, bins=Intermediates.MaximumNeuriteDistance)[0]).tolist() for LayerIndex, Z in enumerate(Intermediates.NeuriteDistances, start=1)
+        }
+
+        self.MedianNeuriteDistancesByLayer = {
+            f"{LayerIndex}": int(np.median(Z)) for LayerIndex, Z in enumerate(Intermediates.NeuriteDistances, start=1)
+        }
+
+        self.NeuriteDensityByLayer = {
+            f"{LayerIndex}": float(np.count_nonzero(Z) / np.count_nonzero(Intermediates.BrightFieldExclusionMask)) for LayerIndex, Z in enumerate(Intermediates.FilteredFluorescent.Layers(), start=1)
+        }
+
+        self.OrientationAngularResolution = 180.0 / Config.DistinctOrientations
+
+        self.NeuriteOrientationsByLayer = {
+            f"{LayerIndex}": (np.histogram(Z, bins=Config.DistinctOrientations)[0]).tolist() for LayerIndex, Z in enumerate(Intermediates.NeuriteOrientations, start=1)
+        }
+
+        self.OrientationMetricsByLayer = {
+            f"{LayerIndex}": tuple(ComputeAlignmentMetric(Z)[:-1]) for LayerIndex, Z in enumerate(Intermediates.NeuriteOrientations, start=1)
+        }
+
+        return
+
+    def Save(self: QuantificationResults, Folder: str, DryRun: bool) -> bool:
+        """
+        Save
+
+        This function...
+
+        Folder:
+            ...
+        DryRun:
+            ...
+
+        Return (bool):
+            ...
+        """
+
+        Success: bool = True
+
+        Stringified: str = jsonpickle.encode(
+            self,
+            unpicklable=False,
+            make_refs=False,
+            keys=True,
+            indent=4,
+        )
+
+        if ( not DryRun ):
+            if ( not os.path.exists(Folder) ):
+                os.makedirs(Folder, mode=0o755, exist_ok=True)
+
+            with open(os.path.join(Folder, f"{self.SourceHash} - Results.json"), mode="+w") as OutFile:
+                OutFile.write(Stringified)
+        else:
+            LogWriter.Write(Stringified)
+
+        return Success
 
 #   Define the globals to set by the command-line arguments
 LogWriter: Logger.Logger = Logger.Logger(Prefix=os.path.basename(sys.argv[0]))
 Config: Configuration = Configuration(LogWriter=LogWriter)
-Results: QuantificationResults = QuantificationResults(LogWriter=LogWriter)
+QuantificationStacks: QuantificationIntermediates = QuantificationIntermediates(LogWriter=LogWriter)
+Results: QuantificationResults = QuantificationResults()
 
 #   Main
 #       This is the main entry point of the script.
@@ -505,7 +701,7 @@ def main() -> int:
 
     #   Take the bright-field image and use this to identify the centroid of the DRG body,
     #   as well as to generate a mask to remove the DRG body from the fluorescent MIP.
-    Results.OriginalBrightField = Config.BrightFieldImage
+    QuantificationStacks.OriginalBrightField = Config.BrightFieldImage
     CentroidLocation, DRGBodyMask, WellEdgeMask = ProcessBrightField(Config.BrightFieldImage.MinimumIntensityProjection())
 
     MasksStatus = SanityCheckMasks(DRGBodyMask, WellEdgeMask)
@@ -532,25 +728,32 @@ def main() -> int:
         if ( Config.ApplyManualROISelection ):
             DisplayAndSaveImage(Utils.ConvertTo8Bit(ManualExclusionMask), "Polygon Exclusion Mask", Config.DryRun, Config.HeadlessMode)
             DisplayAndSaveImage(Utils.ConvertTo8Bit(Neurites), "Polygon Exclusion Masked Image", Config.DryRun, Config.HeadlessMode)
-        Results.ManuallySelectedFluorescent.Append(Utils.ConvertTo8Bit(Neurites))
+        QuantificationStacks.ManuallySelectedFluorescent.Append(Utils.ConvertTo8Bit(Neurites))
 
         #   With the centroid location and neurite pixels now identified, quantify the distribution of lengths of neurites
-        Results.NeuriteDistances.append(QuantifyNeuriteLengths(Neurites, CentroidLocation))
+        QuantificationStacks.NeuriteDistances.append(QuantifyNeuriteLengths(Neurites, CentroidLocation))
 
         FeatureSizePx: float = 50 / 0.7644
         Config.DistinctOrientations = 90
         DistinctOrientations = Config.DistinctOrientations
-        Results.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer.copy(), Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
+        QuantificationStacks.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer.copy(), Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
 
-    GenerateNeuriteLengthVisualization(Results.OriginalFluorescent, Results.ManuallySelectedFluorescent, Results.NeuriteDistances, CentroidLocation)
+    QuantificationStacks.MaximumNeuriteDistance = int(round(max([np.max(x) if len(x) > 0 else 0 for x in QuantificationStacks.NeuriteDistances])))
+    GenerateNeuriteLengthVisualization(QuantificationStacks.OriginalFluorescent, QuantificationStacks.ManuallySelectedFluorescent, QuantificationStacks.NeuriteDistances, CentroidLocation)
 
-    CreateQuantificationFigures(list(itertools.chain.from_iterable(Results.NeuriteDistances)))
+    CreateQuantificationFigures(list(itertools.chain.from_iterable(QuantificationStacks.NeuriteDistances)))
+
+    #   Format and structure the intermediate results as computed here to be printed out to be further processed later
+    Results.FromIntermediates(Config, QuantificationStacks)
+    if ( Results.SourceHash == "" ):
+        Results.SourceHash = Utils.Sha256Sum(Config.FluorescentImageFile)
 
     #   Save out the configuration state for possible later review.
-    Config.Save(Text=True, JSON=True)
+    Config.Save()
+    QuantificationStacks.Save(Folder=Config.OutputDirectory, DryRun=Config.DryRun)
     Results.Save(Folder=Config.OutputDirectory, DryRun=Config.DryRun)
 
-    if ( max([np.max(x) if len(x) > 0 else 0 for x in Results.NeuriteDistances]) == 0 ):
+    if ( max([np.max(x) if len(x) > 0 else 0 for x in QuantificationStacks.NeuriteDistances]) == 0 ):
         return DRG_StatusNoNeurites
 
     return DRG_StatusSuccess
@@ -647,18 +850,18 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
     #   First, convert the bright field image to a full-range 8-bit image and assert that it is greyscale.
     Image: np.ndarray = Utils.ConvertTo8Bit(Utils.BGRToGreyscale(BrightFieldImage))
     DisplayAndSaveImage(Image, "Initial Bright-Field Image", not Config.SaveIntermediates, Config.HeadlessMode)
-    Results.BrightFieldMinProjection = Image
+    QuantificationStacks.BrightFieldMinProjection = Image
 
     #   Next, assert that the image is generally a bright background with a dark foreground
     if ( np.median(Image) < np.mean(Image) ):
         Image = -Image
         DisplayAndSaveImage(Image, "Inverted Bright-Field Image", not Config.SaveIntermediates, Config.HeadlessMode)
-        Results.BrightFieldMinProjection = Image
+        QuantificationStacks.BrightFieldMinProjection = Image
 
     #   Create a copy of the image to binarize in order to perform the search for the centroid of the DRG body
     BinarizedImage, ThresholdLevel = BinarizeBrightField(Image.copy())
     DisplayAndSaveImage(BinarizedImage, f"Binarized Image ({ThresholdLevel if ThresholdLevel >= 0 else float('NaN'):.0f})", not Config.SaveIntermediates, Config.HeadlessMode)
-    Results.BrightFieldBinarized = BinarizedImage
+    QuantificationStacks.BrightFieldBinarized = BinarizedImage
 
     Centroid: typing.Tuple[int, int] = (0, 0)
     if ( Config.DRGBodyMask is not None ):
@@ -670,7 +873,7 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
     #   Annotate where the centroid of the DRG body is found to be, and display this to the user...
     CentroidAnnotated: np.ndarray = cv2.circle(Utils.GreyscaleToBGR(Image.copy()), Centroid, 10, (0, 0, 255), -1)
     DisplayAndSaveImage(CentroidAnnotated, "Centroid Annotated DRG Body", not Config.SaveIntermediates, Config.HeadlessMode)
-    Results.BodyCentroidLocation = Centroid
+    QuantificationStacks.BodyCentroidLocation = Centroid
 
     DRGBodyMask: np.ndarray = None
     if ( Config.DRGBodyMask is not None ):
@@ -695,7 +898,7 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
             WellEdgeMask: np.ndarray = ComputeWellEdgeMask(BinarizedImage, Centroid)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(WellEdgeMask), "Well Edge Mask", not Config.SaveIntermediates, Config.HeadlessMode)
 
-    Results.BrightFieldExclusionMask = Utils.ConvertTo8Bit(DRGBodyMask * WellEdgeMask)
+    QuantificationStacks.BrightFieldExclusionMask = Utils.ConvertTo8Bit(DRGBodyMask * WellEdgeMask)
 
     LogWriter.Println(f"Finished processing Bright-Field Image.")
     return (Centroid, DRGBodyMask, WellEdgeMask)
@@ -1202,12 +1405,12 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
     #   First, convert the image to a full-range 8-bit image and assert that it is greyscale.
     Image: np.ndarray = Utils.ConvertTo8Bit(Utils.BGRToGreyscale(FluorescentImage))
     DisplayAndSaveImage(Image, "Initial Fluorescent Image", not Config.SaveIntermediates, Config.HeadlessMode)
-    Results.OriginalFluorescent.Append(Image)
+    QuantificationStacks.OriginalFluorescent.Append(Image)
 
     #   Apply an adaptive local threshold over the image to further select out the neurite pixels
     BinarizedImage: np.ndarray = BinarizeFluorescent(Image, AdaptiveKernelSize, AdaptiveOffset)
     DisplayAndSaveImage(BinarizedImage, f"Binarized Fluorescent Image (k={AdaptiveKernelSize}, C={AdaptiveOffset})", not Config.SaveIntermediates, Config.HeadlessMode)
-    Results.BinarizedFluorescent.Append(BinarizedImage)
+    QuantificationStacks.BinarizedFluorescent.Append(BinarizedImage)
 
     #   Expand the original DRG Body mask again slightly, to not include artefacts from the "edge" introduced
     #   by applying the mask
@@ -1218,13 +1421,13 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
     #   by applying the mask
     BinarizedImage = ApplyExclusionMask(BinarizedImage, cv2.erode(WellEdgeMask, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(MaskExpansionSize, MaskExpansionSize))))
     DisplayAndSaveImage(BinarizedImage, f"Well Edge Mask Edge Removed", not Config.SaveIntermediates, Config.HeadlessMode)
-    Results.MaskedFluorescent.Append(BinarizedImage)
+    QuantificationStacks.MaskedFluorescent.Append(BinarizedImage)
 
     #   Finally, separate out all of the components of the image and filter them to remove any which do not
     #   satisfy the expectations of neurites
     FilteredNeuriteComponents = FilterNeuriteComponents(BinarizedImage, SpeckleComponentAreaThreshold, NeuriteAspectRatioThreshold, NeuriteInfillFractionThreshold)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(FilteredNeuriteComponents), "Filtered Connected Components after Local Thresholding", not Config.SaveIntermediates, Config.HeadlessMode)
-    Results.FilteredFluorescent.Append(Utils.ConvertTo8Bit(FilteredNeuriteComponents))
+    QuantificationStacks.FilteredFluorescent.Append(Utils.ConvertTo8Bit(FilteredNeuriteComponents))
 
     return FilteredNeuriteComponents
 
@@ -1447,7 +1650,7 @@ def GenerateNeuriteLengthVisualization(BaseImages: ZStack.ZStack, NeuritePixels:
         Result = (Foreground * Alpha) + (Base * (1.0 - Alpha))
         Result = cv2.circle(Result, Origin, 10, (0, 0, 1.0), -1)
         DisplayAndSaveImage(Utils.ConvertTo8Bit(Result), "Colour Annotated Identified Neurites", not Config.SaveIntermediates, Config.HeadlessMode)
-        Results.ColourAnnotatedNeuriteLengths.Append(Utils.ConvertTo8Bit(Result))
+        QuantificationStacks.ColourAnnotatedNeuriteLengths.Append(Utils.ConvertTo8Bit(Result))
 
     return
 
@@ -1480,7 +1683,7 @@ def QuantifyNeuriteOrientations(BaseImage: np.ndarray, NeuritePixels: np.ndarray
 
     OrientationVisualization = cv2.circle(OrientationVisualization, CentroidLocation, 10, (0, 0, 255), -1)
     DisplayAndSaveImage(OrientationVisualization, "Colour Annotated Neurite Orientations", not Config.SaveIntermediates, Config.HeadlessMode)
-    Results.ColourAnnotatedNeuriteOrientations.Append(OrientationVisualization)
+    QuantificationStacks.ColourAnnotatedNeuriteOrientations.Append(OrientationVisualization)
 
     Count, AlignmentFraction, MeanOrientation, AngularStDev, Orientations = ComputeAlignmentMetric(RawOrientations[Mask != 0].flatten())
     Angles: AngleTracker = AngleTracker(LogWriter, Config.OutputDirectory, Video=False, DryRun=Config.DryRun).SetAngularResolution(180.0 / DistinctOrientations)
