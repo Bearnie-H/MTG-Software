@@ -419,24 +419,24 @@ class DRGExperimentalCondition():
             ...
         """
 
-        match self.BaseGel.lower():
-            case BaseGels.BaseGel_Ultimatrix.lower():
+        match self.BaseGel:
+            case BaseGels.BaseGel_Ultimatrix:
                 return BaseGels.BaseGel_Ultimatrix
-            case BaseGels.BaseGel_GelMA.lower():
+            case BaseGels.BaseGel_GelMA:
                 return BaseGels.BaseGel_GelMA
-            case BaseGels.BaseGel_H6.lower():
+            case BaseGels.BaseGel_H6:
                 return BaseGels.BaseGel_H6
-            case BaseGels.BaseGel_H7.lower():
+            case BaseGels.BaseGel_H7:
                 return BaseGels.BaseGel_H7
-            case BaseGels.BaseGel_H8.lower():
+            case BaseGels.BaseGel_H8:
                 return BaseGels.BaseGel_H8
-            case BaseGels.BaseGel_PH15.lower():
+            case BaseGels.BaseGel_PH15:
                 return BaseGels.BaseGel_PH15
-            case BaseGels.BaseGel_PH16.lower():
+            case BaseGels.BaseGel_PH16:
                 return BaseGels.BaseGel_PH16
-            case BaseGels.BaseGel_PH18.lower():
+            case BaseGels.BaseGel_PH18:
                 return BaseGels.BaseGel_PH18
-            case BaseGels.BaseGel_PH19.lower():
+            case BaseGels.BaseGel_PH19:
                 return BaseGels.BaseGel_PH19
             case _:
                 return f"Unknown - {self.BaseGel}"
@@ -451,10 +451,10 @@ class DRGExperimentalCondition():
             ...
         """
 
-        match self.Crosslinker.lower():
-            case GelMACrosslinkers.GelMA_RuSPS.lower():
+        match self.Crosslinker:
+            case GelMACrosslinkers.GelMA_RuSPS:
                 return GelMACrosslinkers.GelMA_RuSPS
-            case GelMACrosslinkers.GelMA_Riboflavin.lower():
+            case GelMACrosslinkers.GelMA_Riboflavin:
                 return GelMACrosslinkers.GelMA_Riboflavin
             case _:
                 return f"Unknown - {self.Crosslinker}"
@@ -469,8 +469,8 @@ class DRGExperimentalCondition():
             ...
         """
 
-        match self.Polymer.lower():
-            case NasrinCrosslinker.NasrinGel_A.lower():
+        match self.Polymer:
+            case NasrinCrosslinker.NasrinGel_A:
                 return NasrinCrosslinker.NasrinGel_A
             case _:
                 return f"Unknown - {self.Polymer}"
