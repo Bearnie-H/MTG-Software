@@ -23,7 +23,7 @@ import os
 #   ...
 
 #   Helper parsing functions to wrap and error handling in a consistent manner
-def NormalizePathSeparators(Path: str, Separator: str = os.pathsep) -> str:
+def NormalizePathSeparators(Path: str, Separator: str = "/") -> str:
     """
     NormalizePathSeparators
 
@@ -192,6 +192,7 @@ DRG_StatusWellMaskFailed:   int = 1 << 9
 DRG_StatusNoNeurites:       int = 1 << 10
 DRG_StatusUnknownException: int = 1 << 11
 DRG_StatusIntentionalAbort: int = 1 << 12
+DRG_StatusSkipped:          int = 1 << 13
 
 def DRGStatus_ToString(StatusCode: int) -> str:
     """
@@ -219,7 +220,8 @@ def DRGStatus_ToString(StatusCode: int) -> str:
         DRG_StatusWellMaskFailed:       "Well Interior Mask Generation Failure.",
         DRG_StatusNoNeurites:           "No Neurites Identified.",
         DRG_StatusUnknownException:     "Unknown Exception Occurred.",
-        DRG_StatusIntentionalAbort:     "Intentionally Ended Early."
+        DRG_StatusIntentionalAbort:     "Intentionally Ended Early.",
+        DRG_StatusSkipped:              "Analysis Skipped.",
     }
 
     Output: str = ""

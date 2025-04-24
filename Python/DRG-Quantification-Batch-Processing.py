@@ -140,6 +140,9 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
                 Condition.AnalysisStatus |= DRG_StatusUnknownException
 
+        if ( Condition.SkipProcessing ):
+            Condition.AnalysisStatus = DRG_StatusSkipped
+
         StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)},{Condition.AnalysisStatus}\n")
         StatusReport.flush()
 
@@ -186,6 +189,9 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
                 Condition.AnalysisStatus |= DRG_StatusUnknownException
+
+        if ( Condition.SkipProcessing ):
+            Condition.AnalysisStatus = DRG_StatusSkipped
 
         StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)},{Condition.AnalysisStatus}\n")
         StatusReport.flush()
