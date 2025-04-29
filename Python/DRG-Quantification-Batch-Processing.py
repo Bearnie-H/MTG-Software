@@ -25,9 +25,11 @@ import traceback
 from MTG_Common.Logger import Logger
 from MTG_Common.DRG_Quantification import *
 import DRG_Neurite_Quantification
+import MTG_Common.DRG_Quantification
 #   ...
 
 #   Define the globals to set by the command-line arguments
+JSONDirectory: str = ""
 #   ...
 
 LogWriter: Logger = Logger(Prefix="DRG Neurite Quantification Batch Analysis")
@@ -36,11 +38,14 @@ LogWriter: Logger = Logger(Prefix="DRG Neurite Quantification Batch Analysis")
 #       This is the main entry point of the script.
 def main() -> None:
 
+    global JSONDirectory
+
     #   Prepare the two command-line flags (so far) this tool will accept.
     Flags: argparse.ArgumentParser = argparse.ArgumentParser()
 
     Flags.add_argument("--spreadsheet", dest="Spreadsheet", metavar="file-path", type=str, required=True, help="The file path to the *.CSV file containing all of the experimental conditions to process.")
     Flags.add_argument("--folder-base", dest="FolderBase", metavar="file-path", type=str, required=True, help="The path to the base folder from which the \"FilePath\" column of the spreadsheet is referenced.")
+    Flags.add_argument("--json-directory", dest="JSONDirectory", metavar="file-path", type=str, required=True, help="The path to the folder in which all of the compiled JSON results will be written.")
     Flags.add_argument("--pre-check", dest="ManualPreCheck", action="store_true", required=False, default=False, help="Manually preview the image results to check for whether or not the images should even be processed.")
 
     Arguments: argparse.Namespace = Flags.parse_args()
@@ -48,6 +53,7 @@ def main() -> None:
     InputFile: str = Arguments.Spreadsheet
     FolderBase: str = Arguments.FolderBase
     ManualPreview: bool = Arguments.ManualPreCheck
+    JSONDirectory = Arguments.JSONDirectory
 
     #   Parse the spreadsheet, identifying and validating all of the experimental conditions
     #   described within.
@@ -93,10 +99,10 @@ def ParseSpreadsheet(FilePath: str, FolderBase: str) -> typing.Sequence[DRGExper
             Condition: DRGExperimentalCondition = DRGExperimentalCondition().ExtractFields(Row.strip().split(",")).SetFolderBase(FolderBase)
             if ( Condition.Validate() ):
                 LogWriter.Println(f"Successufully validated row [ {RowIndex} ].")
-                Condition.AnalysisStatus = DRG_StatusNotYetProcessed
+                Condition.AnalysisStatus = DRGAnalysis_StatusCode.StatusNotYetProcessed
             else:
                 LogWriter.Errorln(f"Failed to validate row [ {RowIndex} ]!")
-                Condition.AnalysisStatus = DRG_StatusValidationFailed
+                Condition.AnalysisStatus = DRGAnalysis_StatusCode.StatusValidationFailed
 
             ExperimentalConditions.append(Condition)
 
@@ -115,11 +121,13 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
         ...
     """
 
+    global JSONDirectory
+
     ConditionCount: int = len(ExperimentalConditions)
 
     for ConditionIndex, Condition in enumerate(ExperimentalConditions, start=1):
 
-        if ( Condition.AnalysisStatus & DRG_StatusValidationFailed == 0 ) and ( Condition.SkipProcessing == False ):
+        if ( Condition.AnalysisStatus & DRGAnalysis_StatusCode.StatusValidationFailed == 0 ) and ( Condition.SkipProcessing == False ):
 
             LogWriter.Println(f"Starting manual preview of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
             try:
@@ -128,22 +136,23 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
                 DRG_Neurite_Quantification.Config = DRG_Neurite_Quantification.Configuration(LogWriter=DRG_Neurite_Quantification.LogWriter).ExtractFromCondition(Condition)
                 DRG_Neurite_Quantification.Config.ManualPreview = True
                 DRG_Neurite_Quantification.Config.OutputDirectory = os.path.splitext(Condition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
+                DRG_Neurite_Quantification.Config.JSONDirectory = JSONDirectory
                 DRG_Neurite_Quantification.QuantificationStacks = DRG_Neurite_Quantification.QuantificationIntermediates(LogWriter=DRG_Neurite_Quantification.LogWriter)
-                DRG_Neurite_Quantification.Results = DRG_Neurite_Quantification.QuantificationResults()
+                DRG_Neurite_Quantification.Results = MTG_Common.DRG_Quantification.DRGQuantificationResults()
 
-                if ( DRG_Neurite_Quantification.main() == DRG_StatusSuccess ):
+                if ( DRG_Neurite_Quantification.main() == DRGAnalysis_StatusCode.StatusSuccess ):
                     LogWriter.Println(f"Preview accepted for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
                 else:
-                    LogWriter.Errorln(f"Preview rejected for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] - [ {DRGStatus_ToString(Condition.AnalysisStatus)} ({Condition.AnalysisStatus})].")
-                    Condition.AnalysisStatus |= DRG_StatusPreviewRejected
+                    LogWriter.Errorln(f"Preview rejected for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] - [ {str(Condition.AnalysisStatus)} ({int(Condition.AnalysisStatus)})].")
+                    Condition.AnalysisStatus |= DRGAnalysis_StatusCode.StatusPreviewRejected
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
-                Condition.AnalysisStatus |= DRG_StatusUnknownException
+                Condition.AnalysisStatus |= DRGAnalysis_StatusCode.StatusUnknownException
 
         if ( Condition.SkipProcessing ):
-            Condition.AnalysisStatus = DRG_StatusSkipped
+            Condition.AnalysisStatus = DRGAnalysis_StatusCode.StatusSkipped
 
-        StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)},{Condition.AnalysisStatus}\n")
+        StatusReport.write(f"{Condition.LIFFilePath},{str(Condition.AnalysisStatus)},{int(Condition.AnalysisStatus)}\n")
         StatusReport.flush()
 
     return ExperimentalConditions
@@ -165,10 +174,12 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
         based off the path to the LIF file being processed.
     """
 
+    global JSONDirectory
+
     ConditionCount: int = len(ExperimentalConditions)
     for ConditionIndex, Condition in enumerate(ExperimentalConditions, start=1):
 
-        if (( Condition.AnalysisStatus & DRG_StatusValidationFailed ) == 0 ) and (( Condition.AnalysisStatus & DRG_StatusPreviewRejected ) == 0 )  and ( Condition.SkipProcessing == False ):
+        if (( Condition.AnalysisStatus & DRGAnalysis_StatusCode.StatusValidationFailed ) == 0 ) and (( Condition.AnalysisStatus & DRGAnalysis_StatusCode.StatusPreviewRejected ) == 0 )  and ( Condition.SkipProcessing == False ):
 
             LogWriter.Println(f"Starting analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
             try:
@@ -177,23 +188,24 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
                 DRG_Neurite_Quantification.Config = DRG_Neurite_Quantification.Configuration(LogWriter=DRG_Neurite_Quantification.LogWriter).ExtractFromCondition(Condition)
                 DRG_Neurite_Quantification.Config.ManualPreview = False
                 DRG_Neurite_Quantification.Config.OutputDirectory = os.path.splitext(Condition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
+                DRG_Neurite_Quantification.Config.JSONDirectory = JSONDirectory
                 DRG_Neurite_Quantification.QuantificationStacks = DRG_Neurite_Quantification.QuantificationIntermediates(LogWriter=DRG_Neurite_Quantification.LogWriter)
-                DRG_Neurite_Quantification.Results = DRG_Neurite_Quantification.QuantificationResults()
+                DRG_Neurite_Quantification.Results = MTG_Common.DRG_Quantification.DRGQuantificationResults()
                 DRG_Neurite_Quantification.Results.ExtractExperimentalDetails(Condition)
 
                 Condition.AnalysisStatus = DRG_Neurite_Quantification.main()
-                if ( Condition.AnalysisStatus == DRG_StatusSuccess ):
+                if ( Condition.AnalysisStatus == DRGAnalysis_StatusCode.StatusSuccess ):
                     LogWriter.Println(f"Successfully finished analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
                 else:
-                    LogWriter.Errorln(f"Analysis failed for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] - [ {DRGStatus_ToString(Condition.AnalysisStatus)} ({Condition.AnalysisStatus})].")
+                    LogWriter.Errorln(f"Analysis failed for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] - [ {str(Condition.AnalysisStatus)} ({int(Condition.AnalysisStatus)})].")
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
-                Condition.AnalysisStatus |= DRG_StatusUnknownException
+                Condition.AnalysisStatus |= DRGAnalysis_StatusCode.StatusUnknownException
 
         if ( Condition.SkipProcessing ):
-            Condition.AnalysisStatus = DRG_StatusSkipped
+            Condition.AnalysisStatus = DRGAnalysis_StatusCode.StatusSkipped
 
-        StatusReport.write(f"{Condition.LIFFilePath},{DRGStatus_ToString(Condition.AnalysisStatus)},{Condition.AnalysisStatus}\n")
+        StatusReport.write(f"{Condition.LIFFilePath},{str(Condition.AnalysisStatus)},{int(Condition.AnalysisStatus)}\n")
         StatusReport.flush()
 
     return ExperimentalConditions

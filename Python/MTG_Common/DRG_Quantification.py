@@ -12,8 +12,12 @@ from __future__ import annotations
 import typing
 
 from datetime import datetime
-import str2bool
+import glob
+import jsonpickle
 import os
+import str2bool
+
+from MTG_Common import Utils
 #   ...
 
 #   Import the necessary third-part modules
@@ -179,70 +183,63 @@ def TryParseString(Input: str) -> str | None:
 
     return Input
 
-DRG_StatusSuccess:          int = 1 << 0
-DRG_StatusNotYetProcessed:  int = 1 << 1
-DRG_StatusValidationFailed: int = 1 << 2
-DRG_StatusNoLIFFile:        int = 1 << 3
-DRG_NoBrightFieldImage:     int = 1 << 4
-DRG_NoFluorescentImage:     int = 1 << 5
-DRG_StatusPreviewAccepted:  int = 1 << 6
-DRG_StatusPreviewRejected:  int = 1 << 7
-DRG_StatusBodyMaskFailed:   int = 1 << 8
-DRG_StatusWellMaskFailed:   int = 1 << 9
-DRG_StatusNoNeurites:       int = 1 << 10
-DRG_StatusUnknownException: int = 1 << 11
-DRG_StatusIntentionalAbort: int = 1 << 12
-DRG_StatusSkipped:          int = 1 << 13
+class DRGAnalysis_StatusCode(int):
+    StatusSuccess:          int = 1 << 0
+    StatusNotYetProcessed:  int = 1 << 1
+    StatusValidationFailed: int = 1 << 2
+    StatusNoLIFFile:        int = 1 << 3
+    NoBrightFieldImage:     int = 1 << 4
+    NoFluorescentImage:     int = 1 << 5
+    StatusPreviewAccepted:  int = 1 << 6
+    StatusPreviewRejected:  int = 1 << 7
+    StatusBodyMaskFailed:   int = 1 << 8
+    StatusWellMaskFailed:   int = 1 << 9
+    StatusNoNeurites:       int = 1 << 10
+    StatusUnknownException: int = 1 << 11
+    StatusIntentionalAbort: int = 1 << 12
+    StatusSkipped:          int = 1 << 13
 
-def DRGStatus_ToString(StatusCode: int) -> str:
-    """
-    DRGStatus_ToString
+    def __str__(self: DRGAnalysis_StatusCode) -> str:
 
-    This function...
+        StatusCodeMapping: typing.Dict[int, str] = {
+            DRGAnalysis_StatusCode.StatusSuccess:              "Success.",
+            DRGAnalysis_StatusCode.StatusNotYetProcessed:      "Not Yet Processed.",
+            DRGAnalysis_StatusCode.StatusValidationFailed:     "Parameter Validation Failure.",
+            DRGAnalysis_StatusCode.StatusNoLIFFile:            "LIF File Could Not Be Found.",
+            DRGAnalysis_StatusCode.NoBrightFieldImage:         "No Bright Field Image In LIF File.",
+            DRGAnalysis_StatusCode.NoFluorescentImage:         "No Fluorescent Image In LIF File.",
+            DRGAnalysis_StatusCode.StatusPreviewAccepted:      "Manual Preview Accepted.",
+            DRGAnalysis_StatusCode.StatusPreviewRejected:      "Rejected During Manual Preview.",
+            DRGAnalysis_StatusCode.StatusBodyMaskFailed:       "DRG Body Mask Generation Failure.",
+            DRGAnalysis_StatusCode.StatusWellMaskFailed:       "Well Interior Mask Generation Failure.",
+            DRGAnalysis_StatusCode.StatusNoNeurites:           "No Neurites Identified.",
+            DRGAnalysis_StatusCode.StatusUnknownException:     "Unknown Exception Occurred.",
+            DRGAnalysis_StatusCode.StatusIntentionalAbort:     "Intentionally Ended Early.",
+            DRGAnalysis_StatusCode.StatusSkipped:              "Analysis Skipped.",
+        }
 
-    StatusCode:
-        ...
+        Output: str = ""
+        for Code in sorted(StatusCodeMapping.keys()):
+            if (( Code & int(self) ) != 0 ):
+                if ( Output == "" ):
+                    Output = StatusCodeMapping[Code]
+                else:
+                    Output += f" {StatusCodeMapping[Code]}"
 
-    Return (str):
-        ...
-    """
+        if ( Output == "" ):
+            Output = "Unknown Status."
 
-    StatusCodeMapping: typing.Dict[int, str] = {
-        DRG_StatusSuccess:              "Success.",
-        DRG_StatusNotYetProcessed:      "Not Yet Processed.",
-        DRG_StatusValidationFailed:     "Parameter Validation Failure.",
-        DRG_StatusNoLIFFile:            "LIF File Could Not Be Found.",
-        DRG_NoBrightFieldImage:         "No Bright Field Image In LIF File.",
-        DRG_NoFluorescentImage:         "No Fluorescent Image In LIF File.",
-        DRG_StatusPreviewAccepted:      "Manual Preview Accepted.",
-        DRG_StatusPreviewRejected:      "Rejected During Manual Preview.",
-        DRG_StatusBodyMaskFailed:       "DRG Body Mask Generation Failure.",
-        DRG_StatusWellMaskFailed:       "Well Interior Mask Generation Failure.",
-        DRG_StatusNoNeurites:           "No Neurites Identified.",
-        DRG_StatusUnknownException:     "Unknown Exception Occurred.",
-        DRG_StatusIntentionalAbort:     "Intentionally Ended Early.",
-        DRG_StatusSkipped:              "Analysis Skipped.",
-    }
-
-    Output: str = ""
-    for Code in sorted(StatusCodeMapping.keys()):
-        if (( Code & StatusCode ) != 0 ):
-            if ( Output == "" ):
-                Output = StatusCodeMapping[Code]
-            else:
-                Output += f" {StatusCodeMapping[Code]}"
-
-    if ( Output == "" ):
-        Output = "Unknown Status."
-
-    return Output
+        return Output
 
 class BaseGels(str):
     BaseGel_Ultimatrix: str = "Ultimatrix"
+
     BaseGel_GelMA: str = "GelMA"
+
     BaseGel_H6: str = "?H6?"
     BaseGel_H7: str = "?H7?"
     BaseGel_H8: str = "?H8?"
+
     BaseGel_PH15: str = "?PH15?"
     BaseGel_PH16: str = "?PH16?"
     BaseGel_PH18: str = "?PH18?"
@@ -297,7 +294,8 @@ class DRGExperimentalCondition():
     PeptideConcentration: float
 
     DilutionMedia: str
-
+    IncludesPhenolRed: bool
+    B27Inclusion: bool
     FBSInclusion: bool
 
     GelIlluminationTime: float  #   Seconds
@@ -326,7 +324,7 @@ class DRGExperimentalCondition():
 
     ###
     SkipProcessing: bool
-    AnalysisStatus: int
+    AnalysisStatus: DRGAnalysis_StatusCode
 
 
     ### Magic Methods
@@ -389,6 +387,8 @@ class DRGExperimentalCondition():
         self.PeptideIn, ColumnIndex                     = (TryParseString(         Fields[ColumnIndex])),                                              (ColumnIndex + 1)
         self.PeptideConcentration, ColumnIndex          = (TryParseFloat(          Fields[ColumnIndex], "Column: [ PeptideConcentration ]")),          (ColumnIndex + 1)
         self.DilutionMedia, ColumnIndex                 = (TryParseString(         Fields[ColumnIndex])),                                              (ColumnIndex + 1)
+        self.IncludesPhenolRed, ColumnIndex             = (TryParseBool(           Fields[ColumnIndex], "Column: [ IncludesPhenolRed ]")),             (ColumnIndex + 1)
+        self.B27Inclusion, ColumnIndex                  = (TryParseBool(           Fields[ColumnIndex], "Column: [ B27Inclusion ]")),                  (ColumnIndex + 1)
         self.FBSInclusion, ColumnIndex                  = (TryParseBool(           Fields[ColumnIndex], "Column: [ FBSInclusion ]")),                  (ColumnIndex + 1)
         self.GelIlluminationTime, ColumnIndex           = (TryParseFloat(          Fields[ColumnIndex], "Column: [ GelIlluminationTime ]")),           (ColumnIndex + 1)
         self.RutheniumConcentration, ColumnIndex        = (TryParseFloat(          Fields[ColumnIndex], "Column: [ RutheniumConcentration ]")),        (ColumnIndex + 1)
@@ -539,3 +539,365 @@ class DRGExperimentalCondition():
 
         return "\n".join([
         ])
+
+
+class DRGQuantificationResults():
+    """
+    DRGQuantificationResults
+
+    This class...
+    """
+
+    ### Public Members
+    SourceHash: str         #   A hash of the source file(s) used in generating these results
+
+    ExperimentDate: str     #   YYYY-MM-DD date
+    CultureDuration: int    #   How many days was the sample cultured for?
+    SampleIndex: int        #   Which sample number within the chip is this?
+    BaseGel: str            #   What gel was the sample cultured in?
+    DilutionMedia: str      #   What media is used to dilute the gels created?
+    IncludesPhenolRed: bool #   Does the media include Phenol Red?
+    IncludesB27: bool       #   Does the media include B27?
+    IncludesFBS: bool       #   Does the media include Fetal Bovine Serum?
+
+    ##  ONLY APPLICABLE FOR GelMA
+    GelMAPercentage: float                  #   Value on the range [0, 1]
+    DegreeOfFunctionalization: float        #   Value on the range [0, 1]
+    GelMACrosslinker: str                   #   Either RuSPS or Riboflavin
+    RutheniumConcentration: float           #   Value in units of mM
+    SodiumPersulfateConcentration: float    #   Value in units of mM
+    RiboflavinConcentration: float          #   Value in units of mM
+    GelIlluminationDuration: float          #   Seconds
+
+    ##  ONLY APPLICABLE FOR NASRIN'S GELS
+    CrosslinkingPolymer: str    #   How do these gels crosslink?
+    Peptide: str                #   ???
+    PeptideIn: str              #   ???
+    PeptideConcentration: float #   ???
+
+    ##  Additives
+    IKVAVConcentration: float       #   Value in units of mM
+    GelatinConcentration: float     #   Value in units of mM
+    GlutathioneConcentration: float #   Value in units of mM
+    GDNFConcentration: float        #   Value in units of mM
+    BDNFConcentration: float        #   Value in units of mM
+    LamininConcentration: float     #   Value in units of mM
+
+    ##  Results and Quantification Metrics
+    DRGCentroidLocation: typing.List[int, int]              #   Where in the image is the centroid of the DRG Body? (X, Y) Pixel coordinates
+    InclusionMaskFraction:  float                           #   What fraction of the image is included in the final inclusion mask, i.e. what fraction of the image can neurites grow within?
+    NeuriteDistancesByLayer: typing.Dict[int, typing.List[int]]    #   Keys = Layer Index, Values = Count of Neurite Pixels at each integer distance from the centroid
+    MedianNeuriteDistancesByLayer: typing.Dict[int, int]            #   Keys = LayerIndex, Values = Median Distance Neurites Grew To
+    MedianNeuriteDistance: int  #   Median distance of all neurite pixels from the DRG centroid
+    NeuriteDensityByLayer: typing.Dict[int, float]                 #   Keys = Layer Index, Values = Fraction of well interior occupied by neurite pixels
+    NeuriteDensity: float   #   Ratio of neurite pixels to well interior pixels
+    OrientationAngularResolution: float                     #   How many degrees are between each tested angle for the orientation results
+    NeuriteOrientationsByLayer: typing.Dict[int, typing.List[int]] #   Keys = Layer Index, Values = Count of neurite pixels of each tested orientation
+    OrientationMetricsByLayer: typing.Dict[int, typing.Tuple[int, float, float, float]] #   Keys = Layer Index, Values = (Count, AlignmentFraction, Mean, Stdev)
+    OrientationMetrics: typing.Tuple[int, float, float, float]  #   (Count, AlignmentFraction, Mean, Stdev)
+    #   ...
+
+    ### Magic Methods
+    def __init__(self: DRGQuantificationResults) -> None:
+        """
+        Constructor
+
+        This function...
+
+        Return (None):
+            ...
+        """
+
+        self.SourceHash                     = ""
+
+        self.ExperimentDate                 = "Unknown"
+        self.CultureDuration                = -1
+        self.SampleIndex                    = -1
+        self.BaseGel                        = "Unknown"
+        self.DilutionMedia                  = "Unknown"
+        self.IncludesPhenolRed              = False
+        self.IncludesB27                    = False
+        self.IncludesFBS                    = False
+
+        self.GelMAPercentage                = -1.0
+        self.DegreeOfFunctionalization      = -1.0
+        self.GelMACrosslinker               = "N/A"
+        self.RutheniumConcentration         = -1.0
+        self.SodiumPersulfateConcentration  = -1.0
+        self.RiboflavinConcentration        = -1.0
+        self.GelIlluminationDuration        = -1.0
+
+        self.CrosslinkingPolymer            = "N/A"
+        self.Peptide                        = "N/A"
+        self.PeptideIn                      = "N/A"
+        self.PeptideConcentration           = "N/A"
+
+        self.IKVAVConcentration             = -1.0
+        self.GelatinConcentration           = -1.0
+        self.GlutathioneConcentration       = -1.0
+        self.GDNFConcentration              = -1.0
+        self.BDNFConcentration              = -1.0
+        self.LamininConcentration           = -1.0
+
+        self.DRGCentroidLocation            = [-1, -1]
+        self.InclusionMaskFraction          = -1.0
+        self.NeuriteDistancesByLayer        = {}
+        self.MedianNeuriteDistancesByLayer  = {}
+        self.MedianNeuriteDistance          = -1.0
+        self.NeuriteDensityByLayer          = {}
+        self.NeuriteDensity                 = -1.0
+        self.OrientationAngularResolution   = -1.0
+        self.NeuriteOrientationsByLayer     = {}
+        self.OrientationMetricsByLayer      = {}
+        self.OrientationMetrics             = ()
+
+        return
+
+    ### Public Methods
+    def ExtractExperimentalDetails(self: DRGQuantificationResults, ExperimentDetails: DRGExperimentalCondition) -> DRGQuantificationResults:
+        """
+        ExtractExperimentalDetails
+
+        This function...
+
+        ExperimentDetails:
+            ...
+
+        Return (self):
+            ...
+        """
+
+        self.SourceHash = Utils.Sha256Sum(ExperimentDetails.LIFFilePath)
+
+        self.ExperimentDate = ExperimentDetails.ExperimentDate.strftime(f"%Y-%m-%d")
+        self.CultureDuration = ExperimentDetails.CultureDuration
+        self.SampleIndex = ExperimentDetails.SampleIndex
+        self.BaseGel = ExperimentDetails.FormatBaseGel()
+        self.DilutionMedia = ExperimentDetails.DilutionMedia
+        self.IncludesPhenolRed = ExperimentDetails.IncludesPhenolRed
+        self.IncludesB27 = ExperimentDetails.B27Inclusion
+        self.IncludesFBS = ExperimentDetails.FBSInclusion
+
+        if ( self.BaseGel == BaseGels.BaseGel_GelMA ):
+            self.GelMAPercentage = ExperimentDetails.GelMAPercentage / 100.0
+            self.DegreeOfFunctionalization = ExperimentDetails.DegreeOfFunctionalization / 100.0
+            self.GelMACrosslinker = ExperimentDetails.FormatGelMACrosslinker()
+            self.RutheniumConcentration = ExperimentDetails.RutheniumConcentration
+            self.SodiumPersulfateConcentration = ExperimentDetails.SodiumPersulfateConcentration
+            self.RiboflavinConcentration = ExperimentDetails.RiboflavinConcentration
+            self.GelIlluminationDuration = ExperimentDetails.GelIlluminationTime
+        elif ( self.BaseGel == BaseGels.BaseGel_Ultimatrix ):
+            #   TODO: ...
+            pass
+        else:
+            self.CrosslinkingPolymer = ExperimentDetails.FormatNasrinsCrosslinkers()
+            self.Peptide = ExperimentDetails.Peptide
+            self.PeptideIn = ExperimentDetails.PeptideIn
+            self.PeptideConcentration = ExperimentDetails.PeptideConcentration
+
+        self.IKVAVConcentration = ExperimentDetails.IKVAVConcentration
+        self.GelatinConcentration = ExperimentDetails.GelatinConcentration
+        self.GlutathioneConcentration = ExperimentDetails.GlutathioneConcentration
+        self.GDNFConcentration = ExperimentDetails.GDNFConcentration
+        self.BDNFConcentration = ExperimentDetails.BDNFConcentration
+        self.LamininConcentration = ExperimentDetails.LamininConcentration
+
+        return self
+
+    def Save(self: DRGQuantificationResults, Folder: str, DryRun: bool) -> bool:
+        """
+        Save
+
+        This function...
+
+        Folder:
+            ...
+        DryRun:
+            ...
+
+        Return (bool):
+            ...
+        """
+
+        Success: bool = True
+
+        Stringified: str = jsonpickle.encode(
+            self,
+            unpicklable=False,
+            make_refs=False,
+            keys=True,
+            indent=4,
+        )
+
+        if ( not DryRun ):
+            if ( not os.path.exists(Folder) ):
+                os.makedirs(Folder, mode=0o755, exist_ok=True)
+
+            with open(os.path.join(Folder, f"{self.SourceHash} - Results.json"), mode="+w") as OutFile:
+                OutFile.write(Stringified)
+        else:
+            print(Stringified)
+
+        return Success
+
+    @staticmethod
+    def FromJSON(JSONData: str) -> DRGQuantificationResults:
+        """
+        FromJSON
+
+        This function...
+
+        JSONData:
+            ...
+
+        Return (self):
+            ...
+        """
+
+        return jsonpickle.decode(JSONData, keys=True, classes=DRGQuantificationResults, on_missing='ignore')
+
+    @staticmethod
+    def FromJSONFile(Filename: str) -> DRGQuantificationResults:
+        """
+        FromJSONFile
+
+        This function...
+
+        Filename:
+            ...
+
+        Return (self):
+            ...
+        """
+
+        Contents: str = ""
+        with open(Filename, "r") as InFile:
+            Contents = InFile.read()
+
+        return DRGQuantificationResults.FromJSON(Contents)
+
+
+class DRGQuantificationResultsSet():
+    """
+    DRGQuantificationResultsSet
+
+    This class...
+    """
+
+    _Results: typing.List[DRGQuantificationResults]
+
+    def __init__(self: DRGQuantificationResultsSet, Results: typing.Sequence[DRGQuantificationResults] = []) -> None:
+        """
+        Constructor...
+
+        This function...
+
+        Results:
+            ...
+
+        Return (None):
+            ...
+        """
+
+        self._Results = list(Results)
+
+        return
+
+    @staticmethod
+    def FromDirectory(Directory: str) -> DRGQuantificationResultsSet:
+        """
+        FromDirectory
+
+        This function...
+
+        Directory:
+            ...
+
+        Return (DRGQuantificationResultsSet):
+            ...
+        """
+
+        Results: typing.List[DRGQuantificationResults] = []
+        for File in glob.glob(f"{Directory}/*.json"):
+            Results.append(DRGQuantificationResults.FromJSONFile(File))
+
+        return DRGQuantificationResultsSet(Results)
+
+    def Add(self: DRGQuantificationResultsSet, ToAdd: DRGQuantificationResults) -> DRGQuantificationResultsSet:
+        """
+        Add
+
+        This function...
+
+        ToAdd:
+            ...
+
+        Return (self):
+            ...
+        """
+
+        self._Results.append(ToAdd)
+
+        return self
+
+    def Filter(self: DRGQuantificationResultsSet, FilterFunc: typing.Callable[[DRGQuantificationResults, typing.List[typing.Any]], bool], FilterArgs: typing.List[typing.Any]) -> typing.Tuple[DRGQuantificationResultsSet, DRGQuantificationResultsSet]:
+        """
+        Filter
+
+        This function...
+
+        FilterFunc:
+            ...
+        FilterArgs:
+            ...
+
+        Return (Tuple):
+            [0] - DRGQuantificationResultsSet:
+                ...
+            [1] - DRGQuantificationResultsSet:
+                ...
+        """
+
+        Included: typing.List[DRGQuantificationResults] = []
+        Excluded: typing.List[DRGQuantificationResults] = []
+
+        for Result in self._Results:
+            if ( FilterFunc(Result, FilterArgs) ):
+                Included.append(Result)
+            else:
+                Excluded.append(Result)
+
+        return (DRGQuantificationResultsSet(Included), DRGQuantificationResultsSet(Excluded))
+
+    def UniqueByField(self: DRGQuantificationResultsSet, FieldName: str) -> typing.Tuple[int, typing.Sequence[DRGQuantificationResultsSet]]:
+        """
+        UniqueByField
+
+        This function...
+
+        FieldName:
+            ...
+
+        Return (Tuple):
+            [0] - int:
+                ...
+            [1] - Sequence[DRGQuantificationResultsSet]:
+                ...
+        """
+
+        if ( len(self._Results) == 0 ):
+            return (0, [])
+
+        if ( FieldName not in self._Results[0].__dict__.keys() ):
+            raise ValueError(f"Field [ {FieldName} ] is not a valid field name!")
+
+        UniqueValues: typing.Set[typing.Any] = {}
+        for Result in self._Results:
+            UniqueValues.add(Result.__getattribute__(FieldName))
+
+        Split: typing.Dict[str, DRGQuantificationResultsSet] = {str(x): DRGQuantificationResultsSet() for x in UniqueValues}
+
+        for Result in self._Results:
+            Split[str(Result.__getattribute__(FieldName))].Add(Result)
+
+        return (len(UniqueValues), [Split[x] for x in sorted(Split.keys())])
