@@ -689,41 +689,40 @@ class DRGQuantificationResults():
 
         Result.SourceHash                     = random.randbytes(32).hex()
 
-        Result.ExperimentDate                 = f"{random.choice([2024, 2025])}-{random.choice([1, 4, 7, 10])}-{random.choice([7, 14, 21, 28])}"
+        Result.ExperimentDate                 = f"{random.choice([2024, 2025])}-1-1"
         Result.CultureDuration                = 7
         Result.SampleIndex                    = random.randint(1, 4)
         Result.BaseGel                        = random.choice([BaseGels.BaseGel_Ultimatrix, BaseGels.BaseGel_GelMA]) #, BaseGels.BaseGel_H6, BaseGels.BaseGel_H7, BaseGels.BaseGel_H8, BaseGels.BaseGel_PH15, BaseGels.BaseGel_PH16, BaseGels.BaseGel_PH18, BaseGels.BaseGel_PH19])
         Result.DilutionMedia                  = random.choice(["BaseMedia", "PBS"])
-        Result.IncludesPhenolRed              = random.choice([True, False])
-        Result.IncludesB27                    = random.choice([True, False])
-        Result.IncludesFetalBovineSerum       = random.choice([True, False])
+        Result.IncludesPhenolRed              = random.choice([True])
+        Result.IncludesB27                    = random.choice([True])
+        Result.IncludesFetalBovineSerum       = random.choice([True])
 
-        if ( Result.BaseGel == BaseGels.BaseGel_GelMA ):
-            Result.GelMAPercentage                = random.choice([3, 6])
-            Result.DegreeOfFunctionalization      = random.choice([50, 80])
-            Result.RutheniumConcentration         = 0.2
-            Result.SodiumPersulfateConcentration  = 0.02
-            Result.RiboflavinConcentration        = 1
-            Result.GelIlluminationDuration        = 50
+        Result.GelMAPercentage                = random.choice([3, 6])
+        Result.DegreeOfFunctionalization      = random.choice([50, 80])
+        Result.RutheniumConcentration         = random.choice([0.2]) if Result.BaseGel == BaseGels.BaseGel_GelMA else random.choice([0, 0.2])
+        Result.SodiumPersulfateConcentration  = 0 if Result.RutheniumConcentration == 0 else 2
+        Result.RiboflavinConcentration        = 0
+        Result.GelIlluminationDuration        = random.choice([60]) if Result.BaseGel == BaseGels.BaseGel_GelMA else random.choice([0, 60])
 
         Result.CrosslinkingPolymer            = "N/A"
         Result.Peptide                        = "N/A"
         Result.PeptideIn                      = "N/A"
         Result.PeptideConcentration           = "N/A"
 
-        Result.IKVAV                          = random.choice([True, False])
-        Result.GelatinIKVAV                   = random.choice([True, False])
-        Result.GlutathioneIKVAV               = random.choice([True, False])
-        Result.GDNF                           = random.choice([True, False])
-        Result.BDNF                           = random.choice([True, False])
-        Result.LamininIKVAV                   = random.choice([True, False])
+        Result.IKVAV                          = True
+        Result.Gelatin                        = True
+        Result.Glutathione                    = True
+        Result.GDNF                           = True
+        Result.BDNF                           = True
+        Result.Laminin                        = True
 
-        Result.IKVAVConcentration             = random.choice([1, 3]) if Result.IKVAV else 0
-        Result.GelatinConcentration           = random.choice([1, 3]) if Result.Gelatin else 0
-        Result.GlutathioneConcentration       = random.choice([1, 3]) if Result.Glutathione else 0
-        Result.GDNFConcentration              = random.choice([1, 3]) if Result.GDNF else 0
-        Result.BDNFConcentration              = random.choice([1, 3]) if Result.BDNF else 0
-        Result.LamininConcentration           = random.choice([1, 3]) if Result.Laminin else 0
+        Result.IKVAVConcentration             = random.choice([100]) if Result.IKVAV else 0
+        Result.GelatinConcentration           = random.choice([100]) if Result.Gelatin else 0
+        Result.GlutathioneConcentration       = random.choice([100]) if Result.Glutathione else 0
+        Result.GDNFConcentration              = random.choice([100]) if Result.GDNF else 0
+        Result.BDNFConcentration              = random.choice([100]) if Result.BDNF else 0
+        Result.LamininConcentration           = random.choice([100]) if Result.Laminin else 0
 
         Result.DRGCentroidLocation            = [-1, -1]
         Result.InclusionMaskFraction          = -1.0
@@ -1216,7 +1215,7 @@ class DRGQuantificationResultsSet():
         for Result in self:
             Values.add(GetParameter(Result))
 
-        self._LogWriter.Println(f"Provided uniqueness function identified a total of [ {len(Values)} ].")
+        self._LogWriter.Println(f"Provided uniqueness function identified a total of [ {len(Values)} ] unique value(s).")
         return list(sorted(Values))
 
     def Summarize(self: DRGQuantificationResultsSet, OutputDirectory: str) -> None:
@@ -1259,6 +1258,10 @@ class DRGQuantificationResultsSet():
         #   ...
         self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium"), CollapseDates=True)
         self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium By Date"))
+
+        #   ...
+        self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time"), CollapseDates=True)
+        self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time By Date"))
 
         #   ...
 
@@ -1306,6 +1309,8 @@ class DRGQuantificationResultsSet():
                 Ax.scatter([x.NeuriteDensity for x in Group._Results], [x.MedianNeuriteDistance for x in Group._Results], color=Colour, marker=Shape)
                 MapFile.write(f"Group={GroupIndex}, Count={len(Group._Results)}, Marker={Shape}, Colour={Colour}, {Group._Results[0].Describe(Verbose=True)}\n")
                 self._LogWriter.Println(f"Plotting condition [ {GroupIndex}/{len(Groups)} ]...")
+
+        F.tight_layout()
 
         PlotFilename: str = "Median Neurite Length versus Neurite Density.png"
         Utils.WriteImage(Utils.FigureToImage(F), os.path.join(OutputDirectory, PlotFilename))
@@ -1368,10 +1373,10 @@ class DRGQuantificationResultsSet():
                 f', Phenol Red' if Example.IncludesPhenolRed else '',
                 f', B27' if Example.IncludesB27 else '',
                 f', FBS' if Example.IncludesFetalBovineSerum else '',
-                f', Ru-SPS {Example.RutheniumConcentration}, {Example.SodiumPersulfateConcentration}' if Example.RutheniumConcentration != 0 and Example.SodiumPersulfateConcentration != 0 else f', Riboflavin {Example.RiboflavinConcentration}',
+                f', Ru-SPS {Example.RutheniumConcentration}-{Example.SodiumPersulfateConcentration}' if Example.RutheniumConcentration != 0 and Example.SodiumPersulfateConcentration != 0 else f', Riboflavin {Example.RiboflavinConcentration}',
                 f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
                 f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
-                f', Glutathione {Example.GlutathioneConcentration}' if Example.GlutathioneConcentration else '',
+                f', Glutathione {Example.GlutathioneConcentration}' if Example.Glutathione else '',
                 f', GDNF {Example.GDNFConcentration}' if Example.GDNF else '',
                 f', BDNF {Example.BDNFConcentration}' if Example.BDNF else '',
                 f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
@@ -1400,6 +1405,7 @@ class DRGQuantificationResultsSet():
             Ax.set_ylim(bottom=0.0)
             Ax.set_ylabel(f"Median Neurite Length (µm)")
             Ax.set_xlabel(f"GelMA Percentage & Degree of Functionalization")
+            F.tight_layout()
             self._LogWriter.Println(f"Created boxplot for condition [ {GroupIndex}/{len(Groups)} ].")
 
             # Utils.DisplayFigure(AxisTitle, F, 1, True, True)
@@ -1469,10 +1475,10 @@ class DRGQuantificationResultsSet():
                 f', Phenol Red' if Example.IncludesPhenolRed else '',
                 f', B27' if Example.IncludesB27 else '',
                 f', FBS' if Example.IncludesFetalBovineSerum else '',
-                f', Ru-SPS {Example.RutheniumConcentration}, {Example.SodiumPersulfateConcentration}' if Example.RutheniumConcentration != 0 and Example.SodiumPersulfateConcentration != 0 else f', Riboflavin {Example.RiboflavinConcentration}',
+                f', Ru-SPS {Example.RutheniumConcentration}-{Example.SodiumPersulfateConcentration}' if Example.RutheniumConcentration != 0 and Example.SodiumPersulfateConcentration != 0 else f', Riboflavin {Example.RiboflavinConcentration}',
                 f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
                 f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
-                f', Glutathione {Example.GlutathioneConcentration}' if Example.GlutathioneConcentration else '',
+                f', Glutathione {Example.GlutathioneConcentration}' if Example.Glutathione else '',
                 f', GDNF {Example.GDNFConcentration}' if Example.GDNF else '',
                 f', BDNF {Example.BDNFConcentration}' if Example.BDNF else '',
                 f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
@@ -1502,6 +1508,7 @@ class DRGQuantificationResultsSet():
             Ax.set_ylim(bottom=0.0)
             Ax.set_ylabel(f"Median Neurite Length (µm)")
             Ax.set_xlabel(f"Dilution Medium, GelMA Percentage, Degree of Functionalization")
+            F.tight_layout()
             self._LogWriter.Println(f"Created boxplot for condition [ {GroupIndex}/{len(Groups)} ].")
 
             # Utils.DisplayFigure(AxisTitle, F, 1, True, True)
@@ -1511,5 +1518,107 @@ class DRGQuantificationResultsSet():
             F.clear()
 
         self._LogWriter.Println(f"Finished creating boxplots of neurite length as a function of GelMA percentage, degree of functionalization, and dilution medium.")
+
+        return
+
+    def _UltimatrixByCrosslinkerAndIllumination(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False) -> None:
+        """
+        _UltimatrixByCrosslinkerAndIllumination
+
+        This function...
+
+        OutputDirectory:
+            ...
+        CollapseDates:
+            ...
+
+        Return (None):
+            ...
+        """
+
+        self._LogWriter.Println(f"Preparing boxplots of neurite length as a function of Ru-SPS and Gel Illumination for Ultimatrix...")
+
+        if ( not os.path.exists(OutputDirectory) ):
+            os.makedirs(OutputDirectory, mode=0o755, exist_ok=True)
+            self._LogWriter.Println(f"Creating output directory [ {OutputDirectory } ]...")
+
+        UltimatrixResults: DRGQuantificationResultsSet = DRGQuantificationResultsSet([x for x in self._Results if x.BaseGel == BaseGels.BaseGel_Ultimatrix], LogWriter=self._LogWriter)
+        if ( len(UltimatrixResults) == 0 ):
+            self._LogWriter.Println(f"No results were found where BaseGel=Ultimatrix...")
+            return
+
+        #   Identify the possible values for the GelMA percentage and the Degree of Functionalization of the gel.
+        RutheniumConcentrations: typing.Sequence[float] = UltimatrixResults.Unique(lambda x: x.RutheniumConcentration)
+        SodiumPerSulfateConcentrations: typing.Sequence[float] = UltimatrixResults.Unique(lambda x: x.SodiumPersulfateConcentration)
+        IlluminationDurations: typing.Sequence[float] = UltimatrixResults.Unique(lambda x: x.GelIlluminationDuration)
+
+        self._LogWriter.Println(f"Found results for Ruthenium Concentrations: [ {RutheniumConcentrations} ]...")
+        self._LogWriter.Println(f"Found results for SPS Concentrations: [ {SodiumPerSulfateConcentrations} ]...")
+        self._LogWriter.Println(f"Found results for Gel Illumination Durations: [ {IlluminationDurations} ]...")
+
+        #   We need to generate groups which are unique in all parameters *Except* the GelMA percentage and Degree of Functionalization.
+        #   Then, we can split on these last two parameters and get meaningful comparisons across these two experimental variables for
+        #   every other larger set of experimental variables.
+        Template: DRGQuantificationResults = UltimatrixResults._Results[0].Copy()
+        if ( CollapseDates ):
+            Template.ExperimentDate = None
+        Template.RutheniumConcentration = None
+        Template.SodiumPersulfateConcentration = None
+        Template.GelIlluminationDuration = None
+        Groups: typing.Sequence[DRGQuantificationResultsSet] = UltimatrixResults.GroupBy(Template)
+
+        #   For each set of experimental conditions, identify the 4 cases we care about for these figures:
+        for GroupIndex, Group in enumerate(Groups, start=1):
+            self._LogWriter.Println(f"Preparing boxplot for condition [ {GroupIndex}/{len(Groups)} ]...")
+            F: Figure = Utils.PrepareFigure()
+            Ax: Axes = F.add_subplot(111)
+            Example: DRGQuantificationResults = Group._Results[0]
+            AxisTitle: str = "".join([
+                f"{Example.ExperimentDate if not CollapseDates else ''}",
+                f', Phenol Red' if Example.IncludesPhenolRed else '',
+                f', B27' if Example.IncludesB27 else '',
+                f', FBS' if Example.IncludesFetalBovineSerum else '',
+                f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
+                f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
+                f', Glutathione {Example.GlutathioneConcentration}' if Example.GlutathioneConcentration else '',
+                f', GDNF {Example.GDNFConcentration}' if Example.GDNF else '',
+                f', BDNF {Example.BDNFConcentration}' if Example.BDNF else '',
+                f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
+            ]).strip(", ")
+
+            with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
+                for Index, (IlluminationDuration, (SPSConcentration, RutheniumConcentration)) in enumerate(itertools.product(IlluminationDurations, zip(SodiumPerSulfateConcentrations, RutheniumConcentrations))):
+
+                    Condition: DRGQuantificationResultsSet = DRGQuantificationResultsSet([
+                        x for x in Group if \
+                            x.SodiumPersulfateConcentration == SPSConcentration and \
+                            x.RutheniumConcentration == RutheniumConcentration and \
+                            x.GelIlluminationDuration == IlluminationDuration
+                        ])
+                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition]
+                    Ax.boxplot(Distances, sym='', positions=[Index], labels=[f"{IlluminationDuration}s\n{SPSConcentration}mM SPS\n{RutheniumConcentration}mM Ru\nn={len(Condition)}"])
+
+                    Ax.scatter(np.random.normal(Index, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
+
+                    DataFile.write(f"{IlluminationDuration}s - {SPSConcentration}mM SPS - {RutheniumConcentration}mM Ru")
+                    DataFile.write(''.join([f",{x}" for x in Distances]))
+                    DataFile.write("\n")
+
+            F.suptitle(f"Median DRG Neurite Length versus Ru-SPS and Gel Illumination")
+            Ax.set_title(AxisTitle)
+            Ax.minorticks_on()
+            Ax.set_ylim(bottom=0.0)
+            Ax.set_ylabel(f"Median Neurite Length (µm)")
+            Ax.set_xlabel(f"Illumination Duration, SPS Concentration, Ruthenium Concentration")
+            F.tight_layout()
+            self._LogWriter.Println(f"Created boxplot for condition [ {GroupIndex}/{len(Groups)} ].")
+
+            # Utils.DisplayFigure(AxisTitle, F, 1, True, True)
+
+            Utils.WriteImage(Utils.FigureToImage(F), os.path.join(OutputDirectory, f"{AxisTitle}.png"))
+            self._LogWriter.Println(f"Saved figure to file [ {AxisTitle}.png ]...")
+            F.clear()
+
+        self._LogWriter.Println(f"Finished creating boxplots of neurite length as a function of Ru-SPS and Gel Illumination for Ultimatrix...")
 
         return

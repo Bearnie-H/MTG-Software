@@ -44,7 +44,7 @@ def main() -> None:
     if ( SourceDirectory is not None ):
         Results = DRGQuantificationResultsSet.FromDirectory(SourceDirectory)
     else:
-        RandomResultCount: int = 200
+        RandomResultCount: int = 10000
         Results = DRGQuantificationResultsSet([DRGQuantificationResults.GenerateRandom() for n in range(RandomResultCount)])
 
     Results.SetLogger(Logger.Logger())
