@@ -1014,8 +1014,9 @@ class DRGQuantificationResults():
             self.RiboflavinConcentration = ExperimentDetails.RiboflavinConcentration
             self.GelIlluminationDuration = ExperimentDetails.GelIlluminationTime
         elif ( self.BaseGel == BaseGels.BaseGel_Ultimatrix ):
-            #   TODO: ...
-            pass
+            self.RutheniumConcentration = ExperimentDetails.RutheniumConcentration
+            self.SodiumPersulfateConcentration = ExperimentDetails.SodiumPersulfateConcentration
+            self.GelIlluminationDuration = ExperimentDetails.GelIlluminationTime
         else:
             self.CrosslinkingPolymer = ExperimentDetails.FormatNasrinsCrosslinkers()
             self.Peptide = ExperimentDetails.Peptide
@@ -1380,6 +1381,7 @@ class DRGQuantificationResultsSet():
             for GroupIndex, (Group, (Shape, Colour)) in enumerate(zip(Groups, itertools.product(Shapes, Colours)), start=1):
                 Ax.scatter([x.NeuriteDensity for x in Group._Results], [x.MedianNeuriteDistance for x in Group._Results], color=Colour, marker=Shape)
                 MapFile.write(f"Group={GroupIndex}, Count={len(Group._Results)}, Marker={Shape}, Colour={Colour}, {Group._Results[0].Describe(Verbose=True)}\n")
+                self._LogWriter.Println(f"Plotting condition [ {GroupIndex}/{len(Groups)} ]...")
 
         PlotFilename: str = "Median Neurite Length versus Neurite Density.png"
         Utils.WriteImage(Utils.FigureToImage(F), os.path.join(OutputDirectory, PlotFilename))

@@ -22,7 +22,7 @@ import traceback
 #   ...
 
 #   Import the desired locally written modules
-from MTG_Common.Logger import Logger
+from MTG_Common import Logger
 from MTG_Common.DRG_Quantification import *
 from MTG_Common import Utils
 import DRG_Neurite_Quantification
@@ -33,7 +33,7 @@ import MTG_Common.DRG_Quantification
 JSONDirectory: str = ""
 #   ...
 
-LogWriter: Logger = Logger(Prefix="DRG Neurite Quantification Batch Analysis")
+LogWriter: Logger.Logger = Logger.Logger(Prefix="DRG Neurite Quantification Batch Analysis")
 
 #   Main
 #       This is the main entry point of the script.
@@ -136,7 +136,7 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
             LogWriter.Println(f"Starting manual preview of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
             try:
 
-                DRG_Neurite_Quantification.LogWriter = Logger(OutputStream=LogWriter.RawStream(), Prefix=f"DRG Batch Analysis (Manual Preview) - {os.path.basename(Condition.LIFFilePath)} ({ConditionIndex}/{ConditionCount})", AlwaysFlush=True)
+                DRG_Neurite_Quantification.LogWriter = Logger.Logger(OutputStream=LogWriter.RawStream(), Prefix=f"DRG Batch Analysis (Manual Preview) - {os.path.basename(Condition.LIFFilePath)} ({ConditionIndex}/{ConditionCount})", AlwaysFlush=True)
                 DRG_Neurite_Quantification.Config = DRG_Neurite_Quantification.Configuration(LogWriter=DRG_Neurite_Quantification.LogWriter).ExtractFromCondition(Condition)
                 DRG_Neurite_Quantification.Config.ManualPreview = True
                 DRG_Neurite_Quantification.Config.OutputDirectory = os.path.splitext(Condition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
@@ -188,7 +188,7 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
             LogWriter.Println(f"Starting analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
             try:
 
-                DRG_Neurite_Quantification.LogWriter = Logger(OutputStream=LogWriter.RawStream(), Prefix=f"DRG Batch Analysis - {os.path.basename(Condition.LIFFilePath)} ({ConditionIndex}/{ConditionCount})", AlwaysFlush=True)
+                DRG_Neurite_Quantification.LogWriter = Logger.Logger(OutputStream=LogWriter.RawStream(), Prefix=f"DRG Batch Analysis - {os.path.basename(Condition.LIFFilePath)} ({ConditionIndex}/{ConditionCount})", AlwaysFlush=True)
                 DRG_Neurite_Quantification.Config = DRG_Neurite_Quantification.Configuration(LogWriter=DRG_Neurite_Quantification.LogWriter).ExtractFromCondition(Condition)
                 DRG_Neurite_Quantification.Config.ManualPreview = False
                 DRG_Neurite_Quantification.Config.OutputDirectory = os.path.splitext(Condition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"

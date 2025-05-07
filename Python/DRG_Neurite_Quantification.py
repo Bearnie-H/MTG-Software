@@ -35,7 +35,7 @@ from MTG_Common import Utils
 from MTG_Common import ZStack
 from MTG_Common.DRG_Quantification import *
 from Alignment_Analysis import PrepareEllipticalKernel, ApplyEllipticalConvolution, CreateOrientationVisualization, ComputeAlignmentMetric, AngleTracker
-from Scripting.Python.MTG_Common.DRG_Quantification import DRGQuantificationResults
+from MTG_Common.DRG_Quantification import DRGQuantificationResults
 
 DEBUG_DISPLAY_ENABLED: bool = False
 DEBUG_DISPLAY_TIMEOUT: float = 0.25
@@ -471,6 +471,7 @@ Results: DRGQuantificationResults = DRGQuantificationResults()
 def main() -> int:
 
     global ImageSequenceNumber
+    global Results
     ImageSequenceNumber = 1
 
     if ( Config.ManualPreview ):
