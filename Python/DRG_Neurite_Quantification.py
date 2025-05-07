@@ -67,6 +67,8 @@ class Configuration():
 
     ApplyManualROISelection: bool
 
+    ExperimentalDetails: DRGExperimentalCondition
+
     OutputDirectory: str
     JSONDirectory: str
 
@@ -105,6 +107,7 @@ class Configuration():
 
         ### +++
         ### Add in all of the settings and values used for identifying a particular experimental condition
+        self.ExperimentalDetails = None
 
 
         ### ---
@@ -175,6 +178,8 @@ class Configuration():
         Return (self):
             A reference to the filled-out Configuration instance.
         """
+
+        self.ExperimentalDetails = ExperimentalCondition
 
         ValidCondition: bool = True
 
@@ -1402,6 +1407,11 @@ def QuantifyNeuriteLengths(NeuritePixels: np.ndarray, Origin: typing.Tuple[int, 
 
     #   Compute the L2 norm from the origin point to each identified neurite pixel
     Distances: np.ndarray = np.hypot(NeuriteCoordinates[:,0] - Origin[1], NeuriteCoordinates[:,1] - Origin[0])
+
+    #   Convert from pixel distances to physical units, assuming the "Spatial Resolution" value in the configuration object is non-zero.
+    if ( Config.ExperimentalDetails is not None ):
+        if ( Config.ExperimentalDetails.ImageResolution is not None ) and ( Config.ExperimentalDetails.ImageResolution != 0 ):
+            Distances *= Config.ExperimentalDetails.ImageResolution
 
     return Distances
 

@@ -24,6 +24,7 @@ import traceback
 #   Import the desired locally written modules
 from MTG_Common.Logger import Logger
 from MTG_Common.DRG_Quantification import *
+from MTG_Common import Utils
 import DRG_Neurite_Quantification
 import MTG_Common.DRG_Quantification
 #   ...
@@ -69,6 +70,9 @@ def main() -> None:
 
         #   For each of the valid conditions, actually process the LIF file.
         AnalyzeConditions(ExperimentalConditions, StatusReport)
+
+    #   If the JSON folder has been provided, run the summarization logic to generate the output plots and figures
+    DRGQuantificationResultsSet.FromDirectory(JSONDirectory).Summarize(os.path.join(JSONDirectory, "Summarized Results"))
 
     return
 
@@ -192,6 +196,7 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
                 DRG_Neurite_Quantification.QuantificationStacks = DRG_Neurite_Quantification.QuantificationIntermediates(LogWriter=DRG_Neurite_Quantification.LogWriter)
                 DRG_Neurite_Quantification.Results = MTG_Common.DRG_Quantification.DRGQuantificationResults()
                 DRG_Neurite_Quantification.Results.ExtractExperimentalDetails(Condition)
+                DRG_Neurite_Quantification.Results.SourceHash = Utils.Sha256Sum(Condition.LIFFilePath)
 
                 Condition.AnalysisStatus = DRG_Neurite_Quantification.main()
                 if ( Condition.AnalysisStatus == DRGAnalysis_StatusCode.StatusSuccess ):

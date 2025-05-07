@@ -13,17 +13,24 @@ import typing
 
 from datetime import datetime
 import glob
+import itertools
 import jsonpickle
+import math
 import os
+import random
 import str2bool
-
-from MTG_Common import Utils
 #   ...
 
 #   Import the necessary third-part modules
+import numpy as np
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
+import matplotlib.cm
 #   ...
 
 #   Import the desired locally written modules
+from . import Utils
+from . import Logger
 #   ...
 
 #   Helper parsing functions to wrap and error handling in a consistent manner
@@ -183,7 +190,7 @@ def TryParseString(Input: str) -> str | None:
 
     return Input
 
-class DRGAnalysis_StatusCode(int):
+class DRGAnalysis_StatusCode():
     StatusSuccess:          int = 1 << 0
     StatusNotYetProcessed:  int = 1 << 1
     StatusValidationFailed: int = 1 << 2
@@ -231,7 +238,7 @@ class DRGAnalysis_StatusCode(int):
 
         return Output
 
-class BaseGels(str):
+class BaseGels():
     BaseGel_Ultimatrix: str = "Ultimatrix"
 
     BaseGel_GelMA: str = "GelMA"
@@ -245,11 +252,11 @@ class BaseGels(str):
     BaseGel_PH18: str = "?PH18?"
     BaseGel_PH19: str = "?PH19?"
 
-class GelMACrosslinkers(str):
+class GelMACrosslinkers():
     GelMA_RuSPS: str = "RuSPS"
     GelMA_Riboflavin: str = "Riboflavin"
 
-class NasrinCrosslinker(str):
+class NasrinCrosslinker():
     NasrinGel_A: str = "??"
 
 class DRGExperimentalCondition():
@@ -558,15 +565,15 @@ class DRGQuantificationResults():
     DilutionMedia: str      #   What media is used to dilute the gels created?
     IncludesPhenolRed: bool #   Does the media include Phenol Red?
     IncludesB27: bool       #   Does the media include B27?
-    IncludesFBS: bool       #   Does the media include Fetal Bovine Serum?
+    IncludesFetalBovineSerum: bool       #   Does the media include Fetal Bovine Serum?
 
     ##  ONLY APPLICABLE FOR GelMA
-    GelMAPercentage: float                  #   Value on the range [0, 1]
-    DegreeOfFunctionalization: float        #   Value on the range [0, 1]
+    GelMAPercentage: float                  #   Value on the range [0, 100]
+    DegreeOfFunctionalization: float        #   Value on the range [0, 100]
     GelMACrosslinker: str                   #   Either RuSPS or Riboflavin
     RutheniumConcentration: float           #   Value in units of mM
     SodiumPersulfateConcentration: float    #   Value in units of mM
-    RiboflavinConcentration: float          #   Value in units of mM
+    RiboflavinConcentration: float          #   Value in units of ??
     GelIlluminationDuration: float          #   Seconds
 
     ##  ONLY APPLICABLE FOR NASRIN'S GELS
@@ -576,12 +583,18 @@ class DRGQuantificationResults():
     PeptideConcentration: float #   ???
 
     ##  Additives
+    IKVAV: bool                     #   Is the additive included?
+    Gelatin: bool                   #   Is the additive included?
+    Glutathione: bool               #   Is the additive included?
+    GDNF: bool                      #   Is the additive included?
+    BDNF: bool                      #   Is the additive included?
+    Laminin: bool                   #   Is the additive included?
     IKVAVConcentration: float       #   Value in units of mM
-    GelatinConcentration: float     #   Value in units of mM
+    GelatinConcentration: float     #   Value in units of wt/%
     GlutathioneConcentration: float #   Value in units of mM
-    GDNFConcentration: float        #   Value in units of mM
-    BDNFConcentration: float        #   Value in units of mM
-    LamininConcentration: float     #   Value in units of mM
+    GDNFConcentration: float        #   Value in units of ng/mL
+    BDNFConcentration: float        #   Value in units of ng/mL
+    LamininConcentration: float     #   Value in units of µg/mL
 
     ##  Results and Quantification Metrics
     DRGCentroidLocation: typing.List[int, int]              #   Where in the image is the centroid of the DRG Body? (X, Y) Pixel coordinates
@@ -617,7 +630,7 @@ class DRGQuantificationResults():
         self.DilutionMedia                  = "Unknown"
         self.IncludesPhenolRed              = False
         self.IncludesB27                    = False
-        self.IncludesFBS                    = False
+        self.IncludesFetalBovineSerum       = False
 
         self.GelMAPercentage                = -1.0
         self.DegreeOfFunctionalization      = -1.0
@@ -631,6 +644,13 @@ class DRGQuantificationResults():
         self.Peptide                        = "N/A"
         self.PeptideIn                      = "N/A"
         self.PeptideConcentration           = "N/A"
+
+        self.IKVAV                          = False
+        self.Gelatin                        = False
+        self.Glutathione                    = False
+        self.GDNF                           = False
+        self.BDNF                           = False
+        self.Laminin                        = False
 
         self.IKVAVConcentration             = -1.0
         self.GelatinConcentration           = -1.0
@@ -653,7 +673,316 @@ class DRGQuantificationResults():
 
         return
 
+    def __iter__(self: DRGQuantificationResults) -> typing.Iterable[typing.Any]:
+        yield self.ExperimentDate
+        yield self.CultureDuration
+        yield self.BaseGel
+        yield self.DilutionMedia
+        yield self.IncludesPhenolRed
+        yield self.IncludesB27
+        yield self.IncludesFetalBovineSerum
+        yield self.GelMAPercentage
+        yield self.DegreeOfFunctionalization
+        yield self.GelMACrosslinker
+        yield self.RutheniumConcentration
+        yield self.SodiumPersulfateConcentration
+        yield self.RiboflavinConcentration
+        yield self.GelIlluminationDuration
+        yield self.CrosslinkingPolymer
+        yield self.Peptide
+        yield self.PeptideIn
+        yield self.PeptideConcentration
+        yield self.IKVAV
+        yield self.Gelatin
+        yield self.Glutathione
+        yield self.GDNF
+        yield self.BDNF
+        yield self.Laminin
+        yield self.IKVAVConcentration
+        yield self.GelatinConcentration
+        yield self.GlutathioneConcentration
+        yield self.GDNFConcentration
+        yield self.BDNFConcentration
+        yield self.LamininConcentration
+
+    def __eq__(self: DRGQuantificationResults, Other: DRGQuantificationResults) -> bool:
+
+        return self.ExperimentDate              == Other.ExperimentDate                 and \
+            self.CultureDuration                == Other.CultureDuration                and \
+            self.BaseGel                        == Other.BaseGel                        and \
+            self.DilutionMedia                  == Other.DilutionMedia                  and \
+            self.IncludesPhenolRed              == Other.IncludesPhenolRed              and \
+            self.IncludesB27                    == Other.IncludesB27                    and \
+            self.IncludesFetalBovineSerum       == Other.IncludesFetalBovineSerum       and \
+            self.GelMAPercentage                == Other.GelMAPercentage                and \
+            self.DegreeOfFunctionalization      == Other.DegreeOfFunctionalization      and \
+            self.GelMACrosslinker               == Other.GelMACrosslinker               and \
+            self.RutheniumConcentration         == Other.RutheniumConcentration         and \
+            self.SodiumPersulfateConcentration  == Other.SodiumPersulfateConcentration  and \
+            self.RiboflavinConcentration        == Other.RiboflavinConcentration        and \
+            self.GelIlluminationDuration        == Other.GelIlluminationDuration        and \
+            self.CrosslinkingPolymer            == Other.CrosslinkingPolymer            and \
+            self.Peptide                        == Other.Peptide                        and \
+            self.PeptideIn                      == Other.PeptideIn                      and \
+            self.PeptideConcentration           == Other.PeptideConcentration           and \
+            self.IKVAV                          == Other.IKVAV                          and \
+            self.Gelatin                        == Other.Gelatin                        and \
+            self.Glutathione                    == Other.Glutathione                    and \
+            self.GDNF                           == Other.GDNF                           and \
+            self.BDNF                           == Other.BDNF                           and \
+            self.Laminin                        == Other.Laminin                        and \
+            self.IKVAVConcentration             == Other.IKVAVConcentration             and \
+            self.GelatinConcentration           == Other.GelatinConcentration           and \
+            self.GlutathioneConcentration       == Other.GlutathioneConcentration       and \
+            self.GDNFConcentration              == Other.GDNFConcentration              and \
+            self.BDNFConcentration              == Other.BDNFConcentration              and \
+            self.LamininConcentration           == Other.LamininConcentration
+
+    def __hash__(self: DRGQuantificationResults) -> int:
+        return hash(tuple(self))
+
     ### Public Methods
+    @staticmethod
+    def GenerateRandom() -> DRGQuantificationResults:
+        """
+        GenerateRandom
+
+        This function...
+
+        return (DRGQuantificationResults):
+            ...
+        """
+
+        Result: DRGQuantificationResults = DRGQuantificationResults()
+
+        Result.SourceHash                     = random.randbytes(32).hex()
+
+        Result.ExperimentDate                 = f"{random.choice([2024, 2025])}-{random.choice([1, 4, 7, 10])}-{random.choice([7, 14, 21, 28])}"
+        Result.CultureDuration                = 7
+        Result.SampleIndex                    = random.randint(1, 4)
+        Result.BaseGel                        = random.choice([BaseGels.BaseGel_Ultimatrix, BaseGels.BaseGel_GelMA]) #, BaseGels.BaseGel_H6, BaseGels.BaseGel_H7, BaseGels.BaseGel_H8, BaseGels.BaseGel_PH15, BaseGels.BaseGel_PH16, BaseGels.BaseGel_PH18, BaseGels.BaseGel_PH19])
+        Result.DilutionMedia                  = random.choice(["BaseMedia", "PBS"])
+        Result.IncludesPhenolRed              = random.choice([True, False])
+        Result.IncludesB27                    = random.choice([True, False])
+        Result.IncludesFetalBovineSerum       = random.choice([True, False])
+
+        if ( Result.BaseGel == BaseGels.BaseGel_GelMA ):
+            Result.GelMAPercentage                = random.choice([3, 6])
+            Result.DegreeOfFunctionalization      = random.choice([50, 80])
+            Result.GelMACrosslinker               = random.choice([GelMACrosslinkers.GelMA_RuSPS, GelMACrosslinkers.GelMA_Riboflavin])
+            if ( Result.GelMACrosslinker == GelMACrosslinkers.GelMA_RuSPS ):
+                Result.RutheniumConcentration         = 0.2
+                Result.SodiumPersulfateConcentration  = 0.02
+            elif ( Result.GelMACrosslinker == GelMACrosslinkers.GelMA_Riboflavin ):
+                Result.RiboflavinConcentration        = 1
+            else:
+                pass
+            Result.GelIlluminationDuration        = 50
+
+        Result.CrosslinkingPolymer            = "N/A"
+        Result.Peptide                        = "N/A"
+        Result.PeptideIn                      = "N/A"
+        Result.PeptideConcentration           = "N/A"
+
+        Result.IKVAV                          = random.choice([True, False])
+        Result.GelatinIKVAV                   = random.choice([True, False])
+        Result.GlutathioneIKVAV               = random.choice([True, False])
+        Result.GDNF                           = random.choice([True, False])
+        Result.BDNF                           = random.choice([True, False])
+        Result.LamininIKVAV                   = random.choice([True, False])
+
+        Result.IKVAVConcentration             = random.choice([1, 3]) if Result.IKVAV else 0
+        Result.GelatinConcentration           = random.choice([1, 3]) if Result.Gelatin else 0
+        Result.GlutathioneConcentration       = random.choice([1, 3]) if Result.Glutathione else 0
+        Result.GDNFConcentration              = random.choice([1, 3]) if Result.GDNF else 0
+        Result.BDNFConcentration              = random.choice([1, 3]) if Result.BDNF else 0
+        Result.LamininConcentration           = random.choice([1, 3]) if Result.Laminin else 0
+
+        Result.DRGCentroidLocation            = [-1, -1]
+        Result.InclusionMaskFraction          = -1.0
+        Result.NeuriteDistancesByLayer        = {}
+        Result.MedianNeuriteDistancesByLayer  = {}
+        Result.MedianNeuriteDistance          = random.random() * 1000
+        Result.NeuriteDensityByLayer          = {}
+        Result.NeuriteDensity                 = random.random()
+        Result.OrientationAngularResolution   = -1.0
+        Result.NeuriteOrientationsByLayer     = {}
+        Result.OrientationMetricsByLayer      = {}
+        Result.OrientationMetrics             = ()
+
+        return Result
+
+    def Copy(self: DRGQuantificationResults) -> DRGQuantificationResults:
+        """
+        Copy
+
+        This function...
+
+        Return (DRGQuantificationResults):
+            ...
+        """
+
+        New: DRGQuantificationResults = DRGQuantificationResults()
+
+        New.SourceHash = self.SourceHash
+
+        New.ExperimentDate = self.ExperimentDate
+        New.CultureDuration = self.CultureDuration
+        New.SampleIndex = self.SampleIndex
+        New.BaseGel = self.BaseGel
+        New.DilutionMedia = self.DilutionMedia
+        New.IncludesPhenolRed = self.IncludesPhenolRed
+        New.IncludesB27 = self.IncludesB27
+        New.IncludesFetalBovineSerum = self.IncludesFetalBovineSerum
+        New.GelMAPercentage = self.GelMAPercentage
+        New.DegreeOfFunctionalization = self.DegreeOfFunctionalization
+        New.GelMACrosslinker = self.GelMACrosslinker
+        New.RutheniumConcentration = self.RutheniumConcentration
+        New.SodiumPersulfateConcentration = self.SodiumPersulfateConcentration
+        New.RiboflavinConcentration = self.RiboflavinConcentration
+        New.GelIlluminationDuration = self.GelIlluminationDuration
+        New.CrosslinkingPolymer = self.CrosslinkingPolymer
+        New.Peptide = self.Peptide
+        New.PeptideIn = self.PeptideIn
+        New.PeptideConcentration = self.PeptideConcentration
+        New.IKVAV = self.IKVAV
+        New.Gelatin = self.Gelatin
+        New.Glutathione = self.Glutathione
+        New.GDNF = self.GDNF
+        New.BDNF = self.BDNF
+        New.Laminin = self.Laminin
+        New.IKVAVConcentration = self.IKVAVConcentration
+        New.GelatinConcentration = self.GelatinConcentration
+        New.GlutathioneConcentration = self.GlutathioneConcentration
+        New.GDNFConcentration = self.GDNFConcentration
+        New.BDNFConcentration = self.BDNFConcentration
+        New.LamininConcentration = self.LamininConcentration
+        New.DRGCentroidLocation = self.DRGCentroidLocation
+        New.InclusionMaskFraction = self.InclusionMaskFraction
+        New.NeuriteDistancesByLayer = self.NeuriteDistancesByLayer
+        New.MedianNeuriteDistancesByLayer = self.MedianNeuriteDistancesByLayer
+        New.MedianNeuriteDistance = self.MedianNeuriteDistance
+        New.NeuriteDensityByLayer = self.NeuriteDensityByLayer
+        New.NeuriteDensity = self.NeuriteDensity
+        New.OrientationAngularResolution = self.OrientationAngularResolution
+        New.NeuriteOrientationsByLayer = self.NeuriteOrientationsByLayer
+        New.OrientationMetricsByLayer = self.OrientationMetricsByLayer
+        New.OrientationMetrics = self.OrientationMetrics
+
+        return New
+
+    def Describe(self: DRGQuantificationResults, Verbose: bool = False) -> str:
+        """
+        Describe
+
+        This function...
+
+        Verbose:
+            ...
+
+        Return (str):
+            ...
+        """
+
+        if ( not Verbose ):
+            return "_".join(tuple(str(x) for x in tuple(self))).strip("-")
+
+        return ", ".join([
+            f"{self.ExperimentDate=}",
+            f"{self.CultureDuration=}",
+            f"{self.BaseGel=}",
+            f"{self.DilutionMedia=}",
+            f"{self.IncludesPhenolRed=}",
+            f"{self.IncludesB27=}",
+            f"{self.IncludesFetalBovineSerum=}",
+            f"{self.GelMAPercentage=}",
+            f"{self.DegreeOfFunctionalization=}",
+            f"{self.GelMACrosslinker=}",
+            f"{self.RutheniumConcentration=}",
+            f"{self.SodiumPersulfateConcentration=}",
+            f"{self.RiboflavinConcentration=}",
+            f"{self.GelIlluminationDuration=}",
+            f"{self.CrosslinkingPolymer=}",
+            f"{self.Peptide=}",
+            f"{self.PeptideIn=}",
+            f"{self.PeptideConcentration=}",
+            f"{self.IKVAV=}",
+            f"{self.Gelatin=}",
+            f"{self.Glutathione=}",
+            f"{self.GDNF=}",
+            f"{self.BDNF=}",
+            f"{self.Laminin=}",
+            f"{self.IKVAVConcentration=}",
+            f"{self.GelatinConcentration=}",
+            f"{self.GlutathioneConcentration=}",
+            f"{self.GDNFConcentration=}",
+            f"{self.BDNFConcentration=}",
+            f"{self.LamininConcentration=}",
+        ]).replace("self.", "")
+
+    def Equivalent(self: DRGQuantificationResults, Other: DRGQuantificationResults, Template: DRGQuantificationResults) -> bool:
+        """
+        Equivalent
+
+        This function...
+
+        Other:
+            ...
+        Template:
+            ...
+
+        Return (bool):
+            ...
+        """
+
+        for A, B, T in zip(tuple(self), tuple(Other), tuple(Template)):
+            if ( T is not None ) and ( A != B ):
+                return False
+
+        return True
+
+    def CountVariations(self: DRGQuantificationResults, Other: DRGQuantificationResults) -> int:
+        """
+        CountVariations
+
+        This function...
+
+        Other:
+            ...
+
+        Return (int):
+            ...
+        """
+
+        Count: int = 0
+
+        for This, That in zip(tuple(self), tuple(Other)):
+            if ( This != That ):
+                Count += 1
+
+        return Count
+
+    def DescribeVariations(self: DRGQuantificationResults, Other: DRGQuantificationResults) -> str:
+        """
+        DescribeVariations
+
+        This function...
+
+        Other:
+            ...
+
+        Return (str):
+            ...
+        """
+
+        This, That = self.Describe(Verbose=True), Other.Describe(Verbose=True)
+
+        Description: str = ", ".join([
+            f"{x} vs. {y}" for x, y in zip(This.split(", "), That.split(", ")) if x != y
+        ])
+
+        return Description.strip(", ")
+
     def ExtractExperimentalDetails(self: DRGQuantificationResults, ExperimentDetails: DRGExperimentalCondition) -> DRGQuantificationResults:
         """
         ExtractExperimentalDetails
@@ -667,8 +996,6 @@ class DRGQuantificationResults():
             ...
         """
 
-        self.SourceHash = Utils.Sha256Sum(ExperimentDetails.LIFFilePath)
-
         self.ExperimentDate = ExperimentDetails.ExperimentDate.strftime(f"%Y-%m-%d")
         self.CultureDuration = ExperimentDetails.CultureDuration
         self.SampleIndex = ExperimentDetails.SampleIndex
@@ -676,11 +1003,11 @@ class DRGQuantificationResults():
         self.DilutionMedia = ExperimentDetails.DilutionMedia
         self.IncludesPhenolRed = ExperimentDetails.IncludesPhenolRed
         self.IncludesB27 = ExperimentDetails.B27Inclusion
-        self.IncludesFBS = ExperimentDetails.FBSInclusion
+        self.IncludesFetalBovineSerum = ExperimentDetails.FBSInclusion
 
         if ( self.BaseGel == BaseGels.BaseGel_GelMA ):
-            self.GelMAPercentage = ExperimentDetails.GelMAPercentage / 100.0
-            self.DegreeOfFunctionalization = ExperimentDetails.DegreeOfFunctionalization / 100.0
+            self.GelMAPercentage = ExperimentDetails.GelMAPercentage
+            self.DegreeOfFunctionalization = ExperimentDetails.DegreeOfFunctionalization
             self.GelMACrosslinker = ExperimentDetails.FormatGelMACrosslinker()
             self.RutheniumConcentration = ExperimentDetails.RutheniumConcentration
             self.SodiumPersulfateConcentration = ExperimentDetails.SodiumPersulfateConcentration
@@ -694,6 +1021,13 @@ class DRGQuantificationResults():
             self.Peptide = ExperimentDetails.Peptide
             self.PeptideIn = ExperimentDetails.PeptideIn
             self.PeptideConcentration = ExperimentDetails.PeptideConcentration
+
+        self.IKVAV = ExperimentDetails.IKVAV
+        self.Gelatin = ExperimentDetails.Gelatin
+        self.Glutathione = ExperimentDetails.Glutathione
+        self.GDNF = ExperimentDetails.GDNF
+        self.BDNF = ExperimentDetails.BDNF
+        self.Laminin = ExperimentDetails.Laminin
 
         self.IKVAVConcentration = ExperimentDetails.IKVAVConcentration
         self.GelatinConcentration = ExperimentDetails.GelatinConcentration
@@ -785,8 +1119,9 @@ class DRGQuantificationResultsSet():
     """
 
     _Results: typing.List[DRGQuantificationResults]
+    _LogWriter: Logger.Logger
 
-    def __init__(self: DRGQuantificationResultsSet, Results: typing.Sequence[DRGQuantificationResults] = []) -> None:
+    def __init__(self: DRGQuantificationResultsSet, Results: typing.Sequence[DRGQuantificationResults] = list(), LogWriter: Logger.Logger = Logger.Discarder) -> None:
         """
         Constructor...
 
@@ -800,8 +1135,22 @@ class DRGQuantificationResultsSet():
         """
 
         self._Results = list(Results)
+        self._LogWriter = LogWriter
 
         return
+
+    def __iter__(self: DRGQuantificationResultsSet) -> typing.Iterator[DRGQuantificationResults]:
+        return iter(self._Results)
+
+    def __next__(self: DRGQuantificationResultsSet) -> typing.Generator[None, DRGQuantificationResults, None]:
+
+        for Result in self._Results:
+            yield Result
+        else:
+            raise StopIteration
+
+    def __len__(self: DRGQuantificationResultsSet) -> int:
+        return len(self._Results)
 
     @staticmethod
     def FromDirectory(Directory: str) -> DRGQuantificationResultsSet:
@@ -823,6 +1172,23 @@ class DRGQuantificationResultsSet():
 
         return DRGQuantificationResultsSet(Results)
 
+    def SetLogger(self: DRGQuantificationResultsSet, LogWriter: Logger.Logger) -> DRGQuantificationResultsSet:
+        """
+        SetLogger
+
+        This function...
+
+        LogWriter:
+            ...
+
+        return (self):
+            ...
+        """
+
+        self._LogWriter = LogWriter
+
+        return self
+
     def Add(self: DRGQuantificationResultsSet, ToAdd: DRGQuantificationResults) -> DRGQuantificationResultsSet:
         """
         Add
@@ -840,7 +1206,56 @@ class DRGQuantificationResultsSet():
 
         return self
 
-    def Filter(self: DRGQuantificationResultsSet, FilterFunc: typing.Callable[[DRGQuantificationResults, typing.List[typing.Any]], bool], FilterArgs: typing.List[typing.Any]) -> typing.Tuple[DRGQuantificationResultsSet, DRGQuantificationResultsSet]:
+    def Split(self: DRGQuantificationResultsSet) -> typing.Sequence[DRGQuantificationResultsSet]:
+        """
+        Split
+
+        This function...
+
+        Return (Sequence[DRGQuantificationResultsSet]):
+            ...
+        """
+
+        Groups: typing.Dict[int, DRGQuantificationResultsSet] = {}
+
+        for Index, Result in enumerate(self):
+            if ( hash(Result) not in Groups.keys() ):
+                Groups[hash(Result)] = DRGQuantificationResultsSet([Result], self._LogWriter)
+                self._LogWriter.Println(f"Created group [ {len(Groups)} ] ({Index}/{len(self._Results)})")
+            else:
+                Groups[hash(Result)].Add(Result)
+
+        self._LogWriter.Println(f"Split results into {len(Groups)} unique group(s).")
+        return list(Groups.values())
+
+    def GroupBy(self: DRGQuantificationResultsSet, Template: DRGQuantificationResults) -> typing.Sequence[DRGQuantificationResultsSet]:
+        """
+        GroupBy
+
+        This function...
+
+        Template:
+            ...
+
+        Return (Sequence[DRGQuantificationResultsSet]):
+            ...
+        """
+
+        Groups: typing.Sequence[DRGQuantificationResultsSet] = []
+
+        for Index, Result in enumerate(self):
+            for Group in Groups:
+                if ( Group._Results[0].Equivalent(Result, Template) ):
+                    Group.Add(Result)
+                    break
+            else:
+                Groups.append(DRGQuantificationResultsSet([Result], self._LogWriter))
+                self._LogWriter.Println(f"Created group [ {len(Groups)} ] ({Index}/{len(self._Results)})")
+
+        self._LogWriter.Println(f"Split into a total of {len(Groups)} group(s).")
+        return Groups
+
+    def Filter(self: DRGQuantificationResultsSet, FilterFunc: typing.Callable[[DRGQuantificationResults], bool]) -> DRGQuantificationResultsSet:
         """
         Filter
 
@@ -848,56 +1263,327 @@ class DRGQuantificationResultsSet():
 
         FilterFunc:
             ...
-        FilterArgs:
+
+        Return (DRGQuantificationResultsSet):
             ...
-
-        Return (Tuple):
-            [0] - DRGQuantificationResultsSet:
-                ...
-            [1] - DRGQuantificationResultsSet:
-                ...
         """
 
-        Included: typing.List[DRGQuantificationResults] = []
-        Excluded: typing.List[DRGQuantificationResults] = []
+        Filtered: DRGQuantificationResultsSet = DRGQuantificationResultsSet([], self._LogWriter)
+        for Result in self:
+            if ( FilterFunc(Result) ):
+                Filtered.Add(Result)
 
-        for Result in self._Results:
-            if ( FilterFunc(Result, FilterArgs) ):
-                Included.append(Result)
-            else:
-                Excluded.append(Result)
+        self._LogWriter.Println(f"Provided filter function accepted a total of [ {len(Filtered)} ] results.")
+        return Filtered
 
-        return (DRGQuantificationResultsSet(Included), DRGQuantificationResultsSet(Excluded))
-
-    def UniqueByField(self: DRGQuantificationResultsSet, FieldName: str) -> typing.Tuple[int, typing.Sequence[DRGQuantificationResultsSet]]:
+    def Unique(self: DRGQuantificationResultsSet, GetParameter: typing.Callable[[DRGQuantificationResults], typing.Any]) -> typing.Sequence[typing.Any]:
         """
-        UniqueByField
+        Unique
 
         This function...
 
-        FieldName:
+        Return (Sequence[Any]):
             ...
-
-        Return (Tuple):
-            [0] - int:
-                ...
-            [1] - Sequence[DRGQuantificationResultsSet]:
-                ...
         """
 
-        if ( len(self._Results) == 0 ):
-            return (0, [])
+        Values: typing.Set[typing.Any] = set()
 
-        if ( FieldName not in self._Results[0].__dict__.keys() ):
-            raise ValueError(f"Field [ {FieldName} ] is not a valid field name!")
+        for Result in self:
+            Values.add(GetParameter(Result))
 
-        UniqueValues: typing.Set[typing.Any] = {}
-        for Result in self._Results:
-            UniqueValues.add(Result.__getattribute__(FieldName))
+        self._LogWriter.Println(f"Provided uniqueness function identified a total of [ {len(Values)} ].")
+        return list(sorted(Values))
 
-        Split: typing.Dict[str, DRGQuantificationResultsSet] = {str(x): DRGQuantificationResultsSet() for x in UniqueValues}
+    def Summarize(self: DRGQuantificationResultsSet, OutputDirectory: str) -> None:
+        """
+        Summarize
 
-        for Result in self._Results:
-            Split[str(Result.__getattribute__(FieldName))].Add(Result)
+        This function provides a single entry-point for summarizing an entire
+        set of results from the DRG Neurite Quantification analysis. This is
+        called on an instance of the DRGQuantificationResultsSet class which has
+        been initialized on the full set of results to be included.
 
-        return (len(UniqueValues), [Split[x] for x in sorted(Split.keys())])
+        This function must be implemented by calling dedicated private methods
+        to perform the actual grouping, filtering, and plotting of the results
+        contained. This function must only orchestrate this lower-level
+        plotting, and not perform any data manipulations here to ensure that
+        specific summarization steps can be extracted and run independently if
+        necessary.
+
+        OutputDirectory:
+            The full path to the folder into which the summarized results should
+            be written out to.
+
+        Return (None):
+            This function returns nothing to the caller, the summarized results are generated
+            and written out to the specified folder.
+        """
+
+        if ( OutputDirectory is None ) or ( OutputDirectory == "" ):
+            raise ValueError(f"OutputDirectory must be provided and non-empty.")
+
+        #   One figure we want to generate is a scatter-plot showing how the median lengths vary
+        #   across all of the experimental conditions
+        self._MedianNeuriteLengthOverConditions(os.path.join(OutputDirectory, "Median Neurite Length versus Neurite Density"))
+
+        #   We also want to explore the differences between the 3% and 6% GelMA,
+        #   for each of the 50 and 80 DOF formulations.
+        self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF"), CollapseDates=True)
+        self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF By Date"))
+
+        #   ...
+        self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium"), CollapseDates=True)
+        self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium By Date"))
+
+        #   ...
+
+        return
+
+    ### Private Methods
+    def _MedianNeuriteLengthOverConditions(self: DRGQuantificationResultsSet, OutputDirectory: str) -> None:
+        """
+        _MedianNeuriteLengthOverConditions
+
+        This function...
+
+        OutputDirectory:
+            ...
+
+        Return (None):
+            ...
+        """
+
+        self._LogWriter.Println(f"Preparing scatterplot of neurite lengths versus neurite density across the experimental conditions...")
+
+        #   Split up the results on every permutation of the experimental conditions.
+        Groups: typing.Sequence[DRGQuantificationResultsSet] = self.Split()
+
+        #   Prepare a file for helping to map the markers and colours back to specific experimental conditions
+        if ( not os.path.exists(OutputDirectory) ):
+            self._LogWriter.Println(f"Creating output directory [ {OutputDirectory} ]...")
+            os.makedirs(OutputDirectory, mode=0o755, exist_ok=True)
+
+        with open(os.path.join(OutputDirectory, "Scatterplot Marker Mapping.csv"), "w+") as MapFile:
+            self._LogWriter.Println(f"Preparing file [ {MapFile.name} ] to describe plot markers")
+
+            F: Figure = Utils.PrepareFigure()
+            Ax: Axes = F.add_subplot(111)
+
+            F.suptitle(f"Median Neurite Outgrowth Length by Experimental Condition")
+            Ax.set_title(f"Median Neurite Length versus Neurite Density")
+            Ax.set_xlabel(f"Neurite Density (n.d.)")
+            Ax.set_ylabel(f"Median Neurite Length (µm)")
+
+            Shapes: typing.Sequence[str] = ["o", "v", "^", "<", ">", "1", "2", "3", "4", "s", "*", "x"]
+            Colours: typing.Sequence[typing.Any] = matplotlib.cm.rainbow(np.linspace(0, 1, math.ceil(len(Groups) / len(Shapes))))
+
+            for GroupIndex, (Group, (Shape, Colour)) in enumerate(zip(Groups, itertools.product(Shapes, Colours)), start=1):
+                Ax.scatter([x.NeuriteDensity for x in Group._Results], [x.MedianNeuriteDistance for x in Group._Results], color=Colour, marker=Shape)
+                MapFile.write(f"Group={GroupIndex}, Count={len(Group._Results)}, Marker={Shape}, Colour={Colour}, {Group._Results[0].Describe(Verbose=True)}\n")
+
+        PlotFilename: str = "Median Neurite Length versus Neurite Density.png"
+        Utils.WriteImage(Utils.FigureToImage(F), os.path.join(OutputDirectory, PlotFilename))
+        self._LogWriter.Println(f"Writing figure to file [ {PlotFilename} ]...")
+
+        self._LogWriter.Println(f"Finished scatterplot of neurite lengths versus neurite density across the experimental conditions.")
+
+        return
+
+    def _GelMAPercentageAndDOF(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False) -> None:
+        """
+        _GelMAPercentageAndDOF
+
+        This function...
+
+        OutputDirectory:
+            ...
+
+        Return (None):
+            ...
+        """
+
+        self._LogWriter.Println(f"Preparing boxplots of neurite length as a function of GelMA percentage and degree of functionalization...")
+
+        if ( not os.path.exists(OutputDirectory) ):
+            os.makedirs(OutputDirectory, mode=0o755, exist_ok=True)
+            self._LogWriter.Println(f"Creating output directory [ {OutputDirectory } ]...")
+
+        GelMAResults: DRGQuantificationResultsSet = DRGQuantificationResultsSet([x for x in self._Results if x.BaseGel == BaseGels.BaseGel_GelMA], LogWriter=self._LogWriter)
+        if ( len(GelMAResults) == 0 ):
+            self._LogWriter.Println(f"No results were found where BaseGel=GelMA...")
+            return
+
+        #   Identify the possible values for the GelMA percentage and the Degree of Functionalization of the gel.
+        GelMAPercentages: typing.Sequence[float] = GelMAResults.Unique(lambda x: x.GelMAPercentage)
+        DegreeOfFunctionalizations: typing.Sequence[float] = GelMAResults.Unique(lambda x: x.DegreeOfFunctionalization)
+
+        self._LogWriter.Println(f"Found results for GelMA percentages: [ {GelMAPercentages} ]...")
+        self._LogWriter.Println(f"Found results for degree of functionalizaton: [ {DegreeOfFunctionalizations} ]...")
+
+        #   We need to generate groups which are unique in all parameters *Except* the GelMA percentage and Degree of Functionalization.
+        #   Then, we can split on these last two parameters and get meaningful comparisons across these two experimental variables for
+        #   every other larger set of experimental variables.
+        Template: DRGQuantificationResults = GelMAResults._Results[0].Copy()
+        if ( CollapseDates ):
+            Template.ExperimentDate = None
+        Template.GelMAPercentage = None
+        Template.DegreeOfFunctionalization = None
+        Groups: typing.Sequence[DRGQuantificationResultsSet] = GelMAResults.GroupBy(Template)
+
+        #   For each set of experimental conditions, identify the cases we care about for these figures:
+        for GroupIndex, Group in enumerate(Groups, start=1):
+            self._LogWriter.Println(f"Preparing boxplot for condition [ {GroupIndex}/{len(Groups)} ]...")
+            F: Figure = Utils.PrepareFigure()
+            Ax: Axes = F.add_subplot(111)
+            Example: DRGQuantificationResults = Group._Results[0]
+            AxisTitle: str = "".join([
+                f"{Example.ExperimentDate if not CollapseDates else ''}",
+                f", {Example.DilutionMedia}",
+                f', Phenol Red' if Example.IncludesPhenolRed else '',
+                f', B27' if Example.IncludesB27 else '',
+                f', FBS' if Example.IncludesFetalBovineSerum else '',
+                f', Ru-SPS {Example.RutheniumConcentration}, {Example.SodiumPersulfateConcentration}' if Example.GelMACrosslinker == GelMACrosslinkers.GelMA_RuSPS else f', Riboflavin {Example.RiboflavinConcentration}',
+                f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
+                f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
+                f', Glutathione {Example.GlutathioneConcentration}' if Example.GlutathioneConcentration else '',
+                f', GDNF {Example.GDNFConcentration}' if Example.GDNF else '',
+                f', BDNF {Example.BDNFConcentration}' if Example.BDNF else '',
+                f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
+            ]).strip(", ")
+
+            with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
+                for Index, (GelMAPercentage, DegreeOfFunctionalization) in enumerate(itertools.product(GelMAPercentages, DegreeOfFunctionalizations)):
+
+                    Condition: DRGQuantificationResultsSet = DRGQuantificationResultsSet([
+                        x for x in Group if \
+                            x.GelMAPercentage == GelMAPercentage and \
+                            x.DegreeOfFunctionalization == DegreeOfFunctionalization
+                        ])
+                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition]
+                    Ax.boxplot(Distances, sym='', positions=[Index], labels=[f"{GelMAPercentage}% GelMA\n{DegreeOfFunctionalization} DOF\nn={len(Condition)}"])
+
+                    Ax.scatter(np.random.normal(Index, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
+
+                    DataFile.write(f"{GelMAPercentage}% GelMA - {DegreeOfFunctionalization} DOF")
+                    DataFile.write(''.join([f",{x}" for x in Distances]))
+                    DataFile.write("\n")
+
+            F.suptitle(f"Median DRG Neurite Length versus GelMA Concentration and Degree of Functionalization")
+            Ax.set_title(AxisTitle)
+            Ax.minorticks_on()
+            Ax.set_ylim(bottom=0.0)
+            Ax.set_ylabel(f"Median Neurite Length (µm)")
+            Ax.set_xlabel(f"GelMA Percentage & Degree of Functionalization")
+            self._LogWriter.Println(f"Created boxplot for condition [ {GroupIndex}/{len(Groups)} ].")
+
+            # Utils.DisplayFigure(AxisTitle, F, 1, True, True)
+
+            Utils.WriteImage(Utils.FigureToImage(F), os.path.join(OutputDirectory, f"{AxisTitle}.png"))
+            self._LogWriter.Println(f"Saved figure to file [ {AxisTitle}.png ]...")
+            F.clear()
+
+        self._LogWriter.Println(f"Finished creating boxplots of neurite length as a function of GelMA percentage and degree of functionalization.")
+
+        return
+
+    def _GelMAPercentageAndDOFByDilutionMedia(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False) -> None:
+        """
+        _GelMAPercentageAndDOFByDilutionMedia
+
+        This function...
+
+        OutputDirectory:
+            ...
+        CollapseDates:
+            ...
+
+        Return (None):
+            ...
+        """
+
+        self._LogWriter.Println(f"Preparing boxplots of neurite length as a function of GelMA percentage, degree of functionalization, and dilution media...")
+
+        if ( not os.path.exists(OutputDirectory) ):
+            os.makedirs(OutputDirectory, mode=0o755, exist_ok=True)
+            self._LogWriter.Println(f"Creating output directory [ {OutputDirectory } ]...")
+
+        GelMAResults: DRGQuantificationResultsSet = DRGQuantificationResultsSet([x for x in self._Results if x.BaseGel == BaseGels.BaseGel_GelMA], LogWriter=self._LogWriter)
+        if ( len(GelMAResults) == 0 ):
+            self._LogWriter.Println(f"No results were found where BaseGel=GelMA...")
+            return
+
+        #   Identify the possible values for the GelMA percentage and the Degree of Functionalization of the gel.
+        GelMAPercentages: typing.Sequence[float] = GelMAResults.Unique(lambda x: x.GelMAPercentage)
+        DegreeOfFunctionalizations: typing.Sequence[float] = GelMAResults.Unique(lambda x: x.DegreeOfFunctionalization)
+        DilutionMedia: typing.Sequence[str] = GelMAResults.Unique(lambda x: x.DilutionMedia)
+
+        self._LogWriter.Println(f"Found results for GelMA percentages: [ {GelMAPercentages} ]...")
+        self._LogWriter.Println(f"Found results for degree of functionalizaton: [ {DegreeOfFunctionalizations} ]...")
+        self._LogWriter.Println(f"Found results for dilution media: [ {DilutionMedia} ]...")
+
+        #   We need to generate groups which are unique in all parameters *Except* the GelMA percentage and Degree of Functionalization.
+        #   Then, we can split on these last two parameters and get meaningful comparisons across these two experimental variables for
+        #   every other larger set of experimental variables.
+        Template: DRGQuantificationResults = GelMAResults._Results[0].Copy()
+        if ( CollapseDates ):
+            Template.ExperimentDate = None
+        Template.GelMAPercentage = None
+        Template.DegreeOfFunctionalization = None
+        Template.DilutionMedia = None
+        Groups: typing.Sequence[DRGQuantificationResultsSet] = GelMAResults.GroupBy(Template)
+
+        #   For each set of experimental conditions, identify the 4 cases we care about for these figures:
+        for GroupIndex, Group in enumerate(Groups, start=1):
+            self._LogWriter.Println(f"Preparing boxplot for condition [ {GroupIndex}/{len(Groups)} ]...")
+            F: Figure = Utils.PrepareFigure()
+            Ax: Axes = F.add_subplot(111)
+            Example: DRGQuantificationResults = Group._Results[0]
+            AxisTitle: str = "".join([
+                f"{Example.ExperimentDate if not CollapseDates else ''}",
+                f', Phenol Red' if Example.IncludesPhenolRed else '',
+                f', B27' if Example.IncludesB27 else '',
+                f', FBS' if Example.IncludesFetalBovineSerum else '',
+                f', Ru-SPS {Example.RutheniumConcentration}, {Example.SodiumPersulfateConcentration}' if Example.GelMACrosslinker == GelMACrosslinkers.GelMA_RuSPS else f', Riboflavin {Example.RiboflavinConcentration}',
+                f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
+                f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
+                f', Glutathione {Example.GlutathioneConcentration}' if Example.GlutathioneConcentration else '',
+                f', GDNF {Example.GDNFConcentration}' if Example.GDNF else '',
+                f', BDNF {Example.BDNFConcentration}' if Example.BDNF else '',
+                f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
+            ]).strip(", ")
+
+            with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
+                for Index, (DilutionMedium, GelMAPercentage, DegreeOfFunctionalization) in enumerate(itertools.product(DilutionMedia, GelMAPercentages, DegreeOfFunctionalizations)):
+
+                    Condition: DRGQuantificationResultsSet = DRGQuantificationResultsSet([
+                        x for x in Group if \
+                            x.GelMAPercentage == GelMAPercentage and \
+                            x.DegreeOfFunctionalization == DegreeOfFunctionalization and \
+                            x.DilutionMedia == DilutionMedium
+                        ])
+                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition]
+                    Ax.boxplot(Distances, sym='', positions=[Index], labels=[f"{DilutionMedium}\n{GelMAPercentage}% GelMA\n{DegreeOfFunctionalization} DOF\nn={len(Condition)}"])
+
+                    Ax.scatter(np.random.normal(Index, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
+
+                    DataFile.write(f"{DilutionMedium} - {GelMAPercentage}% GelMA - {DegreeOfFunctionalization} DOF")
+                    DataFile.write(''.join([f",{x}" for x in Distances]))
+                    DataFile.write("\n")
+
+            F.suptitle(f"Median DRG Neurite Length versus GelMA Concentration, Degree of Functionalization, and Dilution Medium")
+            Ax.set_title(AxisTitle)
+            Ax.minorticks_on()
+            Ax.set_ylim(bottom=0.0)
+            Ax.set_ylabel(f"Median Neurite Length (µm)")
+            Ax.set_xlabel(f"Dilution Medium, GelMA Percentage, Degree of Functionalization")
+            self._LogWriter.Println(f"Created boxplot for condition [ {GroupIndex}/{len(Groups)} ].")
+
+            # Utils.DisplayFigure(AxisTitle, F, 1, True, True)
+
+            Utils.WriteImage(Utils.FigureToImage(F), os.path.join(OutputDirectory, f"{AxisTitle}.png"))
+            self._LogWriter.Println(f"Saved figure to file [ {AxisTitle}.png ]...")
+            F.clear()
+
+        self._LogWriter.Println(f"Finished creating boxplots of neurite length as a function of GelMA percentage, degree of functionalization, and dilution medium.")
+
+        return
