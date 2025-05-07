@@ -243,21 +243,23 @@ class BaseGels():
 
     BaseGel_GelMA: str = "GelMA"
 
-    BaseGel_H6: str = "?H6?"
-    BaseGel_H7: str = "?H7?"
-    BaseGel_H8: str = "?H8?"
+    BaseGel_H1: str = "H1"
+    BaseGel_H2: str = "H2"
+    BaseGel_H3: str = "H3"
+    BaseGel_H4: str = "H4"
+    BaseGel_H5: str = "H5"
+    BaseGel_H6: str = "H6"
+    BaseGel_H7: str = "H7"
+    BaseGel_H8: str = "H8"
+    BaseGel_H13: str = "H13"
+    BaseGel_H15: str = "H15"
 
-    BaseGel_PH15: str = "?PH15?"
-    BaseGel_PH16: str = "?PH16?"
-    BaseGel_PH18: str = "?PH18?"
-    BaseGel_PH19: str = "?PH19?"
+    BaseGel_HG1: str = "HG1"
 
-class GelMACrosslinkers():
-    GelMA_RuSPS: str = "RuSPS"
-    GelMA_Riboflavin: str = "Riboflavin"
-
-class NasrinCrosslinker():
-    NasrinGel_A: str = "??"
+    BaseGel_PH15: str = "PH15"
+    BaseGel_PH16: str = "PH16"
+    BaseGel_PH18: str = "PH18"
+    BaseGel_PH19: str = "PH19"
 
 class DRGExperimentalCondition():
     """
@@ -416,72 +418,6 @@ class DRGExperimentalCondition():
 
         return self
 
-    def FormatBaseGel(self: DRGExperimentalCondition) -> str:
-        """
-        FormatBaseGel
-
-        This function...
-
-        Return (str):
-            ...
-        """
-
-        match self.BaseGel:
-            case BaseGels.BaseGel_Ultimatrix:
-                return BaseGels.BaseGel_Ultimatrix
-            case BaseGels.BaseGel_GelMA:
-                return BaseGels.BaseGel_GelMA
-            case BaseGels.BaseGel_H6:
-                return BaseGels.BaseGel_H6
-            case BaseGels.BaseGel_H7:
-                return BaseGels.BaseGel_H7
-            case BaseGels.BaseGel_H8:
-                return BaseGels.BaseGel_H8
-            case BaseGels.BaseGel_PH15:
-                return BaseGels.BaseGel_PH15
-            case BaseGels.BaseGel_PH16:
-                return BaseGels.BaseGel_PH16
-            case BaseGels.BaseGel_PH18:
-                return BaseGels.BaseGel_PH18
-            case BaseGels.BaseGel_PH19:
-                return BaseGels.BaseGel_PH19
-            case _:
-                return f"Unknown - {self.BaseGel}"
-
-    def FormatGelMACrosslinker(self: DRGExperimentalCondition) -> str:
-        """
-        FormatGelMACrosslinker
-
-        This function...
-
-        Return (str):
-            ...
-        """
-
-        match self.Crosslinker:
-            case GelMACrosslinkers.GelMA_RuSPS:
-                return GelMACrosslinkers.GelMA_RuSPS
-            case GelMACrosslinkers.GelMA_Riboflavin:
-                return GelMACrosslinkers.GelMA_Riboflavin
-            case _:
-                return f"Unknown - {self.Crosslinker}"
-
-    def FormatNasrinsCrosslinkers(self: DRGExperimentalCondition) -> str:
-        """
-        FormatNasrinsCrosslinkers
-
-        This function...
-
-        Return (str):
-            ...
-        """
-
-        match self.Polymer:
-            case NasrinCrosslinker.NasrinGel_A:
-                return NasrinCrosslinker.NasrinGel_A
-            case _:
-                return f"Unknown - {self.Polymer}"
-
     def SetFolderBase(self: DRGExperimentalCondition, Folder: str) -> DRGExperimentalCondition:
         """
         SetFolderBase
@@ -570,7 +506,6 @@ class DRGQuantificationResults():
     ##  ONLY APPLICABLE FOR GelMA
     GelMAPercentage: float                  #   Value on the range [0, 100]
     DegreeOfFunctionalization: float        #   Value on the range [0, 100]
-    GelMACrosslinker: str                   #   Either RuSPS or Riboflavin
     RutheniumConcentration: float           #   Value in units of mM
     SodiumPersulfateConcentration: float    #   Value in units of mM
     RiboflavinConcentration: float          #   Value in units of ??
@@ -634,7 +569,6 @@ class DRGQuantificationResults():
 
         self.GelMAPercentage                = -1.0
         self.DegreeOfFunctionalization      = -1.0
-        self.GelMACrosslinker               = "N/A"
         self.RutheniumConcentration         = -1.0
         self.SodiumPersulfateConcentration  = -1.0
         self.RiboflavinConcentration        = -1.0
@@ -683,7 +617,6 @@ class DRGQuantificationResults():
         yield self.IncludesFetalBovineSerum
         yield self.GelMAPercentage
         yield self.DegreeOfFunctionalization
-        yield self.GelMACrosslinker
         yield self.RutheniumConcentration
         yield self.SodiumPersulfateConcentration
         yield self.RiboflavinConcentration
@@ -716,7 +649,6 @@ class DRGQuantificationResults():
             self.IncludesFetalBovineSerum       == Other.IncludesFetalBovineSerum       and \
             self.GelMAPercentage                == Other.GelMAPercentage                and \
             self.DegreeOfFunctionalization      == Other.DegreeOfFunctionalization      and \
-            self.GelMACrosslinker               == Other.GelMACrosslinker               and \
             self.RutheniumConcentration         == Other.RutheniumConcentration         and \
             self.SodiumPersulfateConcentration  == Other.SodiumPersulfateConcentration  and \
             self.RiboflavinConcentration        == Other.RiboflavinConcentration        and \
@@ -769,14 +701,9 @@ class DRGQuantificationResults():
         if ( Result.BaseGel == BaseGels.BaseGel_GelMA ):
             Result.GelMAPercentage                = random.choice([3, 6])
             Result.DegreeOfFunctionalization      = random.choice([50, 80])
-            Result.GelMACrosslinker               = random.choice([GelMACrosslinkers.GelMA_RuSPS, GelMACrosslinkers.GelMA_Riboflavin])
-            if ( Result.GelMACrosslinker == GelMACrosslinkers.GelMA_RuSPS ):
-                Result.RutheniumConcentration         = 0.2
-                Result.SodiumPersulfateConcentration  = 0.02
-            elif ( Result.GelMACrosslinker == GelMACrosslinkers.GelMA_Riboflavin ):
-                Result.RiboflavinConcentration        = 1
-            else:
-                pass
+            Result.RutheniumConcentration         = 0.2
+            Result.SodiumPersulfateConcentration  = 0.02
+            Result.RiboflavinConcentration        = 1
             Result.GelIlluminationDuration        = 50
 
         Result.CrosslinkingPolymer            = "N/A"
@@ -836,7 +763,6 @@ class DRGQuantificationResults():
         New.IncludesFetalBovineSerum = self.IncludesFetalBovineSerum
         New.GelMAPercentage = self.GelMAPercentage
         New.DegreeOfFunctionalization = self.DegreeOfFunctionalization
-        New.GelMACrosslinker = self.GelMACrosslinker
         New.RutheniumConcentration = self.RutheniumConcentration
         New.SodiumPersulfateConcentration = self.SodiumPersulfateConcentration
         New.RiboflavinConcentration = self.RiboflavinConcentration
@@ -897,7 +823,6 @@ class DRGQuantificationResults():
             f"{self.IncludesFetalBovineSerum=}",
             f"{self.GelMAPercentage=}",
             f"{self.DegreeOfFunctionalization=}",
-            f"{self.GelMACrosslinker=}",
             f"{self.RutheniumConcentration=}",
             f"{self.SodiumPersulfateConcentration=}",
             f"{self.RiboflavinConcentration=}",
@@ -999,7 +924,7 @@ class DRGQuantificationResults():
         self.ExperimentDate = ExperimentDetails.ExperimentDate.strftime(f"%Y-%m-%d")
         self.CultureDuration = ExperimentDetails.CultureDuration
         self.SampleIndex = ExperimentDetails.SampleIndex
-        self.BaseGel = ExperimentDetails.FormatBaseGel()
+        self.BaseGel = ExperimentDetails.BaseGel
         self.DilutionMedia = ExperimentDetails.DilutionMedia
         self.IncludesPhenolRed = ExperimentDetails.IncludesPhenolRed
         self.IncludesB27 = ExperimentDetails.B27Inclusion
@@ -1008,7 +933,6 @@ class DRGQuantificationResults():
         if ( self.BaseGel == BaseGels.BaseGel_GelMA ):
             self.GelMAPercentage = ExperimentDetails.GelMAPercentage
             self.DegreeOfFunctionalization = ExperimentDetails.DegreeOfFunctionalization
-            self.GelMACrosslinker = ExperimentDetails.FormatGelMACrosslinker()
             self.RutheniumConcentration = ExperimentDetails.RutheniumConcentration
             self.SodiumPersulfateConcentration = ExperimentDetails.SodiumPersulfateConcentration
             self.RiboflavinConcentration = ExperimentDetails.RiboflavinConcentration
@@ -1018,7 +942,7 @@ class DRGQuantificationResults():
             self.SodiumPersulfateConcentration = ExperimentDetails.SodiumPersulfateConcentration
             self.GelIlluminationDuration = ExperimentDetails.GelIlluminationTime
         else:
-            self.CrosslinkingPolymer = ExperimentDetails.FormatNasrinsCrosslinkers()
+            self.CrosslinkingPolymer = ExperimentDetails.Crosslinker
             self.Peptide = ExperimentDetails.Peptide
             self.PeptideIn = ExperimentDetails.PeptideIn
             self.PeptideConcentration = ExperimentDetails.PeptideConcentration
@@ -1444,7 +1368,7 @@ class DRGQuantificationResultsSet():
                 f', Phenol Red' if Example.IncludesPhenolRed else '',
                 f', B27' if Example.IncludesB27 else '',
                 f', FBS' if Example.IncludesFetalBovineSerum else '',
-                f', Ru-SPS {Example.RutheniumConcentration}, {Example.SodiumPersulfateConcentration}' if Example.GelMACrosslinker == GelMACrosslinkers.GelMA_RuSPS else f', Riboflavin {Example.RiboflavinConcentration}',
+                f', Ru-SPS {Example.RutheniumConcentration}, {Example.SodiumPersulfateConcentration}' if Example.RutheniumConcentration != 0 and Example.SodiumPersulfateConcentration != 0 else f', Riboflavin {Example.RiboflavinConcentration}',
                 f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
                 f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
                 f', Glutathione {Example.GlutathioneConcentration}' if Example.GlutathioneConcentration else '',
@@ -1545,7 +1469,7 @@ class DRGQuantificationResultsSet():
                 f', Phenol Red' if Example.IncludesPhenolRed else '',
                 f', B27' if Example.IncludesB27 else '',
                 f', FBS' if Example.IncludesFetalBovineSerum else '',
-                f', Ru-SPS {Example.RutheniumConcentration}, {Example.SodiumPersulfateConcentration}' if Example.GelMACrosslinker == GelMACrosslinkers.GelMA_RuSPS else f', Riboflavin {Example.RiboflavinConcentration}',
+                f', Ru-SPS {Example.RutheniumConcentration}, {Example.SodiumPersulfateConcentration}' if Example.RutheniumConcentration != 0 and Example.SodiumPersulfateConcentration != 0 else f', Riboflavin {Example.RiboflavinConcentration}',
                 f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
                 f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
                 f', Glutathione {Example.GlutathioneConcentration}' if Example.GlutathioneConcentration else '',
