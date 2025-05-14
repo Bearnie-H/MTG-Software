@@ -190,25 +190,25 @@ def TryParseString(Input: str) -> str | None:
 
     return Input
 
-class DRGAnalysis_StatusCode():
-    StatusSuccess:          int = 1 << 0
-    StatusNotYetProcessed:  int = 1 << 1
-    StatusValidationFailed: int = 1 << 2
-    StatusNoLIFFile:        int = 1 << 3
-    NoBrightFieldImage:     int = 1 << 4
-    NoFluorescentImage:     int = 1 << 5
-    StatusPreviewAccepted:  int = 1 << 6
-    StatusPreviewRejected:  int = 1 << 7
-    StatusBodyMaskFailed:   int = 1 << 8
-    StatusWellMaskFailed:   int = 1 << 9
-    StatusNoNeurites:       int = 1 << 10
-    StatusUnknownException: int = 1 << 11
-    StatusIntentionalAbort: int = 1 << 12
-    StatusSkipped:          int = 1 << 13
+class DRGAnalysis_StatusCode(int):
+    StatusSuccess:          DRGAnalysis_StatusCode = 1 << 0
+    StatusNotYetProcessed:  DRGAnalysis_StatusCode = 1 << 1
+    StatusValidationFailed: DRGAnalysis_StatusCode = 1 << 2
+    StatusNoLIFFile:        DRGAnalysis_StatusCode = 1 << 3
+    NoBrightFieldImage:     DRGAnalysis_StatusCode = 1 << 4
+    NoFluorescentImage:     DRGAnalysis_StatusCode = 1 << 5
+    StatusPreviewAccepted:  DRGAnalysis_StatusCode = 1 << 6
+    StatusPreviewRejected:  DRGAnalysis_StatusCode = 1 << 7
+    StatusBodyMaskFailed:   DRGAnalysis_StatusCode = 1 << 8
+    StatusWellMaskFailed:   DRGAnalysis_StatusCode = 1 << 9
+    StatusNoNeurites:       DRGAnalysis_StatusCode = 1 << 10
+    StatusUnknownException: DRGAnalysis_StatusCode = 1 << 11
+    StatusIntentionalAbort: DRGAnalysis_StatusCode = 1 << 12
+    StatusSkipped:          DRGAnalysis_StatusCode = 1 << 13
 
     def __str__(self: DRGAnalysis_StatusCode) -> str:
 
-        StatusCodeMapping: typing.Dict[int, str] = {
+        StatusCodeMapping: typing.OrderedDict[DRGAnalysis_StatusCode, str] = {
             DRGAnalysis_StatusCode.StatusSuccess:              "Success.",
             DRGAnalysis_StatusCode.StatusNotYetProcessed:      "Not Yet Processed.",
             DRGAnalysis_StatusCode.StatusValidationFailed:     "Parameter Validation Failure.",
@@ -226,8 +226,8 @@ class DRGAnalysis_StatusCode():
         }
 
         Output: str = ""
-        for Code in sorted(StatusCodeMapping.keys()):
-            if (( Code & int(self) ) != 0 ):
+        for Code in StatusCodeMapping.keys():
+            if (( Code & self ) != 0 ):
                 if ( Output == "" ):
                     Output = StatusCodeMapping[Code]
                 else:
@@ -350,6 +350,7 @@ class DRGExperimentalCondition():
         #   ...
 
         self.SkipProcessing = False
+        self.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusNotYetProcessed)
 
         return
 
@@ -546,7 +547,7 @@ class DRGQuantificationResults():
     #   ...
 
     ### Magic Methods
-    def __init__(self: DRGQuantificationResults) -> None:
+    def __init__(self: DRGQuantificationResults, **kwargs) -> None:
         """
         Constructor
 
@@ -1012,7 +1013,13 @@ class DRGQuantificationResults():
             ...
         """
 
-        return jsonpickle.decode(JSONData, keys=True, classes=DRGQuantificationResults, on_missing='ignore')
+        Decoded = jsonpickle.decode(JSONData, keys=True, classes=DRGQuantificationResults, on_missing='ignore')
+        Results: DRGQuantificationResults = DRGQuantificationResults()
+
+        for Key in Decoded:
+            Results.__setattr__(Key, Decoded[Key])
+
+        return Results
 
     @staticmethod
     def FromJSONFile(Filename: str) -> DRGQuantificationResults:
@@ -1033,7 +1040,6 @@ class DRGQuantificationResults():
             Contents = InFile.read()
 
         return DRGQuantificationResults.FromJSON(Contents)
-
 
 class DRGQuantificationResultsSet():
     """
@@ -1090,11 +1096,26 @@ class DRGQuantificationResultsSet():
             ...
         """
 
-        Results: typing.List[DRGQuantificationResults] = []
-        for File in glob.glob(f"{Directory}/*.json"):
-            Results.append(DRGQuantificationResults.FromJSONFile(File))
+        return DRGQuantificationResultsSet().ReadDirectory(Directory)
 
-        return DRGQuantificationResultsSet(Results)
+    def ReadDirectory(self: DRGQuantificationResultsSet, Directory: str) -> DRGQuantificationResultsSet:
+        """
+        ReadDirectory
+
+        This function...
+
+        Directory:
+            ...
+
+        Return (self):
+            ...
+        """
+
+        for File in glob.glob(f"{Directory}/*.json"):
+            self._LogWriter.Println(f"Reading JSON data from file [ {File} ]...")
+            self.Add(DRGQuantificationResults.FromJSONFile(File))
+
+        return self
 
     def SetLogger(self: DRGQuantificationResultsSet, LogWriter: Logger.Logger) -> DRGQuantificationResultsSet:
         """
@@ -1143,7 +1164,7 @@ class DRGQuantificationResultsSet():
         Groups: typing.Dict[int, DRGQuantificationResultsSet] = {}
 
         for Index, Result in enumerate(self):
-            if ( hash(Result) not in Groups.keys() ):
+            if ( hash(Result) not in list(Groups.keys()) ):
                 Groups[hash(Result)] = DRGQuantificationResultsSet([Result], self._LogWriter)
                 self._LogWriter.Println(f"Created group [ {len(Groups)} ] ({Index}/{len(self._Results)})")
             else:
@@ -1213,7 +1234,10 @@ class DRGQuantificationResultsSet():
         Values: typing.Set[typing.Any] = set()
 
         for Result in self:
-            Values.add(GetParameter(Result))
+
+            Parameter = GetParameter(Result)
+            if ( Parameter is not None ):
+                Values.add(GetParameter(Result))
 
         self._LogWriter.Println(f"Provided uniqueness function identified a total of [ {len(Values)} ] unique value(s).")
         return list(sorted(Values))
@@ -1339,7 +1363,12 @@ class DRGQuantificationResultsSet():
             os.makedirs(OutputDirectory, mode=0o755, exist_ok=True)
             self._LogWriter.Println(f"Creating output directory [ {OutputDirectory } ]...")
 
-        GelMAResults: DRGQuantificationResultsSet = DRGQuantificationResultsSet([x for x in self._Results if x.BaseGel == BaseGels.BaseGel_GelMA], LogWriter=self._LogWriter)
+        GelMAResults: DRGQuantificationResultsSet = DRGQuantificationResultsSet([
+            x for x in self._Results if \
+                x.BaseGel == BaseGels.BaseGel_GelMA
+            ],
+            LogWriter=self._LogWriter
+        )
         if ( len(GelMAResults) == 0 ):
             self._LogWriter.Println(f"No results were found where BaseGel=GelMA...")
             return
@@ -1380,7 +1409,7 @@ class DRGQuantificationResultsSet():
                 f', GDNF {Example.GDNFConcentration}' if Example.GDNF else '',
                 f', BDNF {Example.BDNFConcentration}' if Example.BDNF else '',
                 f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
-            ]).strip(", ")
+            ]).strip(", ").replace("/", "-")
 
             with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
                 for Index, (GelMAPercentage, DegreeOfFunctionalization) in enumerate(itertools.product(GelMAPercentages, DegreeOfFunctionalizations)):
@@ -1482,7 +1511,7 @@ class DRGQuantificationResultsSet():
                 f', GDNF {Example.GDNFConcentration}' if Example.GDNF else '',
                 f', BDNF {Example.BDNFConcentration}' if Example.BDNF else '',
                 f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
-            ]).strip(", ")
+            ]).strip(", ").replace("/", "-")
 
             with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
                 for Index, (DilutionMedium, GelMAPercentage, DegreeOfFunctionalization) in enumerate(itertools.product(DilutionMedia, GelMAPercentages, DegreeOfFunctionalizations)):
@@ -1584,7 +1613,7 @@ class DRGQuantificationResultsSet():
                 f', GDNF {Example.GDNFConcentration}' if Example.GDNF else '',
                 f', BDNF {Example.BDNFConcentration}' if Example.BDNF else '',
                 f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
-            ]).strip(", ")
+            ]).strip(", ").replace("/", "-")
 
             with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
                 for Index, (IlluminationDuration, (SPSConcentration, RutheniumConcentration)) in enumerate(itertools.product(IlluminationDurations, zip(SodiumPerSulfateConcentrations, RutheniumConcentrations))):

@@ -40,14 +40,15 @@ def main() -> None:
     if ( DestinationDirectory is None ) or ( DestinationDirectory == "" ):
         DestinationDirectory = os.path.join(os.getcwd(), "DRG Quantification Summary")
 
-    Results: DRGQuantificationResultsSet = None
+    Results: DRGQuantificationResultsSet = DRGQuantificationResultsSet(LogWriter=Logger.Logger())
     if ( SourceDirectory is not None ):
-        Results = DRGQuantificationResultsSet.FromDirectory(SourceDirectory)
+        Results = Results.ReadDirectory(SourceDirectory)
+        # for Result in Results:
+        #     Result.MedianNeuriteDistance = float(list(Result.MedianNeuriteDistance.values())[0][0])
     else:
         RandomResultCount: int = 10000
-        Results = DRGQuantificationResultsSet([DRGQuantificationResults.GenerateRandom() for n in range(RandomResultCount)])
+        [Results.Add(DRGQuantificationResults.GenerateRandom()) for n in range(RandomResultCount)]
 
-    Results.SetLogger(Logger.Logger())
     Results.Summarize(OutputDirectory=DestinationDirectory)
 
     return

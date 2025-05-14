@@ -497,6 +497,7 @@ def main() -> int:
             return MasksStatus
         LogWriter.Println(f"Alternative mask generation algorithms succeeded.")
 
+    LogWriter.Println(f"Starting to process fluorescent image...")
     for Index, Layer in enumerate(Config.FluorescentImage.Layers()):
         LogWriter.Println(f"Processing Layer [ {Index+1}/{len(Config.FluorescentImage.Layers())} ]")
 
@@ -518,6 +519,8 @@ def main() -> int:
         Config.DistinctOrientations = 90
         DistinctOrientations = Config.DistinctOrientations
         QuantificationStacks.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer.copy(), Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
+
+    LogWriter.Println(f"Finished processing fluorescent image.")
 
     QuantificationStacks.MaximumNeuriteDistance = int(round(max([np.max(x) if len(x) > 0 else 0 for x in QuantificationStacks.NeuriteDistances])))
     GenerateNeuriteLengthVisualization(QuantificationStacks.OriginalFluorescent, QuantificationStacks.ManuallySelectedFluorescent, QuantificationStacks.NeuriteDistances, CentroidLocation)
@@ -1544,16 +1547,16 @@ def PrepareResults(Results: DRGQuantificationResults) -> DRGQuantificationResult
 
     #   For each layer of the fluorescent stack, compute the count of neurite pixels at each integer distance from the DRG centroid.
     Results.NeuriteDistancesByLayer = {
-        f"{LayerIndex}": (np.histogram(Z, bins=QuantificationStacks.MaximumNeuriteDistance)[0]).tolist() for LayerIndex, Z in enumerate(QuantificationStacks.NeuriteDistances, start=1)
+        f"{LayerIndex}": (np.histogram(Z, bins=QuantificationStacks.MaximumNeuriteDistance)[0]).tolist() if len(Z) > 0 else [] for LayerIndex, Z in enumerate(QuantificationStacks.NeuriteDistances, start=1)
     }
 
     #   For each layer of the fluorescent stack, compute the median distance of the neurite pixels from the DRG centroid.
     Results.MedianNeuriteDistancesByLayer = {
-        f"{LayerIndex}": int(np.median(Z)) for LayerIndex, Z in enumerate(QuantificationStacks.NeuriteDistances, start=1)
+        f"{LayerIndex}": int(np.median(Z)) if len(Z) > 0 else 0 for LayerIndex, Z in enumerate(QuantificationStacks.NeuriteDistances, start=1)
     }
 
     #   Collapse all of the neurite distance values, and compute the median distance across the entire 3D volume.
-    Results.MedianNeuriteDistance = np.median(np.array(list(itertools.chain.from_iterable(QuantificationStacks.NeuriteDistances))))
+    Results.MedianNeuriteDistance = float(np.median(np.array(list(itertools.chain.from_iterable(QuantificationStacks.NeuriteDistances)))))
 
     #   Compute the fraction of the possible growth area actually occupied by neurites within each layer of the fluorescent stack.
     Results.NeuriteDensityByLayer = {
@@ -1568,12 +1571,12 @@ def PrepareResults(Results: DRGQuantificationResults) -> DRGQuantificationResult
 
     #   Report the count of neurite pixels with each of the possible orientations, for each layer of the fluorescent stack.
     Results.NeuriteOrientationsByLayer = {
-        f"{LayerIndex}": (np.histogram(Z, bins=Config.DistinctOrientations)[0]).tolist() for LayerIndex, Z in enumerate(QuantificationStacks.NeuriteOrientations, start=1)
+        f"{LayerIndex}": (np.histogram(Z, bins=Config.DistinctOrientations)[0]).tolist() if len(Z) > 0 else [] for LayerIndex, Z in enumerate(QuantificationStacks.NeuriteOrientations, start=1)
     }
 
     #   Report additionally the count of pixels, mean orientation, angular standard deviation, and "alignment fraction" values for each layer.
     Results.OrientationMetricsByLayer = {
-        f"{LayerIndex}": tuple(ComputeAlignmentMetric(Z)[:-1]) for LayerIndex, Z in enumerate(QuantificationStacks.NeuriteOrientations, start=1)
+        f"{LayerIndex}": tuple(ComputeAlignmentMetric(Z)[:-1]) for LayerIndex, Z in enumerate(QuantificationStacks.NeuriteOrientations, start=1) if len(Z) > 0
     }
 
     #   Report the same four metrics as above, but for the total set of neurite orientations as identified from the full stack.

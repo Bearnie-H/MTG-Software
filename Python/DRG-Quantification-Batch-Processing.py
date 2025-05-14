@@ -103,10 +103,10 @@ def ParseSpreadsheet(FilePath: str, FolderBase: str) -> typing.Sequence[DRGExper
             Condition: DRGExperimentalCondition = DRGExperimentalCondition().ExtractFields(Row.strip().split(",")).SetFolderBase(FolderBase)
             if ( Condition.Validate() ):
                 LogWriter.Println(f"Successufully validated row [ {RowIndex} ].")
-                Condition.AnalysisStatus = DRGAnalysis_StatusCode.StatusNotYetProcessed
+                Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusNotYetProcessed)
             else:
                 LogWriter.Errorln(f"Failed to validate row [ {RowIndex} ]!")
-                Condition.AnalysisStatus = DRGAnalysis_StatusCode.StatusValidationFailed
+                Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusValidationFailed)
 
             ExperimentalConditions.append(Condition)
 
@@ -148,13 +148,16 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
                     LogWriter.Println(f"Preview accepted for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
                 else:
                     LogWriter.Errorln(f"Preview rejected for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] - [ {str(Condition.AnalysisStatus)} ({int(Condition.AnalysisStatus)})].")
-                    Condition.AnalysisStatus |= DRGAnalysis_StatusCode.StatusPreviewRejected
+                    Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusPreviewRejected)
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
-                Condition.AnalysisStatus |= DRGAnalysis_StatusCode.StatusUnknownException
+                Condition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusUnknownException)
 
         if ( Condition.SkipProcessing ):
-            Condition.AnalysisStatus = DRGAnalysis_StatusCode.StatusSkipped
+            LogWriter.Println(f"Skipping analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
+            Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusSkipped)
+        else:
+            LogWriter.Println(f"Analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] already failed validation...")
 
         StatusReport.write(f"{Condition.LIFFilePath},{str(Condition.AnalysisStatus)},{int(Condition.AnalysisStatus)}\n")
         StatusReport.flush()
@@ -198,17 +201,21 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
                 DRG_Neurite_Quantification.Results.ExtractExperimentalDetails(Condition)
                 DRG_Neurite_Quantification.Results.SourceHash = Utils.Sha256Sum(Condition.LIFFilePath)
 
-                Condition.AnalysisStatus = DRG_Neurite_Quantification.main()
+                Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRG_Neurite_Quantification.main())
                 if ( Condition.AnalysisStatus == DRGAnalysis_StatusCode.StatusSuccess ):
                     LogWriter.Println(f"Successfully finished analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
                 else:
                     LogWriter.Errorln(f"Analysis failed for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] - [ {str(Condition.AnalysisStatus)} ({int(Condition.AnalysisStatus)})].")
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
-                Condition.AnalysisStatus |= DRGAnalysis_StatusCode.StatusUnknownException
+                Condition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusUnknownException)
 
         if ( Condition.SkipProcessing ):
-            Condition.AnalysisStatus = DRGAnalysis_StatusCode.StatusSkipped
+            Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusSkipped)
+            LogWriter.Println(f"Skipping analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
+        else:
+            LogWriter.Println(f"Analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] already failed validation or manual preview...")
+
 
         StatusReport.write(f"{Condition.LIFFilePath},{str(Condition.AnalysisStatus)},{int(Condition.AnalysisStatus)}\n")
         StatusReport.flush()
