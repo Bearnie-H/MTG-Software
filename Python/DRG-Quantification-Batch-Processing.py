@@ -152,6 +152,7 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
                 Condition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusUnknownException)
+                Condition.AnalysisStatus &= ~DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusNotYetProcessed)
 
         if ( Condition.SkipProcessing ):
             LogWriter.Println(f"Skipping analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
@@ -209,13 +210,14 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
                 Condition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusUnknownException)
+                Condition.AnalysisStatus &= ~DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusNotYetProcessed)
 
         if ( Condition.SkipProcessing ):
             Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusSkipped)
             LogWriter.Println(f"Skipping analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
+            MTG_Common.DRG_Quantification.DRGQuantificationResults().ExtractExperimentalDetails(Condition).Save(JSONDirectory)
         else:
             LogWriter.Println(f"Analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] already failed validation or manual preview...")
-
 
         StatusReport.write(f"{Condition.LIFFilePath},{str(Condition.AnalysisStatus)},{int(Condition.AnalysisStatus)}\n")
         StatusReport.flush()

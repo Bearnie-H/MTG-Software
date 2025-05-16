@@ -1535,6 +1535,8 @@ def PrepareResults(Results: DRGQuantificationResults) -> DRGQuantificationResult
         ...
     """
 
+    Results.Processed = True
+
     #   Compute a hash of the source file (Bright Field versus Fluorescent is arbitrary) to generate a unique ID for file naming.
     Results.SourceHash = Utils.Sha256Sum(Config.BrightFieldImageFile)
 
