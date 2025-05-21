@@ -157,7 +157,7 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
         if ( Condition.SkipProcessing ):
             LogWriter.Println(f"Skipping analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
             Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusSkipped)
-        else:
+        elif ( Condition.AnalysisStatus != DRGAnalysis_StatusCode.StatusSuccess ):
             LogWriter.Println(f"Analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] already failed validation...")
 
         StatusReport.write(f"{Condition.LIFFilePath},{str(Condition.AnalysisStatus)},{int(Condition.AnalysisStatus)}\n")
@@ -216,7 +216,7 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
             Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusSkipped)
             LogWriter.Println(f"Skipping analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
             MTG_Common.DRG_Quantification.DRGQuantificationResults().ExtractExperimentalDetails(Condition).Save(JSONDirectory)
-        else:
+        elif ( Condition.AnalysisStatus != DRGAnalysis_StatusCode.StatusSuccess ):
             LogWriter.Println(f"Analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] already failed validation or manual preview...")
 
         StatusReport.write(f"{Condition.LIFFilePath},{str(Condition.AnalysisStatus)},{int(Condition.AnalysisStatus)}\n")
