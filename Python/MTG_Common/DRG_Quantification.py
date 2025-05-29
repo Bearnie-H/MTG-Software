@@ -400,7 +400,7 @@ class DRGExperimentalCondition():
         """
 
         #   If a row is entirely empty, then we need to do nothing and just skip it
-        if ( all([True for x in Fields if x == ""]) ):
+        if ( all([True if x == "" else False for x in Fields]) ):
             return None
 
         ColumnIndex: int = 0
