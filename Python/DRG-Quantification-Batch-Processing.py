@@ -100,7 +100,7 @@ def ParseSpreadsheet(FilePath: str, FolderBase: str) -> typing.Sequence[DRGExper
         for RowIndex, Row in enumerate(Spreadsheet.readlines()[1:], start=1):
 
             LogWriter.Println(f"Parsing row [ {RowIndex} ] for experimental details...")
-            Condition: DRGExperimentalCondition = DRGExperimentalCondition().ExtractFields(Row.strip().split(",")).SetFolderBase(FolderBase)
+            Condition: DRGExperimentalCondition = DRGExperimentalCondition().ExtractFields(Row.strip().split(","))
             if ( Condition is None ):
                 LogWriter.Println(f"Blank row encountered at position [ {RowIndex} ]...")
                 continue
@@ -111,7 +111,7 @@ def ParseSpreadsheet(FilePath: str, FolderBase: str) -> typing.Sequence[DRGExper
                 LogWriter.Errorln(f"Failed to validate row [ {RowIndex} ]!")
                 Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusValidationFailed)
 
-            ExperimentalConditions.append(Condition)
+            ExperimentalConditions.append(Condition.SetFolderBase(FolderBase))
 
     return ExperimentalConditions
 
