@@ -104,14 +104,16 @@ def ParseSpreadsheet(FilePath: str, FolderBase: str) -> typing.Sequence[DRGExper
             if ( Condition is None ):
                 LogWriter.Println(f"Blank row encountered at position [ {RowIndex} ]...")
                 continue
-            elif ( Condition.Validate() ):
+
+            Condition.SetFolderBase(FolderBase)
+            if ( Condition.Validate() ):
                 LogWriter.Println(f"Successufully validated row [ {RowIndex} ].")
                 Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusNotYetProcessed)
             else:
                 LogWriter.Errorln(f"Failed to validate row [ {RowIndex} ]!")
                 Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusValidationFailed)
 
-            ExperimentalConditions.append(Condition.SetFolderBase(FolderBase))
+            ExperimentalConditions.append(Condition)
 
     return ExperimentalConditions
 
