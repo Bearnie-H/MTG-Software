@@ -214,6 +214,7 @@ class DRGAnalysis_StatusCode(int):
     StatusUnknownException: DRGAnalysis_StatusCode = 1 << 11
     StatusIntentionalAbort: DRGAnalysis_StatusCode = 1 << 12
     StatusSkipped:          DRGAnalysis_StatusCode = 1 << 13
+    InsufficientGrowth:     DRGAnalysis_StatusCode = 1 << 14
 
     def __str__(self: DRGAnalysis_StatusCode) -> str:
 
@@ -232,6 +233,8 @@ class DRGAnalysis_StatusCode(int):
             DRGAnalysis_StatusCode.StatusUnknownException:     "Unknown Exception Occurred.",
             DRGAnalysis_StatusCode.StatusIntentionalAbort:     "Intentionally Ended Early.",
             DRGAnalysis_StatusCode.StatusSkipped:              "Analysis Intentionally Skipped.",
+            DRGAnalysis_StatusCode.InsufficientGrowth:         "Insufficient Growth to be Imaged.",
+
         }
 
         #   For each possible status code, check to see if the corresponding bit
@@ -308,7 +311,7 @@ class DRGExperimentalCondition():
     BaseGel: str
 
     #   Only applicable for GelMA samples
-    GelMAPercentage: int
+    GelMAPercentage: float
     DegreeOfFunctionalization: int
 
     Polymer: str    #   For Nasrin, to do with how her gels crosslink?
@@ -350,8 +353,8 @@ class DRGExperimentalCondition():
 
     ###
     SkipProcessing: bool
+    InsufficientGrowth: bool
     AnalysisStatus: DRGAnalysis_StatusCode
-
 
     ### Magic Methods
     def __init__(self: DRGExperimentalCondition) -> None:
@@ -369,6 +372,7 @@ class DRGExperimentalCondition():
         #   ...
 
         self.SkipProcessing = False
+        self.InsufficientGrowth = False
         self.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusNotYetProcessed)
 
         return
@@ -395,10 +399,15 @@ class DRGExperimentalCondition():
             The same experimental condition instance is returned, allowing chaining of operations.
         """
 
+        #   If a row is entirely empty, then we need to do nothing and just skip it
+        if ( all([True for x in Fields if x == ""]) ):
+            return None
+
         ColumnIndex: int = 0
 
         self.LIFFilePath, ColumnIndex                   = (NormalizePathSeparators(Fields[ColumnIndex])),                                              (ColumnIndex + 1)
         self.SkipProcessing, ColumnIndex                = (TryParseBool(           Fields[ColumnIndex], "Column: [ SkipProcessing ]")),                (ColumnIndex + 1)
+        self.InsufficientGrowth, ColumnIndex            = (TryParseBool(           Fields[ColumnIndex], "Column: [ InsufficientGrowth ]")),            (ColumnIndex + 1)
         self.ExperimentDate, ColumnIndex                = (TryParseDatetime(       Fields[ColumnIndex], "%Y%m%d")),                                    (ColumnIndex + 1)
         self.CultureDuration, ColumnIndex               = (TryParseInteger(        Fields[ColumnIndex], "Column: [ CultureDuration ]")),               (ColumnIndex + 1)
         self.SampleIndex, ColumnIndex                   = (TryParseInteger(        Fields[ColumnIndex], "Column: [ SampleIndex ]")),                   (ColumnIndex + 1)
@@ -408,7 +417,7 @@ class DRGExperimentalCondition():
         self.NeuriteSeriesIndex, ColumnIndex            = (TryParseInteger(        Fields[ColumnIndex], "Column: [ NeuriteSeriesIndex ]")),            (ColumnIndex + 1)
         self.NeuriteChannelIndex, ColumnIndex           = (TryParseInteger(        Fields[ColumnIndex], "Column: [ NeuriteChannelIndex ]")),           (ColumnIndex + 1)
         self.BaseGel, ColumnIndex                       = (TryParseString(         Fields[ColumnIndex])),                                              (ColumnIndex + 1)
-        self.GelMAPercentage, ColumnIndex               = (TryParseInteger(        Fields[ColumnIndex], "Column: [ GelMAPercentage ]")),               (ColumnIndex + 1)
+        self.GelMAPercentage, ColumnIndex               = (TryParseFloat(          Fields[ColumnIndex], "Column: [ GelMAPercentage ]")),               (ColumnIndex + 1)
         self.DegreeOfFunctionalization, ColumnIndex     = (TryParseInteger(        Fields[ColumnIndex], "Column: [ DegreeOfFunctionalization ]")),     (ColumnIndex + 1)
         self.Polymer, ColumnIndex                       = (TryParseString(         Fields[ColumnIndex])),                                              (ColumnIndex + 1)
         self.Crosslinker, ColumnIndex                   = (TryParseString(         Fields[ColumnIndex])),                                              (ColumnIndex + 1)
@@ -477,8 +486,7 @@ class DRGExperimentalCondition():
 
         IsValid: bool = True
 
-        #   Check if the requested file exists
-        if ( not os.path.exists(self.LIFFilePath) ):
+        if ( not self.InsufficientGrowth ) and ( not os.path.exists(self.LIFFilePath) ):
             print(f"LIF file [ {self.LIFFilePath} ] does not exist or is not accessible!")
             self.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusNoLIFFile)
             IsValid = False
@@ -519,6 +527,7 @@ class DRGQuantificationResults():
     ### Public Members
     SourceHash: str         #   A hash of the source file(s) used in generating these results
     Processed: bool         #   Boolean indicating whether or not these results came from processing or not.
+    InsufficientGrowth: bool#   Boolean value indicating whether these results arise from actually imaging a DRG, or if imaging was skipped as there was insufficient growth for the time committment to image.
 
     ExperimentDate: str     #   YYYY-MM-DD date
     CultureDuration: int    #   How many days was the sample cultured for?
@@ -588,6 +597,7 @@ class DRGQuantificationResults():
 
         self.SourceHash                     = ""
         self.Processed                      = False
+        self.InsufficientGrowth             = False
 
         self.ExperimentDate                 = "Unknown"
         self.CultureDuration                = -1
@@ -720,6 +730,7 @@ class DRGQuantificationResults():
 
         Result.SourceHash                     = random.randbytes(32).hex()
         Result.Processed                      = random.choice([True, False])
+        Result.InsufficientGrowth             = random.choice([True, False])
 
         Result.ExperimentDate                 = f"{random.choice([2024, 2025])}-1-1"
         Result.CultureDuration                = 7
@@ -862,6 +873,8 @@ class DRGQuantificationResults():
             Returns the same DRGQuantificationResults instance, with the internal fields
             updated.
         """
+
+        self.InsufficientGrowth = (ExperimentDetails.LIFFilePath == "")
 
         self.ExperimentDate = ExperimentDetails.ExperimentDate.strftime(f"%Y-%m-%d")
         self.CultureDuration = ExperimentDetails.CultureDuration
@@ -1298,35 +1311,35 @@ class DRGQuantificationResultsSet():
         #   One figure we want to generate is a scatter-plot showing how the median lengths vary
         #   across all of the experimental conditions
         self._MedianNeuriteLengthOverConditions(os.path.join(OutputDirectory, "Median Neurite Length versus Neurite Density"))
-        self._MedianNeuriteLengthOverConditions(os.path.join(OutputDirectory, "Median Neurite Length versus Neurite Density - ALL"), IncludeSkipped=True)
+        self._MedianNeuriteLengthOverConditions(os.path.join(OutputDirectory, "Median Neurite Length versus Neurite Density - ALL"), IncludeInsufficientGrowth=True)
 
         #   We also want to explore the differences between the 3% and 6% GelMA,
         #   for each of the 50 and 80 DOF formulations.
         self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF"), CollapseDates=True)
         self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF By Date"))
-        self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF - ALL"), CollapseDates=True, IncludeSkipped=True)
-        self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF By Date - ALL"), IncludeSkipped=True)
+        self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF By Date - ALL"), IncludeInsufficientGrowth=True)
 
         #   We want to examine how GelMA percentage and DOF vary across the different dilution media
         #   which have been used to create the gels.
         self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium"), CollapseDates=True)
         self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium By Date"))
-        self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium - ALL"), CollapseDates=True, IncludeSkipped=True)
-        self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium By Date - ALL"), IncludeSkipped=True)
+        self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium By Date - ALL"), IncludeInsufficientGrowth=True)
 
         #   Iryna is interested in the trials of Ultimatrix where Ru/SPS and illumination with the
         #   LED was included.
         self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time"), CollapseDates=True)
         self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time By Date"))
-        self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time - ALL"), CollapseDates=True, IncludeSkipped=True)
-        self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time By Date - ALL"), IncludeSkipped=True)
+        self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time By Date - ALL"), IncludeInsufficientGrowth=True)
 
         #   ...
 
         return
 
     ### Private Methods
-    def _MedianNeuriteLengthOverConditions(self: DRGQuantificationResultsSet, OutputDirectory: str, IncludeSkipped: bool = False) -> None:
+    def _MedianNeuriteLengthOverConditions(self: DRGQuantificationResultsSet, OutputDirectory: str, IncludeInsufficientGrowth: bool = False) -> None:
         """
         _MedianNeuriteLengthOverConditions
 
@@ -1338,7 +1351,7 @@ class DRGQuantificationResultsSet():
 
         OutputDirectory:
             The directory into which the resulting figure should be written to.
-        IncludeSkipped:
+        IncludeInsufficientGrowth:
             Should this analysis include results from DRGs which are known to
             have been cultured, but were not imaged due to insufficient growth?
             This adds a 0 value for each such example.
@@ -1351,13 +1364,13 @@ class DRGQuantificationResultsSet():
         self._LogWriter.Println(f"Preparing scatterplot of neurite lengths versus neurite density across the experimental conditions...")
 
         Groups: typing.Sequence[DRGQuantificationResultsSet] = list()
-        if ( not IncludeSkipped ):
+        if ( not IncludeInsufficientGrowth ):
             #   Only include those results coming from actually analyzing images,
             #   ignore the zeroes from non-imaged DRGs.
-            Groups = self.Filter(lambda x: x.Processed == True).Split()
+            Groups = self.Filter(lambda x: x.InsufficientGrowth == False).Split()
         else:
             #   Split up the results on every permutation of the experimental conditions.
-            Groups: typing.Sequence[DRGQuantificationResultsSet] = self.Split()
+            Groups = self.Split()
 
         #   Prepare a file for helping to map the markers and colours back to specific experimental conditions
         if ( not os.path.exists(OutputDirectory) ):
@@ -1370,9 +1383,7 @@ class DRGQuantificationResultsSet():
             F: Figure = Utils.PrepareFigure()
             Ax: Axes = F.add_subplot(111)
 
-            F.suptitle(f"Median Neurite Outgrowth Length by Experimental Condition")
-            if ( IncludeSkipped ):
-                F.suptitle(F.get_suptitle() + " (Including Skipped)")
+            F.suptitle(f"Median Neurite Outgrowth Length by Experimental Condition{' (Including Insufficient Growth)' if IncludeInsufficientGrowth else ''}")
             Ax.set_title(f"Median Neurite Length versus Neurite Density")
             Ax.set_xlabel(f"Neurite Density (n.d.)")
             Ax.set_ylabel(f"Median Neurite Length (µm)")
@@ -1395,7 +1406,7 @@ class DRGQuantificationResultsSet():
 
         return
 
-    def _GelMAPercentageAndDOF(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeSkipped: bool = False) -> None:
+    def _GelMAPercentageAndDOF(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
         """
         _GelMAPercentageAndDOF
 
@@ -1412,7 +1423,7 @@ class DRGQuantificationResultsSet():
             Should replicate conditions across multiple experimental dates be
             collapsed together, or should these be treated as independent
             trials?
-        IncludeSkipped:
+        IncludeInsufficientGrowth:
             Should this analysis include results from DRGs which are known to
             have been cultured, but were not imaged due to insufficient growth?
             This adds a 0 value for each such example.
@@ -1439,10 +1450,10 @@ class DRGQuantificationResultsSet():
             lambda x:
                 x.BaseGel == BaseGels.BaseGel_GelMA
         )
-        if ( not IncludeSkipped ):
+        if ( not IncludeInsufficientGrowth ):
             GelMAResults = GelMAResults.Filter(
                 lambda x:
-                    x.Processed == True
+                    x.InsufficientGrowth == False
             )
         if ( len(GelMAResults) == 0 ):
             self._LogWriter.Println(f"No results were found where BaseGel=GelMA...")
@@ -1487,6 +1498,7 @@ class DRGQuantificationResultsSet():
             ]).strip(", ").replace("/", "-")
 
             with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
+                PlotPosition: int = 0
                 for Index, (GelMAPercentage, DegreeOfFunctionalization) in enumerate(itertools.product(GelMAPercentages, DegreeOfFunctionalizations)):
 
                     Condition: DRGQuantificationResultsSet = Group.Filter(
@@ -1495,17 +1507,16 @@ class DRGQuantificationResultsSet():
                             x.DegreeOfFunctionalization == DegreeOfFunctionalization
                     )
                     Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition]
-                    Ax.boxplot(Distances, sym='', positions=[Index], labels=[f"{GelMAPercentage}% GelMA\n{DegreeOfFunctionalization} DOF\nn={len(Condition)}\nµ={np.mean(Distances) if len(Distances) > 0 else 0:.2f}"])
-
-                    Ax.scatter(np.random.normal(Index, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
+                    if ( len(Condition) > 0 ):
+                        Ax.boxplot(Distances, sym='', positions=[PlotPosition], labels=[f"{GelMAPercentage}% GelMA\n{DegreeOfFunctionalization} DOF\nn={len(Condition)}\nµ={np.mean(Distances) if len(Distances) > 0 else 0:.2f}µm"])
+                        Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
+                        PlotPosition += 1
 
                     DataFile.write(f"{GelMAPercentage}% GelMA - {DegreeOfFunctionalization} DOF")
                     DataFile.write(''.join([f",{x}" for x in Distances]))
                     DataFile.write("\n")
 
-            F.suptitle(f"Median DRG Neurite Length versus GelMA Concentration and Degree of Functionalization")
-            if ( IncludeSkipped ):
-                F.suptitle(F.get_suptitle() + " (Including Skipped)")
+            F.suptitle(f"Median DRG Neurite Length versus GelMA Concentration and Degree of Functionalization{' (Including Insufficient Growth)' if IncludeInsufficientGrowth else ''}")
             Ax.set_title(AxisTitle)
             Ax.minorticks_on()
             Ax.set_ylim(bottom=0.0)
@@ -1522,7 +1533,7 @@ class DRGQuantificationResultsSet():
 
         return
 
-    def _GelMAPercentageAndDOFByDilutionMedia(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeSkipped: bool = False) -> None:
+    def _GelMAPercentageAndDOFByDilutionMedia(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
         """
         _GelMAPercentageAndDOFByDilutionMedia
 
@@ -1536,7 +1547,7 @@ class DRGQuantificationResultsSet():
             Should replicate conditions across multiple experimental dates be
             collapsed together, or should these be treated as independent
             trials?
-        IncludeSkipped:
+        IncludeInsufficientGrowth:
             Should this analysis include results from DRGs which are known to
             have been cultured, but were not imaged due to insufficient growth?
             This adds a 0 value for each such example.
@@ -1563,10 +1574,10 @@ class DRGQuantificationResultsSet():
             lambda x:
                 x.BaseGel == BaseGels.BaseGel_GelMA
         )
-        if ( not IncludeSkipped ):
+        if ( not IncludeInsufficientGrowth ):
             GelMAResults = GelMAResults.Filter(
                 lambda x:
-                    x.Processed == True
+                    x.InsufficientGrowth == False
             )
         if ( len(GelMAResults) == 0 ):
             self._LogWriter.Println(f"No results were found where BaseGel=GelMA...")
@@ -1613,6 +1624,7 @@ class DRGQuantificationResultsSet():
             ]).strip(", ").replace("/", "-")
 
             with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
+                PlotPosition: int = 0
                 for Index, (DilutionMedium, GelMAPercentage, DegreeOfFunctionalization) in enumerate(itertools.product(DilutionMedia, GelMAPercentages, DegreeOfFunctionalizations)):
 
                     Condition: DRGQuantificationResultsSet = Group.Filter(
@@ -1622,17 +1634,16 @@ class DRGQuantificationResultsSet():
                             x.DilutionMedia == DilutionMedium
                     )
                     Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition]
-                    Ax.boxplot(Distances, sym='', positions=[Index], labels=[f"{DilutionMedium}\n{GelMAPercentage}% GelMA\n{DegreeOfFunctionalization} DOF\nn={len(Condition)}\nµ={np.mean(Distances) if len(Distances) > 0 else 0:.2f}"])
-
-                    Ax.scatter(np.random.normal(Index, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
+                    if ( len(Condition) > 0 ):
+                        Ax.boxplot(Distances, sym='', positions=[PlotPosition], labels=[f"{DilutionMedium}\n{GelMAPercentage}% GelMA\n{DegreeOfFunctionalization} DOF\nn={len(Condition)}\nµ={np.mean(Distances) if len(Distances) > 0 else 0:.2f}µm"])
+                        Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
+                        PlotPosition += 1
 
                     DataFile.write(f"{DilutionMedium} - {GelMAPercentage}% GelMA - {DegreeOfFunctionalization} DOF")
                     DataFile.write(''.join([f",{x}" for x in Distances]))
                     DataFile.write("\n")
 
-            F.suptitle(f"Median DRG Neurite Length versus GelMA Concentration, Degree of Functionalization, and Dilution Medium")
-            if ( IncludeSkipped ):
-                F.suptitle(F.get_suptitle() + " (Including Skipped)")
+            F.suptitle(f"Median DRG Neurite Length versus GelMA Concentration, Degree of Functionalization, and Dilution Medium{' (Including Insufficient Growth)' if IncludeInsufficientGrowth else ''}")
             Ax.set_title(AxisTitle)
             Ax.minorticks_on()
             Ax.set_ylim(bottom=0.0)
@@ -1649,7 +1660,7 @@ class DRGQuantificationResultsSet():
 
         return
 
-    def _UltimatrixByCrosslinkerAndIllumination(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeSkipped: bool = False) -> None:
+    def _UltimatrixByCrosslinkerAndIllumination(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
         """
         _UltimatrixByCrosslinkerAndIllumination
 
@@ -1665,7 +1676,7 @@ class DRGQuantificationResultsSet():
             Should replicate conditions across multiple experimental dates be
             collapsed together, or should these be treated as independent
             trials?
-        IncludeSkipped:
+        IncludeInsufficientGrowth:
             Should this analysis include results from DRGs which are known to
             have been cultured, but were not imaged due to insufficient growth?
             This adds a 0 value for each such example.
@@ -1692,10 +1703,10 @@ class DRGQuantificationResultsSet():
             lambda x:
                 x.BaseGel == BaseGels.BaseGel_Ultimatrix
         )
-        if ( not IncludeSkipped ):
+        if ( not IncludeInsufficientGrowth ):
             UltimatrixResults = UltimatrixResults.Filter(
                 lambda x:
-                    x.Processed == True
+                    x.InsufficientGrowth == False
             )
         if ( len(UltimatrixResults) == 0 ):
             self._LogWriter.Println(f"No results were found where BaseGel=Ultimatrix...")
@@ -1741,6 +1752,7 @@ class DRGQuantificationResultsSet():
             ]).strip(", ").replace("/", "-")
 
             with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
+                PlotPosition: int = 0
                 for Index, (IlluminationDuration, (SPSConcentration, RutheniumConcentration)) in enumerate(itertools.product(IlluminationDurations, zip(SodiumPerSulfateConcentrations, RutheniumConcentrations))):
 
                     Condition: DRGQuantificationResultsSet = Group.Filter(
@@ -1750,17 +1762,16 @@ class DRGQuantificationResultsSet():
                             x.GelIlluminationDuration == IlluminationDuration
                     )
                     Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition]
-                    Ax.boxplot(Distances, sym='', positions=[Index], labels=[f"{IlluminationDuration}s\n{SPSConcentration}mM SPS\n{RutheniumConcentration}mM Ru\nn={len(Condition)}\nµ={np.mean(Distances) if len(Distances) > 0 else 0:.2f}"])
-
-                    Ax.scatter(np.random.normal(Index, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
+                    if ( len(Condition) > 0 ):
+                        Ax.boxplot(Distances, sym='', positions=[PlotPosition], labels=[f"{IlluminationDuration}s\n{SPSConcentration}mM SPS\n{RutheniumConcentration}mM Ru\nn={len(Condition)}\nµ={np.mean(Distances) if len(Distances) > 0 else 0:.2f}µm"])
+                        Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
+                        PlotPosition += 1
 
                     DataFile.write(f"{IlluminationDuration}s - {SPSConcentration}mM SPS - {RutheniumConcentration}mM Ru")
                     DataFile.write(''.join([f",{x}" for x in Distances]))
                     DataFile.write("\n")
 
-            F.suptitle(f"Median DRG Neurite Length versus Ru-SPS and Gel Illumination")
-            if ( IncludeSkipped ):
-                F.suptitle(F.get_suptitle() + " (Including Skipped)")
+            F.suptitle(f"Median DRG Neurite Length versus Ru-SPS and Gel Illumination{' (Including Insufficient Growth)' if IncludeInsufficientGrowth else ''}")
             Ax.set_title(AxisTitle)
             Ax.minorticks_on()
             Ax.set_ylim(bottom=0.0)

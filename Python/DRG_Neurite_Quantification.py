@@ -186,20 +186,20 @@ class Configuration():
         if ( not os.path.exists(ExperimentalCondition.LIFFilePath) ):
             ValidCondition = False
             self._LogWriter.Errorln(f"LIF File does not exist or could not be found!")
-            ExperimentalCondition.AnalysisStatus |= DRGAnalysis_StatusCode.StatusNoLIFFile
+            ExperimentalCondition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusNoLIFFile)
         else:
             self.BrightFieldImageFile = ExperimentalCondition.LIFFilePath
             self.BrightFieldImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.BrightFieldSeriesIndex, ChannelIndex=ExperimentalCondition.BrightFieldChannelIndex)
             if ( self.BrightFieldImage is None ):
                 self._LogWriter.Errorln(f"Failed to open Bright Field Image with Series and Channel Indices [ {ExperimentalCondition.BrightFieldSeriesIndex},{ExperimentalCondition.BrightFieldChannelIndex} ]!")
-                ExperimentalCondition.AnalysisStatus |= DRGAnalysis_StatusCode.NoBrightFieldImage
+                ExperimentalCondition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.NoBrightFieldImage)
                 ValidCondition = False
 
             self.FluorescentImageFile = ExperimentalCondition.LIFFilePath
             self.FluorescentImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.NeuriteSeriesIndex, ChannelIndex=ExperimentalCondition.NeuriteChannelIndex)
             if ( self.FluorescentImage is None ):
                 self._LogWriter.Errorln(f"Failed to open Fluorescent Image with Series and Channel Indices [ {ExperimentalCondition.NeuriteSeriesIndex},{ExperimentalCondition.NeuriteChannelIndex} ]!")
-                ExperimentalCondition.AnalysisStatus |= DRGAnalysis_StatusCode.NoFluorescentImage
+                ExperimentalCondition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.NoFluorescentImage)
                 ValidCondition = False
 
             self.OutputDirectory = os.path.splitext(ExperimentalCondition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
@@ -207,7 +207,7 @@ class Configuration():
         #   ...
 
         if ( not ValidCondition ):
-            raise ValueError(f"Failed to properly extract analysis configuration state from the Experimental Condition details - {str(ExperimentalCondition.AnalysisStatus)}!")
+            raise ValueError(f"Failed to properly extract analysis configuration state from the Experimental Condition details - {ExperimentalCondition.AnalysisStatus}!")
 
         return self
 
@@ -791,7 +791,7 @@ def EstimateCentroid(ThresholdedImage: np.ndarray, CorrelationThreshold: float =
         #   If the centroid does not exist, then the kernel is improperly sized so we exit.
         if ( Centroid_X == 0 ) and ( Centroid_Y == 0 ):
             LogWriter.Warnln(f"Failed to identify centroid location for kernel of size [ {KernelSize} ]...")
-            break
+            continue
 
         #   Check where the current averaged centroid location is...
         Current_X, Current_Y = 0, 0
@@ -806,7 +806,7 @@ def EstimateCentroid(ThresholdedImage: np.ndarray, CorrelationThreshold: float =
         if (abs(Next_X - Current_X) < CentroidJitterThreshold ) and ((Next_Y - Current_Y) < CentroidJitterThreshold ):
             return (Next_X, Next_Y)
 
-    return tuple([int(np.mean(np.array(x))) for x in [Centroid_Xs, Centroid_Ys]])
+    return tuple([int(np.mean(np.array(x))) if len(x) != 0 else 0 for x in [Centroid_Xs, Centroid_Ys]])
 
 def ComputeDRGMask(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[int, int]) -> np.ndarray:
     """

@@ -56,8 +56,6 @@ def main() -> None:
     #   the directory, parsing out an instance of a DRGQuantificationResults for each file.
     if ( SourceDirectory is not None ):
         Results = Results.ReadDirectory(SourceDirectory)
-        for Result in Results:
-            Result.MedianNeuriteDistance = float(list(Result.MedianNeuriteDistance.values())[0][0])
     else:
         #   Otherwise, if no source directory is given, generate a set of random values
         #   to allow testing and validating of the figure generation and internal logic.
