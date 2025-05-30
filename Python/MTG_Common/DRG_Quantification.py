@@ -547,7 +547,8 @@ class DRGQuantificationResults():
     GelIlluminationDuration: float          #   Seconds
 
     ##  ONLY APPLICABLE FOR NASRIN'S GELS
-    CrosslinkingPolymer: str    #   How do these gels crosslink?
+    Crosslinker: str            #   How do these gels crosslink?
+    Polymer: str                #   ???
     Peptide: str                #   ???
     PeptideIn: str              #   ???
     PeptideConcentration: float #   ???
@@ -615,7 +616,8 @@ class DRGQuantificationResults():
         self.RiboflavinConcentration        = -1.0
         self.GelIlluminationDuration        = -1.0
 
-        self.CrosslinkingPolymer            = "N/A"
+        self.Crosslinker                    = "N/A"
+        self.Polymer                        = "N/A"
         self.Peptide                        = "N/A"
         self.PeptideIn                      = "N/A"
         self.PeptideConcentration           = "N/A"
@@ -668,7 +670,8 @@ class DRGQuantificationResults():
         yield self.SodiumPersulfateConcentration
         yield self.RiboflavinConcentration
         yield self.GelIlluminationDuration
-        yield self.CrosslinkingPolymer
+        yield self.Crosslinker
+        yield self.Polymer
         yield self.Peptide
         yield self.PeptideIn
         yield self.PeptideConcentration
@@ -748,7 +751,8 @@ class DRGQuantificationResults():
         Result.RiboflavinConcentration        = 0
         Result.GelIlluminationDuration        = random.choice([60]) if Result.BaseGel == BaseGels.BaseGel_GelMA else random.choice([0, 60])
 
-        Result.CrosslinkingPolymer            = "N/A"
+        Result.Crosslinker                    = "N/A"
+        Result.Polymer                        = "N/A"
         Result.Peptide                        = "N/A"
         Result.PeptideIn                      = "N/A"
         Result.PeptideConcentration           = "N/A"
@@ -813,7 +817,8 @@ class DRGQuantificationResults():
             f"{self.SodiumPersulfateConcentration=}",
             f"{self.RiboflavinConcentration=}",
             f"{self.GelIlluminationDuration=}",
-            f"{self.CrosslinkingPolymer=}",
+            f"{self.Crosslinker=}",
+            f"{self.Polymer=}",
             f"{self.Peptide=}",
             f"{self.PeptideIn=}",
             f"{self.PeptideConcentration=}",
@@ -897,7 +902,8 @@ class DRGQuantificationResults():
             self.SodiumPersulfateConcentration = ExperimentDetails.SodiumPersulfateConcentration
             self.GelIlluminationDuration = ExperimentDetails.GelIlluminationTime
         else:
-            self.CrosslinkingPolymer = ExperimentDetails.Crosslinker
+            self.Crosslinker = ExperimentDetails.Crosslinker
+            self.Polymer = ExperimentDetails.Polymer
             self.Peptide = ExperimentDetails.Peptide
             self.PeptideIn = ExperimentDetails.PeptideIn
             self.PeptideConcentration = ExperimentDetails.PeptideConcentration
