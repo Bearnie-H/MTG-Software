@@ -499,7 +499,7 @@ def main() -> int:
 
     LogWriter.Println(f"Starting to process fluorescent image...")
     for Index, Layer in enumerate(Config.FluorescentImage.Layers()):
-        LogWriter.Println(f"Processing Layer [ {Index+1}/{len(Config.FluorescentImage.Layers())} ]")
+        LogWriter.Println(f"Processing Layer [ {Index+1}/{len(Config.FluorescentImage.Layers())} ]...")
 
         #   Take the fluorescent image and segment out the neurite growth pixels
         Neurites: np.ndarray = ProcessFluorescent(Layer.copy(), DRGBodyMask, WellEdgeMask)
@@ -513,32 +513,42 @@ def main() -> int:
         QuantificationStacks.ManuallySelectedFluorescent.Append(Utils.ConvertTo8Bit(Neurites))
 
         #   With the centroid location and neurite pixels now identified, quantify the distribution of lengths of neurites
+        LogWriter.Println(f"Quantifying neurite lengths for layer [ {Index+1}/{Config.FluorescentImage.LayerCount()} ]...")
         QuantificationStacks.NeuriteDistances.append(QuantifyNeuriteLengths(Neurites, CentroidLocation))
 
         FeatureSizePx: float = 50 / 0.7644
         Config.DistinctOrientations = 90
         DistinctOrientations = Config.DistinctOrientations
+        LogWriter.Println(f"Quantifying neurite orientations for layer [ {Index+1}/{Config.FluorescentImage.LayerCount()} ]...")
         QuantificationStacks.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer.copy(), Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
 
     LogWriter.Println(f"Finished processing fluorescent image.")
 
+    LogWriter.Println(f"Preparing neurite length visualization...")
     QuantificationStacks.MaximumNeuriteDistance = int(round(max([np.max(x) if len(x) > 0 else 0 for x in QuantificationStacks.NeuriteDistances])))
     GenerateNeuriteLengthVisualization(QuantificationStacks.OriginalFluorescent, QuantificationStacks.ManuallySelectedFluorescent, QuantificationStacks.NeuriteDistances, CentroidLocation)
 
+    LogWriter.Println(f"Preparing neurite quantification figures...")
     CreateQuantificationFigures(list(itertools.chain.from_iterable(QuantificationStacks.NeuriteDistances)))
 
     #   Format and structure the intermediate results as computed here to be printed out to be further processed later
+    LogWriter.Println(f"Formatting quantification results to be stored as JSON data...")
     Results = PrepareResults(Results)
 
     #   Save out the configuration state for possible later review.
+    LogWriter.Println(f"Saving application configuration state...")
     Config.Save()
+
+    LogWriter.Println(f"Saving quantification intermediate images...")
     QuantificationStacks.Save(Folder=Config.OutputDirectory, DryRun=Config.DryRun)
 
     #   Save the results to the per-execution folder
+    LogWriter.Println(f"Writing JSON quantification results to folder [ {Config.OutputDirectory} ]...")
     Results.Save(Folder=Config.OutputDirectory, DryRun=Config.DryRun)
 
     #   ... and to the potential global JSON directory if this is different.
     if ( Config.JSONDirectory != Config.OutputDirectory ):
+        LogWriter.Println(f"Writing JSON quantification results to folder [ {Config.JSONDirectory} ]...")
         Results.Save(Folder=Config.JSONDirectory, DryRun=Config.DryRun)
 
     #   Quickly check that at least some neurites were identified in the analysis, otherwise return a special status code to indicate this.
@@ -946,29 +956,29 @@ def ComputeDRGMask_Alt1(ThresholdedImage: np.ndarray, DRGCentroid: typing.Tuple[
     EffectiveRadius: int = int(round((MinIndex + ZeroCrossing) / 2))
 
     ### DEBUGGING
-    F: Figure = Utils.PrepareFigure()
-    Ax = F.add_subplot(111)
-    Ax.set_title(f"Pixel Counts from DRG Centroid")
-    Ax.set_xlabel(f"Distance (px)")
-    Ax.set_ylabel(f"Pixel Counts")
-    Ax.plot(DistanceCounts)
-    DisplayAndSaveImage(Utils.FigureToImage(F), f"Pixel Counts versus Radial Distance", not Config.SaveIntermediates, Config.HeadlessMode)
+    # F: Figure = Utils.PrepareFigure()
+    # Ax = F.add_subplot(111)
+    # Ax.set_title(f"Pixel Counts from DRG Centroid")
+    # Ax.set_xlabel(f"Distance (px)")
+    # Ax.set_ylabel(f"Pixel Counts")
+    # Ax.plot(DistanceCounts)
+    # DisplayAndSaveImage(Utils.FigureToImage(F), f"Pixel Counts versus Radial Distance", not Config.SaveIntermediates, Config.HeadlessMode)
 
-    F.clear()
-    Ax = F.add_subplot(111)
-    Ax.set_title(f"Pixel Counts from DRG Centroid - Skewness versus Radial Distance")
-    Ax.set_xlabel(f"Distance (px)")
-    Ax.set_ylabel(f"Histogram Skewness")
-    Ax.plot(Skewness, label="Histogram Skewness")
-    Ax.vlines(MinIndex, ymin=np.min(Skewness), ymax=np.max(Skewness), colors='r', label=f"Minimum Skewness: {MinIndex}")
-    Ax.vlines(ZeroCrossing, ymin=np.min(Skewness), ymax=np.max(Skewness), colors='g', label=f"Zero Skewness: {ZeroCrossing}")
-    Ax.vlines(EffectiveRadius, ymin=np.min(Skewness), ymax=np.max(Skewness), colors='k', label=f"Effective DRG Radius: {EffectiveRadius}")
-    DisplayAndSaveImage(Utils.FigureToImage(F), f"DRG Mask Skewness versus Distance", not Config.SaveIntermediates, Config.HeadlessMode)
+    # F.clear()
+    # Ax = F.add_subplot(111)
+    # Ax.set_title(f"Pixel Counts from DRG Centroid - Skewness versus Radial Distance")
+    # Ax.set_xlabel(f"Distance (px)")
+    # Ax.set_ylabel(f"Histogram Skewness")
+    # Ax.plot(Skewness, label="Histogram Skewness")
+    # Ax.vlines(MinIndex, ymin=np.min(Skewness), ymax=np.max(Skewness), colors='r', label=f"Minimum Skewness: {MinIndex}")
+    # Ax.vlines(ZeroCrossing, ymin=np.min(Skewness), ymax=np.max(Skewness), colors='g', label=f"Zero Skewness: {ZeroCrossing}")
+    # Ax.vlines(EffectiveRadius, ymin=np.min(Skewness), ymax=np.max(Skewness), colors='k', label=f"Effective DRG Radius: {EffectiveRadius}")
+    # DisplayAndSaveImage(Utils.FigureToImage(F), f"DRG Mask Skewness versus Distance", not Config.SaveIntermediates, Config.HeadlessMode)
 
-    DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, MinIndex, (0, 255, 0), 5), f"Annotated DRG Radius (Minimum Skewness)", not Config.SaveIntermediates, Config.HeadlessMode)
-    DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, EffectiveRadius, (0, 255, 255), 5), f"Annotated DRG Radius (Effective Radius)", not Config.SaveIntermediates, Config.HeadlessMode)
-    DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, ZeroCrossing, (0, 0, 255), 5), f"Annotated DRG Radius (Zero Skewness)", not Config.SaveIntermediates, Config.HeadlessMode)
-    F.clear()
+    # DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, MinIndex, (0, 255, 0), 5), f"Annotated DRG Radius (Minimum Skewness)", not Config.SaveIntermediates, Config.HeadlessMode)
+    # DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, EffectiveRadius, (0, 255, 255), 5), f"Annotated DRG Radius (Effective Radius)", not Config.SaveIntermediates, Config.HeadlessMode)
+    # DisplayAndSaveImage(cv2.circle(Utils.GreyscaleToBGR(ThresholdedImage.copy()), DRGCentroid, ZeroCrossing, (0, 0, 255), 5), f"Annotated DRG Radius (Zero Skewness)", not Config.SaveIntermediates, Config.HeadlessMode)
+    # F.clear()
     ### DEBUGGING
 
     #   Generate the mask from the component and restrict it to only the circle we associate

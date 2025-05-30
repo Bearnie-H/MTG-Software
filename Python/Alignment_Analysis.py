@@ -525,9 +525,10 @@ class AngleTracker():
         UpperStDev, LowerStDev = self.AngularStDevs[-1], -self.AngularStDevs[-1]
 
         #   Plot the PDF of orientations as a polar antenna plot.
-        n, bins = np.histogram(np.deg2rad(NormalizedOrientations), bins=int(round(180.0 / HistogramBinSizing)), range=(-np.pi/2, np.pi/2), density=True)
-        OrientationPDFAxes.plot(bins[:-1], n)
-        OrientationPDFAxes.vlines(np.deg2rad([LowerStDev, UpperStDev]), 0, np.max(n), colors='r', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees")
+        if ( len(NormalizedOrientations) > 0 ):
+            n, bins = np.histogram(np.deg2rad(NormalizedOrientations), bins=int(round(180.0 / HistogramBinSizing)), range=(-np.pi/2, np.pi/2), density=True)
+            OrientationPDFAxes.plot(bins[:-1], n)
+            OrientationPDFAxes.vlines(np.deg2rad([LowerStDev, UpperStDev]), 0, np.max(n), colors='r', label=f"Angular Standard Deviation = {self.AngularStDevs[-1]:.3f} degrees")
         OrientationPDFAxes.set_title(f"Orientation Angular Distribution\nMeasurement Count = {self.RodCounts[-1]:.0f}\nAlignment Fraction = {self.AlignmentFractions[-1]:.3f}")
         OrientationPDFAxes.set_xlabel(f"Orientation Angles (degrees)")
         OrientationPDFAxes.set_ylabel(f"Probability Density (n.d.)")
@@ -602,6 +603,9 @@ def ComputeAlignmentMetric(Orientations: np.ndarray) -> typing.Tuple[int, float,
         [4] - List[float]:
             The updated and proper domain of the orientations.
     """
+
+    if ( len(Orientations) == 0 ):
+        return (0, 0, 0, 0, [])
 
     Orientations[Orientations > 90] = Orientations[Orientations > 90] - 180
 
