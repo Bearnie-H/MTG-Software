@@ -72,6 +72,7 @@ class Configuration():
     OutputDirectory: str
     JSONDirectory: str
 
+    EnableOrientationQuantification: bool
     DistinctOrientations: float
 
     LogFile: str
@@ -113,6 +114,7 @@ class Configuration():
         ### ---
 
         self.ApplyManualROISelection = False
+        self.EnableOrientationQuantification = False
 
         self.LogFile = ""
         self.QuietMode = False
@@ -150,6 +152,7 @@ class Configuration():
             f"---------- Estimated Result Values ----------",
             f"",
             f"---------- Behaviour Enable Parameters ----------",
+            f"Orientation Analysis Enabled:         {self.EnableOrientationQuantification}",
             f"Headless Mode:                        {self.HeadlessMode}",
             f"Dry-Run Mode:                         {self.DryRun}",
             f"Intermediate Images Saved:            {self.SaveIntermediates}",
@@ -235,6 +238,8 @@ class Configuration():
 
         self.OutputDirectory = Arguments.OutputDirectory + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
         self.JSONDirectory = Arguments.JSONDirectory
+
+        self.EnableOrientationQuantification = Arguments.EnableOrientation
 
         #   ...
 
@@ -516,11 +521,12 @@ def main() -> int:
         LogWriter.Println(f"Quantifying neurite lengths for layer [ {Index+1}/{Config.FluorescentImage.LayerCount()} ]...")
         QuantificationStacks.NeuriteDistances.append(QuantifyNeuriteLengths(Neurites, CentroidLocation))
 
-        FeatureSizePx: float = 50 / 0.7644
-        Config.DistinctOrientations = 90
-        DistinctOrientations = Config.DistinctOrientations
-        LogWriter.Println(f"Quantifying neurite orientations for layer [ {Index+1}/{Config.FluorescentImage.LayerCount()} ]...")
-        QuantificationStacks.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer.copy(), Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
+        if ( Config.EnableOrientationQuantification ):
+            FeatureSizePx: float = 50 / 0.7644
+            Config.DistinctOrientations = 90
+            DistinctOrientations = Config.DistinctOrientations
+            LogWriter.Println(f"Quantifying neurite orientations for layer [ {Index+1}/{Config.FluorescentImage.LayerCount()} ]...")
+            QuantificationStacks.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer.copy(), Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
 
     LogWriter.Println(f"Finished processing fluorescent image.")
 
@@ -1614,6 +1620,7 @@ def HandleArguments() -> bool:
     Flags.add_argument("--bf-image",  dest="BrightField", metavar="file-path", type=str, required=True, help="The file path to the bright-field image file to work with.")
     Flags.add_argument("--mip-image", dest="MIPImage",    metavar="file-path", type=str, required=True, help="The file path to the maximum intensity image computed from the fluorescent Z-stack to work with.")
     Flags.add_argument("--manual-roi", dest="ManualROI", action="store_true", required=False, default=False, help="...")
+    Flags.add_argument("--enable-orientation", dest="EnableOrientation", action="store_true", required=False, default=False, help="Enable the orientation quantification logic. NOTE: Significantly increases execution time required.")
 
     Flags.add_argument("--qualitative-pre-check", dest="PreCheck", action="store_true", required=False, default=False, help="Preview the images before processing, to check whether or not they are worth processing.")
     Flags.add_argument("--drg-mask", dest="DRGBodyMask", metavar="file-path", type=str, required=False, default="", help="The file path to a pre-defined image mask to remove the DRG Body.")

@@ -31,6 +31,7 @@ import MTG_Common.DRG_Quantification
 
 #   Define the globals to set by the command-line arguments
 JSONDirectory: str = ""
+EnableOrientation: bool = False
 #   ...
 
 LogWriter: Logger.Logger = Logger.Logger(Prefix="DRG Neurite Quantification Batch Analysis")
@@ -40,6 +41,7 @@ LogWriter: Logger.Logger = Logger.Logger(Prefix="DRG Neurite Quantification Batc
 def main() -> None:
 
     global JSONDirectory
+    global EnableOrientation
 
     #   Prepare the two command-line flags (so far) this tool will accept.
     Flags: argparse.ArgumentParser = argparse.ArgumentParser()
@@ -47,6 +49,7 @@ def main() -> None:
     Flags.add_argument("--spreadsheet", dest="Spreadsheet", metavar="file-path", type=str, required=True, help="The file path to the *.CSV file containing all of the experimental conditions to process.")
     Flags.add_argument("--folder-base", dest="FolderBase", metavar="file-path", type=str, required=True, help="The path to the base folder from which the \"FilePath\" column of the spreadsheet is referenced.")
     Flags.add_argument("--json-directory", dest="JSONDirectory", metavar="file-path", type=str, required=True, help="The path to the folder in which all of the compiled JSON results will be written.")
+    Flags.add_argument("--enable-orientation", dest="EnableOrientation", action="store_true", required=False, default=False, help="Enable orientation quantification. NOTE: This significantly increases execution time.")
     Flags.add_argument("--pre-check", dest="ManualPreCheck", action="store_true", required=False, default=False, help="Manually preview the image results to check for whether or not the images should even be processed.")
 
     Arguments: argparse.Namespace = Flags.parse_args()
@@ -54,6 +57,7 @@ def main() -> None:
     InputFile: str = Arguments.Spreadsheet
     FolderBase: str = Arguments.FolderBase
     ManualPreview: bool = Arguments.ManualPreCheck
+    EnableOrientation: bool = Arguments.EnableOrientation
     JSONDirectory = Arguments.JSONDirectory
 
     #   Parse the spreadsheet, identifying and validating all of the experimental conditions
@@ -188,6 +192,7 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
     """
 
     global JSONDirectory
+    global EnableOrientation
 
     ConditionCount: int = len(ExperimentalConditions)
     for ConditionIndex, Condition in enumerate(ExperimentalConditions, start=1):
@@ -208,6 +213,7 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
                 DRG_Neurite_Quantification.Config.ManualPreview = False
                 DRG_Neurite_Quantification.Config.OutputDirectory = os.path.splitext(Condition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
                 DRG_Neurite_Quantification.Config.JSONDirectory = JSONDirectory
+                DRG_Neurite_Quantification.Config.EnableOrientationQuantification = EnableOrientation
                 DRG_Neurite_Quantification.QuantificationStacks = DRG_Neurite_Quantification.QuantificationIntermediates(LogWriter=DRG_Neurite_Quantification.LogWriter)
                 DRG_Neurite_Quantification.Results = MTG_Common.DRG_Quantification.DRGQuantificationResults()
                 DRG_Neurite_Quantification.Results.ExtractExperimentalDetails(Condition)
