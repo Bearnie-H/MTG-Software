@@ -186,7 +186,7 @@ def TryParseString(Input: str) -> str | None:
     """
 
     if ( Input is None ) or ( Input == "" ):
-        return None
+        return ""
 
     return Input
 
@@ -1341,6 +1341,12 @@ class DRGQuantificationResultsSet():
         self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time By Date - ALL"), IncludeInsufficientGrowth=True)
 
         #   ...
+        self._ByHydrogelFormulationAndLaminin(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration"), CollapseDates=True)
+        self._ByHydrogelFormulationAndLaminin(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration By Date"))
+        self._ByHydrogelFormulationAndLaminin(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._ByHydrogelFormulationAndLaminin(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration By Date - ALL"), IncludeInsufficientGrowth=True)
+
+        #   ...
 
         return
 
@@ -1746,6 +1752,7 @@ class DRGQuantificationResultsSet():
             Example: DRGQuantificationResults = Group._Results[0]
             AxisTitle: str = "".join([
                 f"{Example.ExperimentDate if not CollapseDates else ''}",
+                f', {Example.DilutionMedia}',
                 f', Phenol Red' if Example.IncludesPhenolRed else '',
                 f', B27' if Example.IncludesB27 else '',
                 f', FBS' if Example.IncludesFetalBovineSerum else '',
@@ -1791,5 +1798,100 @@ class DRGQuantificationResultsSet():
             F.clear()
 
         self._LogWriter.Println(f"Finished creating boxplots of neurite length as a function of Ru-SPS and Gel Illumination for Ultimatrix...")
+
+        return
+
+    def _ByHydrogelFormulationAndLaminin(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
+        """
+        _ByHydrogelFormulationAndLaminin
+
+        This function...
+        """
+
+        self._LogWriter.Println(f"Preparing boxplots of neurite length as a function of hydrogel formulation and laminin concentration for gels H6, H7, and H8...")
+
+        if ( not os.path.exists(OutputDirectory) ):
+            os.makedirs(OutputDirectory, mode=0o755, exist_ok=True)
+            self._LogWriter.Println(f"Creating output directory [ {OutputDirectory } ]...")
+
+        HydrogelsResults: DRGQuantificationResultsSet = self.Filter(
+            lambda x:
+                x.BaseGel in (BaseGels.BaseGel_H6, BaseGels.BaseGel_H7, BaseGels.BaseGel_H8)
+        )
+        if ( not IncludeInsufficientGrowth ):
+            HydrogelsResults = HydrogelsResults.Filter(
+                lambda x:
+                    x.InsufficientGrowth == False
+            )
+        if ( len(HydrogelsResults) == 0 ):
+            self._LogWriter.Println(f"No results were found where BaseGel is one of (H6, H7, or H8)...")
+            return
+
+        #   Identify the possible values for the GelMA percentage and the Degree of Functionalization of the gel.
+        HydroGelTypes: typing.Sequence[float] = HydrogelsResults.Unique(lambda x: x.BaseGel)
+        LamininConcentrations: typing.Sequence[float] = HydrogelsResults.Unique(lambda x: x.LamininConcentration)
+
+        self._LogWriter.Println(f"Found results for Base Gels: [ {HydroGelTypes} ]...")
+        self._LogWriter.Println(f"Found results for Laminin Concentrations: [ {LamininConcentrations} ]...")
+
+        #   We need to generate groups which are unique in all parameters *Except* the GelMA percentage and Degree of Functionalization.
+        #   Then, we can split on these last two parameters and get meaningful comparisons across these two experimental variables for
+        #   every other larger set of experimental variables.
+        Template: DRGQuantificationResults = DRGQuantificationResults()
+        if ( CollapseDates ):
+            Template.ExperimentDate = None
+        Template.BaseGel = None
+        Template.LamininConcentration = None
+        Groups: typing.Sequence[DRGQuantificationResultsSet] = HydrogelsResults.GroupBy(Template)
+
+        #   For each set of experimental conditions, identify the 4 cases we care about for these figures:
+        for GroupIndex, Group in enumerate(Groups, start=1):
+            self._LogWriter.Println(f"Preparing boxplot for condition [ {GroupIndex}/{len(Groups)} ]...")
+            F: Figure = Utils.PrepareFigure()
+            Ax: Axes = F.add_subplot(111)
+            Example: DRGQuantificationResults = Group._Results[0]
+            AxisTitle: str = "".join([
+                f"{Example.ExperimentDate}" if not CollapseDates else '',
+                f"\nCrosslinker={Example.Crosslinker}" if Example.Crosslinker != '' else '',
+                f"\nPolymer={Example.Polymer}" if Example.Polymer != '' else '',
+                f"\nPeptide={Example.Peptide}" if Example.Peptide != '' else '',
+                f"\nPeptide In {Example.PeptideIn}" if Example.PeptideIn != '' else '',
+                f", Peptide Concentration={Example.PeptideConcentration}" if Example.PeptideConcentration != '' else '',
+            ]).strip().strip(", ").replace("/", "-")
+
+            with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
+                PlotPosition: int = 0
+                for Index, (BaseGel, LamininConcentration) in enumerate(itertools.product(HydroGelTypes, LamininConcentrations)):
+
+                    Condition: DRGQuantificationResultsSet = Group.Filter(
+                        lambda x:
+                            x.BaseGel == BaseGel and \
+                            x.LamininConcentration == LamininConcentration
+                    )
+                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition]
+                    if ( len(Condition) > 0 ):
+                        Ax.boxplot(Distances, sym='', positions=[PlotPosition], labels=[f"{BaseGel}\n{LamininConcentration}µg/mL Laminin\nn={len(Condition)}\nµ={np.mean(Distances) if len(Distances) > 0 else 0:.2f}µm"])
+                        Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
+                        PlotPosition += 1
+
+                    DataFile.write(f"{BaseGel} - {LamininConcentration}µg/mL Laminin")
+                    DataFile.write(''.join([f",{x}" for x in Distances]))
+                    DataFile.write("\n")
+
+            F.suptitle(f"Median DRG Neurite Length versus Hydrogel Formulation and Laminin Concentration{' (Including Insufficient Growth)' if IncludeInsufficientGrowth else ''}")
+            Ax.set_title(AxisTitle)
+            Ax.minorticks_on()
+            Ax.set_ylim(bottom=0.0)
+            Ax.set_ylabel(f"Median Neurite Length (µm)")
+            Ax.set_xlabel(f"Hydrogel Formulation & Laminin Concentration")
+            F.tight_layout()
+            self._LogWriter.Println(f"Created boxplot for condition [ {GroupIndex}/{len(Groups)} ].")
+
+            FigureFilename: str = AxisTitle.replace("\n", ", ")
+            Utils.WriteImage(Utils.FigureToImage(F), os.path.join(OutputDirectory, f"{FigureFilename}.png"))
+            self._LogWriter.Println(f"Saved figure to file [ {FigureFilename}.png ]...")
+            F.clear()
+
+        self._LogWriter.Println(f"Finished creating boxplots of neurite length as a function of hydrogel formulation and laminin concentration for gels H6, H7, and H8.")
 
         return

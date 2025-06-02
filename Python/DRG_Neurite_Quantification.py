@@ -191,14 +191,14 @@ class Configuration():
             self.BrightFieldImageFile = ExperimentalCondition.LIFFilePath
             self.BrightFieldImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.BrightFieldSeriesIndex, ChannelIndex=ExperimentalCondition.BrightFieldChannelIndex)
             if ( self.BrightFieldImage is None ):
-                self._LogWriter.Errorln(f"Failed to open Bright Field Image with Series and Channel Indices [ {ExperimentalCondition.BrightFieldSeriesIndex},{ExperimentalCondition.BrightFieldChannelIndex} ]!")
+                self._LogWriter.Errorln(f"Failed to open Bright Field Image with Series and Channel Indices [ {ExperimentalCondition.BrightFieldSeriesIndex}, {ExperimentalCondition.BrightFieldChannelIndex} ]!")
                 ExperimentalCondition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.NoBrightFieldImage)
                 ValidCondition = False
 
             self.FluorescentImageFile = ExperimentalCondition.LIFFilePath
             self.FluorescentImage = ZStack.ZStack.FromLIF(ExperimentalCondition.LIFFilePath, SeriesIndex=ExperimentalCondition.NeuriteSeriesIndex, ChannelIndex=ExperimentalCondition.NeuriteChannelIndex)
             if ( self.FluorescentImage is None ):
-                self._LogWriter.Errorln(f"Failed to open Fluorescent Image with Series and Channel Indices [ {ExperimentalCondition.NeuriteSeriesIndex},{ExperimentalCondition.NeuriteChannelIndex} ]!")
+                self._LogWriter.Errorln(f"Failed to open Fluorescent Image with Series and Channel Indices [ {ExperimentalCondition.NeuriteSeriesIndex}, {ExperimentalCondition.NeuriteChannelIndex} ]!")
                 ExperimentalCondition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.NoFluorescentImage)
                 ValidCondition = False
 
@@ -207,7 +207,7 @@ class Configuration():
         #   ...
 
         if ( not ValidCondition ):
-            raise ValueError(f"Failed to properly extract analysis configuration state from the Experimental Condition details - {ExperimentalCondition.AnalysisStatus}!")
+            raise ValueError(f"Failed to properly extract analysis configuration state from the Experimental Condition details - {str(DRGAnalysis_StatusCode(ExperimentalCondition.AnalysisStatus))}!")
 
         return self
 

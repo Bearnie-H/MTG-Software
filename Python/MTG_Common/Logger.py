@@ -201,6 +201,21 @@ class Logger():
         return nWritten
 
     ##  Public Class Methods
+    def Copy(self: Logger) -> Logger:
+        """
+        Copy
+
+        This function...
+
+        Return (Logger):
+            ...
+        """
+
+        New: Logger = Logger(self.RawStream(), self._MessagePrefix, self._TimeStamp, self._Columns, self._AlwaysFlush)
+        New._Filename = self._Filename
+
+        return New
+
     def RawStream(self: Logger) -> TextIO:
         return self._OutputStream
 
@@ -252,6 +267,42 @@ class Logger():
 
         self.Println(f"Opening and changing Logger output stream to [ {Filename} ].")
         self._OutputStream = open(Filename, mode="+wt")
+
+        return self
+
+    def SetPrefix(self: Logger, Prefix: str) -> Logger:
+        """
+        SetPrefix
+
+        This function...
+
+        Prefix:
+            ...
+
+        Return (self):
+            ...
+        """
+
+        self._MessagePrefix = Prefix
+        return self
+
+    def AppendToPrefix(self: Logger, ToAppend: str) -> Logger:
+        """
+        AppendToPrefix
+
+        This function...
+
+        ToAppend:
+            ...
+
+        Return (self):
+            ...
+        """
+
+        if ( self._MessagePrefix is None ):
+            self._MessagePrefix = ToAppend
+        else:
+            self._MessagePrefix += f" {ToAppend}"
 
         return self
 

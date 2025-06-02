@@ -436,7 +436,7 @@ class AngleTracker():
         self.AngularStDevs = np.append(self.AngularStDevs, AngularStDev)
         self.RodCounts = np.append(self.RodCounts, RodCount)
         self.AlignmentFractions = np.append(self.AlignmentFractions, AlignmentFraction)
-        self.AlignmentMetrics = np.append(self.AlignmentMetrics, AlignmentFraction / AngularStDev)
+        self.AlignmentMetrics = np.append(self.AlignmentMetrics, AlignmentFraction / AngularStDev if AngularStDev != 0 else 0)
 
         F1, F2 = self.UpdateFigures(Orientations, Headless)
 

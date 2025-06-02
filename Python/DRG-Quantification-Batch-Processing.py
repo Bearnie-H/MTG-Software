@@ -72,7 +72,9 @@ def main() -> None:
         AnalyzeConditions(ExperimentalConditions, StatusReport)
 
     #   If the JSON folder has been provided, run the summarization logic to generate the output plots and figures
-    DRGQuantificationResultsSet.FromDirectory(JSONDirectory).Summarize(os.path.join(JSONDirectory, "Summarized Results"))
+    LogWriter.Println(f"Preparing to summarize DRG Quantification results into the set of defined figures...")
+    DRGQuantificationResultsSet.FromDirectory(JSONDirectory).SetLogger(LogWriter=LogWriter.Copy().SetPrefix(f"DRG Quantification Summarization")).Summarize(os.path.join(JSONDirectory, "Summarized Results"))
+    LogWriter.Println(f"Finished summarizing DRG Quantification results!")
 
     return
 
@@ -163,7 +165,7 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
                 Condition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusUnknownException)
                 Condition.AnalysisStatus &= ~DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusNotYetProcessed)
 
-        StatusReport.write(f"{Condition.LIFFilePath},{str(Condition.AnalysisStatus)},{int(Condition.AnalysisStatus)}\n")
+        StatusReport.write(f"{Condition.LIFFilePath},{str(DRGAnalysis_StatusCode(Condition.AnalysisStatus))},{int(DRGAnalysis_StatusCode(Condition.AnalysisStatus))}\n")
         StatusReport.flush()
 
     return ExperimentalConditions
@@ -221,7 +223,7 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
                 Condition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusUnknownException)
                 Condition.AnalysisStatus &= ~DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusNotYetProcessed)
 
-        StatusReport.write(f"{Condition.LIFFilePath},{str(Condition.AnalysisStatus)},{int(Condition.AnalysisStatus)}\n")
+        StatusReport.write(f"{Condition.LIFFilePath},{str(DRGAnalysis_StatusCode(Condition.AnalysisStatus))},{int(DRGAnalysis_StatusCode(Condition.AnalysisStatus))}\n")
         StatusReport.flush()
 
     return ExperimentalConditions
