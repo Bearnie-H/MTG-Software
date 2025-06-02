@@ -57,7 +57,7 @@ def main() -> None:
     InputFile: str = Arguments.Spreadsheet
     FolderBase: str = Arguments.FolderBase
     ManualPreview: bool = Arguments.ManualPreCheck
-    EnableOrientation: bool = Arguments.EnableOrientation
+    EnableOrientation = Arguments.EnableOrientation
     JSONDirectory = Arguments.JSONDirectory
 
     #   Parse the spreadsheet, identifying and validating all of the experimental conditions
