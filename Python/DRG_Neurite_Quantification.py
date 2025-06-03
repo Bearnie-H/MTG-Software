@@ -1574,7 +1574,8 @@ def PrepareResults(Results: DRGQuantificationResults) -> DRGQuantificationResult
     }
 
     #   Collapse all of the neurite distance values, and compute the median distance across the entire 3D volume.
-    Results.MedianNeuriteDistance = float(np.median(np.array(list(itertools.chain.from_iterable(QuantificationStacks.NeuriteDistances)))))
+    AllDistances: np.ndarray = np.array(list(itertools.chain.from_iterable(QuantificationStacks.NeuriteDistances)))
+    Results.MedianNeuriteDistance = float(np.median(AllDistances) if len(AllDistances) > 0 else 0)
 
     #   Compute the fraction of the possible growth area actually occupied by neurites within each layer of the fluorescent stack.
     Results.NeuriteDensityByLayer = {

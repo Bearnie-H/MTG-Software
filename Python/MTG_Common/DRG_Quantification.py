@@ -570,9 +570,9 @@ class DRGQuantificationResults():
     ##  Results and Quantification Metrics
     DRGCentroidLocation: typing.List[int, int]              #   Where in the image is the centroid of the DRG Body? (X, Y) Pixel coordinates
     InclusionMaskFraction:  float                           #   What fraction of the image is included in the final inclusion mask, i.e. what fraction of the image can neurites grow within?
-    NeuriteDistancesByLayer: typing.Dict[int, typing.List[int]]    #   Keys = Layer Index, Values = Count of Neurite Pixels at each integer distance from the centroid
-    MedianNeuriteDistancesByLayer: typing.Dict[int, int]            #   Keys = LayerIndex, Values = Median Distance Neurites Grew To
-    MedianNeuriteDistance: int  #   Median distance of all neurite pixels from the DRG centroid
+    NeuriteDistancesByLayer: typing.Dict[int, typing.List[float]]    #   Keys = Layer Index, Values = Count of Neurite Pixels at each integer distance from the centroid
+    MedianNeuriteDistancesByLayer: typing.Dict[int, float]            #   Keys = LayerIndex, Values = Median Distance Neurites Grew To
+    MedianNeuriteDistance: float  #   Median distance of all neurite pixels from the DRG centroid
     NeuriteDensityByLayer: typing.Dict[int, float]                 #   Keys = Layer Index, Values = Fraction of well interior occupied by neurite pixels
     NeuriteDensity: float   #   Ratio of neurite pixels to well interior pixels
     OrientationAngularResolution: float                     #   How many degrees are between each tested angle for the orientation results
@@ -1518,7 +1518,7 @@ class DRGQuantificationResultsSet():
                             x.GelMAPercentage == GelMAPercentage and \
                             x.DegreeOfFunctionalization == DegreeOfFunctionalization
                     )
-                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition]
+                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition if math.isfinite(x.MedianNeuriteDistance)]
                     if ( len(Condition) > 0 ):
                         Ax.boxplot(Distances, sym='', positions=[PlotPosition], labels=[f"{GelMAPercentage}% GelMA\n{DegreeOfFunctionalization} DOF\nn={len(Condition)}\nµ={np.mean(Distances) if len(Distances) > 0 else 0:.2f}µm"])
                         Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
@@ -1645,7 +1645,7 @@ class DRGQuantificationResultsSet():
                             x.DegreeOfFunctionalization == DegreeOfFunctionalization and \
                             x.DilutionMedia == DilutionMedium
                     )
-                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition]
+                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition if math.isfinite(x.MedianNeuriteDistance)]
                     if ( len(Condition) > 0 ):
                         Ax.boxplot(Distances, sym='', positions=[PlotPosition], labels=[f"{DilutionMedium}\n{GelMAPercentage}% GelMA\n{DegreeOfFunctionalization} DOF\nn={len(Condition)}\nµ={np.mean(Distances) if len(Distances) > 0 else 0:.2f}µm"])
                         Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
@@ -1774,7 +1774,7 @@ class DRGQuantificationResultsSet():
                             x.RutheniumConcentration == RutheniumConcentration and \
                             x.GelIlluminationDuration == IlluminationDuration
                     )
-                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition]
+                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition if math.isfinite(x.MedianNeuriteDistance)]
                     if ( len(Condition) > 0 ):
                         Ax.boxplot(Distances, sym='', positions=[PlotPosition], labels=[f"{IlluminationDuration}s\n{SPSConcentration}mM SPS\n{RutheniumConcentration}mM Ru\nn={len(Condition)}\nµ={np.mean(Distances) if len(Distances) > 0 else 0:.2f}µm"])
                         Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
@@ -1854,9 +1854,7 @@ class DRGQuantificationResultsSet():
                 f"{Example.ExperimentDate}" if not CollapseDates else '',
                 f"\nCrosslinker={Example.Crosslinker}" if Example.Crosslinker != '' else '',
                 f"\nPolymer={Example.Polymer}" if Example.Polymer != '' else '',
-                f"\nPeptide={Example.Peptide}" if Example.Peptide != '' else '',
-                f"\nPeptide In {Example.PeptideIn}" if Example.PeptideIn != '' else '',
-                f", Peptide Concentration={Example.PeptideConcentration}" if Example.PeptideConcentration != '' else '',
+                f"\nPeptide={Example.Peptide} in {Example.PeptideIn}\nConcentration={Example.PeptideConcentration}" if Example.Peptide != '' and Example.Peptide is not None else '',
             ]).strip().strip(", ").replace("/", "-")
 
             with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
@@ -1868,7 +1866,7 @@ class DRGQuantificationResultsSet():
                             x.BaseGel == BaseGel and \
                             x.LamininConcentration == LamininConcentration
                     )
-                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition]
+                    Distances: typing.List[float] = [x.MedianNeuriteDistance for x in Condition if math.isfinite(x.MedianNeuriteDistance)]
                     if ( len(Condition) > 0 ):
                         Ax.boxplot(Distances, sym='', positions=[PlotPosition], labels=[f"{BaseGel}\n{LamininConcentration}µg/mL Laminin\nn={len(Condition)}\nµ={np.mean(Distances) if len(Distances) > 0 else 0:.2f}µm"])
                         Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Distances)), Distances, c='k', alpha=0.5)
