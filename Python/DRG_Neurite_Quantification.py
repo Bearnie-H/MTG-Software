@@ -521,10 +521,10 @@ def main() -> int:
         LogWriter.Println(f"Quantifying neurite lengths for layer [ {Index+1}/{Config.FluorescentImage.LayerCount()} ]...")
         QuantificationStacks.NeuriteDistances.append(QuantifyNeuriteLengths(Neurites, CentroidLocation))
 
+        FeatureSizePx: float = 50 / 0.7644
+        Config.DistinctOrientations = 90
+        DistinctOrientations = Config.DistinctOrientations
         if ( Config.EnableOrientationQuantification ):
-            FeatureSizePx: float = 50 / 0.7644
-            Config.DistinctOrientations = 90
-            DistinctOrientations = Config.DistinctOrientations
             LogWriter.Println(f"Quantifying neurite orientations for layer [ {Index+1}/{Config.FluorescentImage.LayerCount()} ]...")
             QuantificationStacks.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer.copy(), Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
 
