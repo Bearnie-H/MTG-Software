@@ -185,6 +185,26 @@ class ZStack():
 
         return None
 
+    @staticmethod
+    def FromImage(Image: np.ndarray) -> ZStack:
+        """
+        FromImage
+
+        This function...
+
+        Image:
+            ...
+
+        Return (ZStack):
+            ...
+        """
+
+        Stack: ZStack = ZStack()
+        Stack = Stack.InitializePixels((1,) + Image.shape)
+        Stack.Pixels[0,:,:] = Image
+
+        return Stack
+
     ### Public Methods
     def Copy(self: ZStack) -> ZStack:
         """
