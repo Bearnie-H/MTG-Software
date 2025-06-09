@@ -857,7 +857,7 @@ class DRGQuantificationResults():
             equal between self and Other.
         """
 
-        for A, B, T in zip(tuple(self), tuple(Other), tuple(Template)):
+        for (A, B, T) in zip(tuple(self), tuple(Other), tuple(Template)):
             if ( T is not None ) and ( A != B ):
                 return False
 
@@ -1501,6 +1501,7 @@ class DRGQuantificationResultsSet():
                 f', B27' if Example.IncludesB27 else '',
                 f', FBS' if Example.IncludesFetalBovineSerum else '',
                 f', Ru-SPS {Example.RutheniumConcentration}-{Example.SodiumPersulfateConcentration}' if Example.RutheniumConcentration != 0 and Example.SodiumPersulfateConcentration != 0 else f', Riboflavin {Example.RiboflavinConcentration}',
+                f', Illumination Time {Example.GelIlluminationDuration}s',
                 f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
                 f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
                 f', Glutathione {Example.GlutathioneConcentration}' if Example.Glutathione else '',
@@ -1627,6 +1628,7 @@ class DRGQuantificationResultsSet():
                 f', B27' if Example.IncludesB27 else '',
                 f', FBS' if Example.IncludesFetalBovineSerum else '',
                 f', Ru-SPS {Example.RutheniumConcentration}-{Example.SodiumPersulfateConcentration}' if Example.RutheniumConcentration != 0 and Example.SodiumPersulfateConcentration != 0 else f', Riboflavin {Example.RiboflavinConcentration}',
+                f', Illumination Time {Example.GelIlluminationDuration}s',
                 f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
                 f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
                 f', Glutathione {Example.GlutathioneConcentration}' if Example.Glutathione else '',
