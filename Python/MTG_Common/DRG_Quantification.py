@@ -215,6 +215,7 @@ class DRGAnalysis_StatusCode(int):
     StatusIntentionalAbort: DRGAnalysis_StatusCode = 1 << 12
     StatusSkipped:          DRGAnalysis_StatusCode = 1 << 13
     InsufficientGrowth:     DRGAnalysis_StatusCode = 1 << 14
+    HighNeuriteDensity:     DRGAnalysis_StatusCode = 1 << 15
 
     def __str__(self: DRGAnalysis_StatusCode) -> str:
 
@@ -234,6 +235,7 @@ class DRGAnalysis_StatusCode(int):
             DRGAnalysis_StatusCode.StatusIntentionalAbort:     "Intentionally Ended Early.",
             DRGAnalysis_StatusCode.StatusSkipped:              "Analysis Intentionally Skipped.",
             DRGAnalysis_StatusCode.InsufficientGrowth:         "Insufficient Growth to be Imaged.",
+            DRGAnalysis_StatusCode.HighNeuriteDensity:         "Concerningly High Neurite Density.",
 
         }
 
