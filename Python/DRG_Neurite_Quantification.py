@@ -562,12 +562,14 @@ def main() -> int:
 
     #   Quickly check that at least some neurites were identified in the analysis, otherwise return a special status code to indicate this.
     if ( max([np.max(x) if len(x) > 0 else 0 for x in QuantificationStacks.NeuriteDistances]) == 0 ):
-        return DRGAnalysis_StatusCode.StatusNoNeurites
+        LogWriter.Warnln(f"No neurite pixels identified throughout the entire fluorescent stack.")
+        return DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusSuccess | DRGAnalysis_StatusCode.StatusNoNeurites)
 
     #   Also check if the neurite density (normailizing for the number of layers processed)
     #   seems abnormally high
     HighNeuriteDensityThreshold: float = 0.35
     if ( Results.NeuriteDensity * Config.FluorescentImage.LayerCount() >= HighNeuriteDensityThreshold ):
+        LogWriter.Warnln(f"Concerningly high neurite density [ {Results.NeuriteDensity * Config.FluorescentImage.LayerCount()} ].")
         return DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusSuccess | DRGAnalysis_StatusCode.HighNeuriteDensity)
 
     return DRGAnalysis_StatusCode.StatusSuccess
@@ -1589,6 +1591,9 @@ def CreateQuantificationFigures(NeuriteLengths: np.ndarray) -> None:
     Return (None):
         None, the figures are generated and optionally displayed and saved to disk.
     """
+
+    if ( len(NeuriteLengths) == 0 ):
+        return
 
     BinCount: int = 100
     n, bins = np.histogram(NeuriteLengths, bins=BinCount, density=True)
