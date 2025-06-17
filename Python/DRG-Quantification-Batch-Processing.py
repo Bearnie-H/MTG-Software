@@ -159,7 +159,7 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
                 DRG_Neurite_Quantification.QuantificationStacks = DRG_Neurite_Quantification.QuantificationIntermediates(LogWriter=DRG_Neurite_Quantification.LogWriter)
                 DRG_Neurite_Quantification.Results = MTG_Common.DRG_Quantification.DRGQuantificationResults()
 
-                if ( DRG_Neurite_Quantification.main() == DRGAnalysis_StatusCode.StatusSuccess ):
+                if ( DRG_Neurite_Quantification.main() == DRGAnalysis_StatusCode.StatusPreviewAccepted ):
                     LogWriter.Println(f"Preview accepted for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
                 else:
                     LogWriter.Errorln(f"Preview rejected for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] - [ {str(Condition.AnalysisStatus)} ({int(Condition.AnalysisStatus)})].")

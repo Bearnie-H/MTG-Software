@@ -505,12 +505,16 @@ def main() -> int:
             return MasksStatus
         LogWriter.Println(f"Alternative mask generation algorithms succeeded.")
 
+    #   Compute an effective value for the "radius" of the DRG body, to use as part of the
+    #   heuristic for where neurites are expected to start from.
+    DRGBodyRadius: float = ComputeDRGBodyRadius(DRGBodyMask, CentroidLocation)
+
     LogWriter.Println(f"Starting to process fluorescent image...")
     for Index, Layer in enumerate(Config.FluorescentImage.Layers()):
         LogWriter.Println(f"Processing Layer [ {Index+1}/{len(Config.FluorescentImage.Layers())} ]...")
 
         #   Take the fluorescent image and segment out the neurite growth pixels
-        Neurites: np.ndarray = ProcessFluorescent(Layer.copy(), DRGBodyMask, WellEdgeMask, CentroidLocation)
+        Neurites: np.ndarray = ProcessFluorescent(Layer.copy(), DRGBodyMask, WellEdgeMask, CentroidLocation, DRGBodyRadius)
 
         #   If the user has selected they would like to apply manual ROI selection to exclude specific noise regions,
         #   perform this now.
@@ -520,15 +524,19 @@ def main() -> int:
             DisplayAndSaveImage(Utils.ConvertTo8Bit(Neurites), "Polygon Exclusion Masked Image", Config.DryRun, Config.HeadlessMode)
         QuantificationStacks.ManuallySelectedFluorescent.Append(Utils.ConvertTo8Bit(Neurites))
 
+    QuantificationStacks.ManuallySelectedFluorescent = Assert3DNeuriteContinuity(QuantificationStacks.ManuallySelectedFluorescent, CentroidLocation, DRGBodyRadius)
+
+    for Index, Neurites in enumerate(QuantificationStacks.ManuallySelectedFluorescent.Layers()):
+
         #   With the centroid location and neurite pixels now identified, quantify the distribution of lengths of neurites
-        LogWriter.Println(f"Quantifying neurite lengths for layer [ {Index+1}/{Config.FluorescentImage.LayerCount()} ]...")
+        LogWriter.Println(f"Quantifying neurite lengths for layer [ {Index+1}/{QuantificationStacks.ManuallySelectedFluorescent.LayerCount()} ]...")
         QuantificationStacks.NeuriteDistances.append(QuantifyNeuriteLengths(Neurites, CentroidLocation))
 
         FeatureSizePx: float = 50 / 0.7644
         Config.DistinctOrientations = 90
         DistinctOrientations = Config.DistinctOrientations
         if ( Config.EnableOrientationQuantification ):
-            LogWriter.Println(f"Quantifying neurite orientations for layer [ {Index+1}/{Config.FluorescentImage.LayerCount()} ]...")
+            LogWriter.Println(f"Quantifying neurite orientations for layer [ {Index+1}/{QuantificationStacks.ManuallySelectedFluorescent.LayerCount()} ]...")
             QuantificationStacks.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer.copy(), Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
 
     LogWriter.Println(f"Finished processing fluorescent image.")
@@ -629,12 +637,11 @@ def DisplayAndSaveImage(Image: np.ndarray, Description: str, DryRun: bool, Headl
 
     #   Save the image to disk.
     if ( not DryRun ):
+        ImageSequenceNumber += 1
         if ( Utils.WriteImage(Image, os.path.join(Config.OutputDirectory, f"{ImageSequenceNumber} - {Description}.png")) ):
             LogWriter.Println(f"Wrote out image [ {ImageSequenceNumber} - {Description}.png ] to [ {Config.OutputDirectory}/ ]...")
         else:
             LogWriter.Errorln(f"Failed to write out image [ {ImageSequenceNumber} - {Description}.png ] to [ {Config.OutputDirectory}/ ]...")
-
-    ImageSequenceNumber += 1
 
     return
 
@@ -1189,7 +1196,51 @@ def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
 
     return MaskStatus
 
-def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray, DRGCentroid: typing.Tuple[int, int]) -> np.ndarray:
+def ComputeDRGBodyRadius(Mask: np.ndarray, Centroid: typing.Tuple[int, int]) -> float:
+    """
+    ComputeDRGBodyRadius
+
+    This function...
+
+    Mask:
+        ...
+    Centroid:
+        ...
+
+    Return (float):
+        ...
+    """
+
+    #   Get the distances of every non-zero pixel within the mask
+    Coordinates: np.ndarray = np.argwhere(Mask != 0)
+    Distances: np.ndarray = np.hypot(Coordinates[:,0] - Centroid[1], Coordinates[:,1] - Centroid[0])
+
+    #   Calculate the distribution of distances from the centroid.
+    hist, bins = np.histogram(Distances, bins=int(round(max(Distances))), range=(0, int(round(max(Distances)))))
+
+    #   Compute the fraction of each radius which consists of unmasked pixels
+    ArcFractions: np.ndarray = (hist / (bins[1:])) / (2 * np.pi)
+
+    #   Return the first distance at which the fraction of an arc shows 80% of the maximum number of pixels
+    Threshold: float = 0.6 * np.max(ArcFractions)
+    EffectiveRadius = bins[1:][np.argmin(ArcFractions <= Threshold)]
+
+    #   +++ DEBUGGING +++
+    # Image: np.ndarray = Utils.GreyscaleToBGR(Utils.ConvertTo8Bit(Mask.copy()))
+    # for Multiplier in np.linspace(0.5, 2, 21):
+    #     Image = cv2.circle(Image, Centroid, int(EffectiveRadius * Multiplier), (0, 255, 255 * ((Multiplier - 0.5) / 2)), 2)
+    # Utils.DisplayImage("", Image, 5, True)
+    #   --- DEBUGGING ---
+
+    #   Convert from pixel distances to physical units, assuming the "Spatial Resolution" value in the configuration object is non-zero.
+    if ( Config.ExperimentalDetails is not None ):
+        if ( Config.ExperimentalDetails.ImageResolution is not None ) and ( Config.ExperimentalDetails.ImageResolution != 0 ):
+            EffectiveRadius *= Config.ExperimentalDetails.ImageResolution
+
+    LogWriter.Println(f"DRG Body has an effective radius estimated to be [ {EffectiveRadius}µm ]...")
+    return EffectiveRadius
+
+def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray, DRGCentroid: typing.Tuple[int, int], DRGBodyRadius: float) -> np.ndarray:
     """
     ProcessFluorescent
 
@@ -1205,6 +1256,8 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
         The pre-computed mask for removing pixels outside the bounds of the well of the chip.
     DRGCentroid:
         ...
+    DRGBodyRadius:
+        ...
 
     Return (np.ndarray):
         A binary image with the pixels corresponding to neurites set as non-zero values, while
@@ -1219,7 +1272,6 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
     SpeckleComponentAreaThreshold: int = (0.005 / 100.0) * np.prod(FluorescentImage.shape)
     NeuriteAspectRatioThreshold: float = 1.5
     NeuriteInfillFractionThreshold: float = 0.75 * (np.pi / 4)
-    MaximumSatelliteGap: float = np.min(FluorescentImage.shape) * 0.01
 
     #   First, convert the image to a full-range 8-bit image and assert that it is greyscale.
     Image: np.ndarray = Utils.ConvertTo8Bit(Utils.BGRToGreyscale(FluorescentImage))
@@ -1251,7 +1303,7 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
     #   Finally, examine the set of remaining pixels, and assert that what is considered "Neurites"
     #   is a single cluster of distance values. We know that neurites cannot spring out of nowhere,
     #   so actual neurites must start at the DRG body and extend continuously outwards with no breaks.
-    SatelliteRemoved = RemoveUnconnectedSatellites(FilteredNeuriteComponents, DRGCentroid, MaximumSatelliteGap)
+    SatelliteRemoved = RemoveUnconnectedSatellites(FilteredNeuriteComponents, DRGCentroid, DRGBodyRadius)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(SatelliteRemoved), "Disconnected Satellite Components Removed", not Config.SaveIntermediates, Config.HeadlessMode)
     QuantificationStacks.SatelliteRemovedFluorescent.Append(SatelliteRemoved)
 
@@ -1350,7 +1402,7 @@ def FilterNeuriteComponents(Image: np.ndarray, SpeckleAreaThreshold: int, Neurit
 
     return FilteredComponents
 
-def RemoveUnconnectedSatellites(Image: np.ndarray, CentroidLocation: typing.Tuple[int, int], MaximumGapDistance: float) -> np.ndarray:
+def RemoveUnconnectedSatellites(Image: np.ndarray, CentroidLocation: typing.Tuple[int, int], DRGBodyRadius: float) -> np.ndarray:
     """
     RemoveUnconnectedSatellites
 
@@ -1360,12 +1412,14 @@ def RemoveUnconnectedSatellites(Image: np.ndarray, CentroidLocation: typing.Tupl
         ...
     CentroidLocation:
         ...
-    MaximumGapDistance:
+    DRGBodyRadius:
         ...
 
     Return (np.ndarray):
         ...
     """
+
+    MaximumSatelliteGap: float = np.min(Image.shape) * 0.01
 
     Coordinates: np.ndarray = np.argwhere(Image != 0)
     Distances: np.ndarray = np.hypot(Coordinates[:,0] - CentroidLocation[1], Coordinates[:,1] - CentroidLocation[0])
@@ -1389,21 +1443,91 @@ def RemoveUnconnectedSatellites(Image: np.ndarray, CentroidLocation: typing.Tupl
         LogWriter.Println(f"No gaps of any size found in the distribution of neurite distances...")
         return Image
 
+    #   We want to assert that the non-zero counts begin "near" to the DRG body.
+    #   We define this as beginning no more than 1.5x the radius of the DRG body
+    #   from the centroid.
+    if ( NonZeroCounts[0] >= ( 1.5 * DRGBodyRadius ) ):
+        LogWriter.Println(f"First neurite pixel candidates start more than 1.5x the DRG body radius from the DRG centroid... [ {NonZeroCounts[0]}µm vs. {1.5 * DRGBodyRadius}µm ]")
+        return np.zeros_like(Image)
+
+    #   Search for any gaps in the distribution of neurite distances, as this
+    #   corresponds to a break in the neurites.
     Gaps: np.ndarray = np.diff(NonZeroCounts, n=1).flatten()
-    LargeGapIndices: np.ndarray = np.where(Gaps > MaximumGapDistance)[0]
+    LargeGapIndices: np.ndarray = np.where(Gaps > MaximumSatelliteGap)[0]
     if ( len(LargeGapIndices) == 0 ):
         LogWriter.Println(f"No gaps of sufficient size found in the distribution of neurite distances...")
         return Image
 
+    #   We care about the first gap, as everything outside of this is considered not valid neurite.
     FirstLargeGapIndex = np.min(LargeGapIndices)
     MaximumValidDistance: float = float(bins[NonZeroCounts[FirstLargeGapIndex]])
-    LogWriter.Println(f"Removing all identified pixels with distances greater than [ {MaximumValidDistance:.2f} ]...")
+    LogWriter.Println(f"Removing all identified pixels with distances greater than [ {MaximumValidDistance:.2f}µm ]...")
 
+    ##  TODO: Find a more efficient way of zeroing out these pixels. Maybe write a circular mask and bitwise AND?
+    ##          Maybe this is fine, as it never accesses pixels it doesn't need to?
     Out = Image.copy()
     for CoordinateToRemove in Coordinates[Distances > MaximumValidDistance]:
         Out[tuple(CoordinateToRemove)] = 0
 
     return Out
+
+def Assert3DNeuriteContinuity(Neurites: ZStack.ZStack, Centroid: typing.Tuple[int, int], DRGBodyRadius: float) -> ZStack.ZStack:
+    """
+    Assert3DNeuriteContinuity
+
+    This function...
+
+    Return ():
+        ...
+    """
+
+    MaximumSatelliteGap: float = np.min(Neurites.Pixels.shape[1:3]) * 0.01
+
+    Distances: np.ndarray = np.array([])
+    for Layer in Neurites.Layers():
+        Coordinates: np.ndarray = np.argwhere(Layer != 0)
+        Distances = np.append(Distances, np.hypot(Coordinates[:,0] - Centroid[1], Coordinates[:,1] - Centroid[0]))
+
+    #   Convert from pixel distances to physical units, assuming the "Spatial Resolution" value in the configuration object is non-zero.
+    if ( Config.ExperimentalDetails is not None ):
+        if ( Config.ExperimentalDetails.ImageResolution is not None ) and ( Config.ExperimentalDetails.ImageResolution != 0 ):
+            Distances *= Config.ExperimentalDetails.ImageResolution
+
+    if ( len(Distances) == 0 ):
+        LogWriter.Println(f"No neurite pixels identified. No possible satellites to remove...")
+        return Neurites
+
+    #   Starting from the first non-zero distance, we want to find the first gap in the distances identified
+    #   which is greater than our threshold.
+    #   This corresponds to a gap in any and all neurite pixels, and we assume that neurites must be continuous between the DRG body
+    #   and their ends.
+    Counts, bins = np.histogram(Distances, bins=int(round(np.max(Distances))), range=(0, int(round(np.max(Distances)))))
+    NonZeroCounts = np.nonzero(Counts)[0]
+    if ( len(NonZeroCounts) == 0 ):
+        LogWriter.Println(f"No gaps of any size found in the distribution of neurite distances...")
+        return ZStack.ZStack().InitializePixels(Neurites.Pixels.shape)
+
+    #   We want to assert that the non-zero counts begin "near" to the DRG body.
+    #   We define this as beginning no more than 1.5x the radius of the DRG body
+    #   from the centroid.
+    if ( NonZeroCounts[0] >= ( 1.5 * DRGBodyRadius ) ):
+        LogWriter.Println(f"First neurite pixel candidates start more than 1.5x the DRG body radius from the DRG centroid...")
+        return np.zeros_like(Neurites.Pixels)
+
+    #   Search for any gaps in the distribution of neurite distances, as this
+    #   corresponds to a break in the neurites.
+    Gaps: np.ndarray = np.diff(NonZeroCounts, n=1).flatten()
+    LargeGapIndices: np.ndarray = np.where(Gaps > MaximumSatelliteGap)[0]
+    if ( len(LargeGapIndices) == 0 ):
+        LogWriter.Println(f"No gaps of sufficient size found in the distribution of neurite distances...")
+        return Neurites
+
+    #   We care about the first gap, as everything outside of this is considered not valid neurite.
+    FirstLargeGapIndex = np.min(LargeGapIndices)
+    MaximumValidDistance: float = float(bins[NonZeroCounts[FirstLargeGapIndex]])
+    LogWriter.Println(f"Removing all identified pixels with distances greater than [ {MaximumValidDistance:.2f}µm ]...")
+
+    return Neurites
 
 def ApplyManualROI(ImageToFilter: np.ndarray, Background: np.ndarray) -> typing.Tuple[np.ndarray, np.ndarray]:
     """
@@ -1613,7 +1737,7 @@ def CreateQuantificationFigures(NeuriteLengths: np.ndarray) -> None:
     A.vlines([mean + stdev, mean - stdev], ymin=0, ymax=np.max(n), label=f"1σ Length ({stdev:.0f}px)", color='k')
     A.legend()
 
-    DisplayAndSaveImage(Utils.FigureToImage(F), "Neurite Length Distribution", not Config.DryRun, Config.HeadlessMode)
+    DisplayAndSaveImage(Utils.FigureToImage(F), "Neurite Length Distribution", Config.DryRun, Config.HeadlessMode)
 
     return
 
