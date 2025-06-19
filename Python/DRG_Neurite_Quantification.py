@@ -546,7 +546,7 @@ def main() -> int:
     GenerateNeuriteLengthVisualization(QuantificationStacks.OriginalFluorescent, QuantificationStacks.ManuallySelectedFluorescent, QuantificationStacks.NeuriteDistances, CentroidLocation)
 
     LogWriter.Println(f"Preparing neurite quantification figures...")
-    CreateQuantificationFigures(list(itertools.chain.from_iterable(QuantificationStacks.NeuriteDistances)))
+    CreateQuantificationFigures(np.array(list(itertools.chain.from_iterable(QuantificationStacks.NeuriteDistances))).flatten())
 
     #   Format and structure the intermediate results as computed here to be printed out to be further processed later
     LogWriter.Println(f"Formatting quantification results to be stored as JSON data...")
@@ -1739,6 +1739,8 @@ def CreateQuantificationFigures(NeuriteLengths: np.ndarray) -> None:
 
     DisplayAndSaveImage(Utils.FigureToImage(F), "Neurite Length Distribution", Config.DryRun, Config.HeadlessMode)
 
+    plt.close(F)
+
     return
 
 def PrepareResults(Results: DRGQuantificationResults) -> DRGQuantificationResults:
@@ -1782,11 +1784,11 @@ def PrepareResults(Results: DRGQuantificationResults) -> DRGQuantificationResult
 
     #   Compute the fraction of the possible growth area actually occupied by neurites within each layer of the fluorescent stack.
     Results.NeuriteDensityByLayer = {
-        f"{LayerIndex}": float(np.count_nonzero(Z) / GrowthRegionSize) for LayerIndex, Z in enumerate(QuantificationStacks.FilteredFluorescent.Layers(), start=1)
+        f"{LayerIndex}": float(np.count_nonzero(Z) / GrowthRegionSize) for LayerIndex, Z in enumerate(QuantificationStacks.SatelliteRemovedFluorescent.Layers(), start=1)
     }
 
     #   Take the maximum intensity projection of the neurite pixel stack and compute the fraction of the available space actually occupied by neurites.
-    Results.NeuriteDensity = float(np.count_nonzero(QuantificationStacks.FilteredFluorescent.MaximumIntensityProjection()) / GrowthRegionSize)
+    Results.NeuriteDensity = float(np.count_nonzero(QuantificationStacks.SatelliteRemovedFluorescent.MaximumIntensityProjection()) / GrowthRegionSize)
 
     #   Report how many possible orientations were checked during the neurite orientation analysis
     Results.OrientationAngularResolution = 180.0 / Config.DistinctOrientations
