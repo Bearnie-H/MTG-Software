@@ -1861,7 +1861,7 @@ class DRGQuantificationResultsSet():
                 f"\nPeptide={Example.Peptide} in {Example.PeptideIn}\nConcentration={Example.PeptideConcentration}" if Example.Peptide != '' and Example.Peptide is not None else '',
             ]).strip().strip(", ").replace("/", "-")
 
-            with open(os.path.join(OutputDirectory, f"{AxisTitle}.csv"), "+w") as DataFile:
+            with open(os.path.join(OutputDirectory, f"{AxisTitle.replace("\n", ", ")}.csv"), "+w") as DataFile:
                 PlotPosition: int = 0
                 for Index, (BaseGel, LamininConcentration) in enumerate(itertools.product(HydroGelTypes, LamininConcentrations)):
 

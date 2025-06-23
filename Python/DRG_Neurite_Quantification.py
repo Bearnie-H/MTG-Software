@@ -362,6 +362,7 @@ class QuantificationIntermediates():
     FilteredFluorescent: ZStack.ZStack
     SatelliteRemovedFluorescent: ZStack.ZStack
     ManuallySelectedFluorescent: ZStack.ZStack
+    OverCountingMap: np.ndarray
 
     NeuriteDistances: typing.Sequence[np.ndarray]
     MaximumNeuriteDistance: int
@@ -395,6 +396,7 @@ class QuantificationIntermediates():
         self.FilteredFluorescent = ZStack.ZStack(Name="Component Filtered Binarized Fluorescent")
         self.SatelliteRemovedFluorescent = ZStack.ZStack(Name="Disconnected Satellite Removed Fluorescent")
         self.ManuallySelectedFluorescent = ZStack.ZStack(Name="Component Filtered Binarized Fluorescent with Manual ROI Selection")
+        self.OverCountingMap = np.array([])
 
         self.NeuriteDistances = []
         self.MaximumNeuriteDistance = 0
@@ -439,6 +441,7 @@ class QuantificationIntermediates():
             self.SatelliteRemovedFluorescent.SaveTIFF(Folder)
             if ( Config.ApplyManualROISelection ):
                 self.ManuallySelectedFluorescent.SaveTIFF(Folder)
+            Utils.WriteImage(self.OverCountingMap, os.path.join(Folder, "Neurite Pixel Over-Counting Map.tif"))
             self.ColourAnnotatedNeuriteLengths.SaveTIFF(Folder)
             self.ColourAnnotatedNeuriteOrientations.SaveTIFF(Folder)
 
@@ -525,6 +528,8 @@ def main() -> int:
         QuantificationStacks.ManuallySelectedFluorescent.Append(Utils.ConvertTo8Bit(Neurites))
 
     QuantificationStacks.ManuallySelectedFluorescent = Assert3DNeuriteContinuity(QuantificationStacks.ManuallySelectedFluorescent, CentroidLocation, DRGBodyRadius)
+    QuantificationStacks.OverCountingMap = Utils.ConvertTo8Bit(QuantificationStacks.ManuallySelectedFluorescent.AverageIntensityProjection())
+    QuantificationStacks.ManuallySelectedFluorescent = QuantificationStacks.ManuallySelectedFluorescent.MaximumIntensityProjection()
 
     for Index, Neurites in enumerate(QuantificationStacks.ManuallySelectedFluorescent.Layers()):
 
@@ -576,8 +581,8 @@ def main() -> int:
     #   Also check if the neurite density (normailizing for the number of layers processed)
     #   seems abnormally high
     HighNeuriteDensityThreshold: float = 0.35
-    if ( Results.NeuriteDensity * Config.FluorescentImage.LayerCount() >= HighNeuriteDensityThreshold ):
-        LogWriter.Warnln(f"Concerningly high neurite density [ {Results.NeuriteDensity * Config.FluorescentImage.LayerCount()} ].")
+    if ( Results.NeuriteDensity >= HighNeuriteDensityThreshold ):
+        LogWriter.Warnln(f"Concerningly high neurite density [ {Results.NeuriteDensity} ].")
         return DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusSuccess | DRGAnalysis_StatusCode.HighNeuriteDensity)
 
     return DRGAnalysis_StatusCode.StatusSuccess
@@ -1269,7 +1274,7 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
     AdaptiveKernelSize: int = 45
     AdaptiveOffset: int = -5
     MaskExpansionSize: int = int(AdaptiveKernelSize / 4)
-    SpeckleComponentAreaThreshold: int = (0.005 / 100.0) * np.prod(FluorescentImage.shape)
+    SpeckleComponentAreaThreshold: int = (0.0025 / 100.0) * np.prod(FluorescentImage.shape)
     NeuriteAspectRatioThreshold: float = 1.5
     NeuriteInfillFractionThreshold: float = 0.75 * (np.pi / 4)
 
@@ -1642,7 +1647,11 @@ def GenerateNeuriteLengthVisualization(BaseImages: ZStack.ZStack, NeuritePixels:
         LogWriter.Warnln(f"No neurites were identified!")
         return
 
-    for Index, (Layer, BaseImage, LayerDistances) in enumerate(zip(NeuritePixels.Layers(), BaseImages.Layers(), Distances)):
+    Background: ZStack.ZStack = BaseImages
+    if ( NeuritePixels.LayerCount() == 1 ):
+        Background = ZStack.ZStack.FromImage(BaseImages.MaximumIntensityProjection()).SetName(BaseImages.Name)
+
+    for Index, (Layer, BaseImage, LayerDistances) in enumerate(zip(NeuritePixels.Layers(), Background.Layers(), Distances)):
         NeuriteCoordinates = np.argwhere(Layer != 0)
 
         #   Prepare a visualization of the neurite lengths, with increasing length corresponding to varying hue
