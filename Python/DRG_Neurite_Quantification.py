@@ -362,6 +362,7 @@ class QuantificationIntermediates():
     FilteredFluorescent: ZStack.ZStack
     SatelliteRemovedFluorescent: ZStack.ZStack
     ManuallySelectedFluorescent: ZStack.ZStack
+    FlattenedSegmentedNeurites: np.ndarray
     OverCountingMap: np.ndarray
 
     NeuriteDistances: typing.Sequence[np.ndarray]
@@ -396,6 +397,7 @@ class QuantificationIntermediates():
         self.FilteredFluorescent = ZStack.ZStack(Name="Component Filtered Binarized Fluorescent")
         self.SatelliteRemovedFluorescent = ZStack.ZStack(Name="Disconnected Satellite Removed Fluorescent")
         self.ManuallySelectedFluorescent = ZStack.ZStack(Name="Component Filtered Binarized Fluorescent with Manual ROI Selection")
+        self.FlattenedSegmentedNeurites = np.array([])
         self.OverCountingMap = np.array([])
 
         self.NeuriteDistances = []
@@ -441,6 +443,7 @@ class QuantificationIntermediates():
             self.SatelliteRemovedFluorescent.SaveTIFF(Folder)
             if ( Config.ApplyManualROISelection ):
                 self.ManuallySelectedFluorescent.SaveTIFF(Folder)
+            Utils.WriteImage(self.FlattenedSegmentedNeurites, os.path.join(Folder, "Flattened Identified Neurites.tif"))
             Utils.WriteImage(self.OverCountingMap, os.path.join(Folder, "Neurite Pixel Over-Counting Map.tif"))
             self.ColourAnnotatedNeuriteLengths.SaveTIFF(Folder)
             self.ColourAnnotatedNeuriteOrientations.SaveTIFF(Folder)
@@ -527,28 +530,29 @@ def main() -> int:
             DisplayAndSaveImage(Utils.ConvertTo8Bit(Neurites), "Polygon Exclusion Masked Image", Config.DryRun, Config.HeadlessMode)
         QuantificationStacks.ManuallySelectedFluorescent.Append(Utils.ConvertTo8Bit(Neurites))
 
-    QuantificationStacks.ManuallySelectedFluorescent = Assert3DNeuriteContinuity(QuantificationStacks.ManuallySelectedFluorescent, CentroidLocation, DRGBodyRadius)
     QuantificationStacks.OverCountingMap = Utils.ConvertTo8Bit(QuantificationStacks.ManuallySelectedFluorescent.AverageIntensityProjection())
-    QuantificationStacks.ManuallySelectedFluorescent = QuantificationStacks.ManuallySelectedFluorescent.MaximumIntensityProjection()
+    QuantificationStacks.FlattenedSegmentedNeurites = RemoveUnconnectedSatellites(QuantificationStacks.ManuallySelectedFluorescent.MaximumIntensityProjection(), CentroidLocation, DRGBodyRadius)
 
-    for Index, Neurites in enumerate(QuantificationStacks.ManuallySelectedFluorescent.Layers()):
+    #   With the centroid location and neurite pixels now identified, quantify the distribution of lengths of neurites
+    LogWriter.Println(f"Quantifying neurite lengths...")
+    QuantificationStacks.NeuriteDistances.append(QuantifyNeuriteLengths(QuantificationStacks.FlattenedSegmentedNeurites, CentroidLocation))
 
-        #   With the centroid location and neurite pixels now identified, quantify the distribution of lengths of neurites
-        LogWriter.Println(f"Quantifying neurite lengths for layer [ {Index+1}/{QuantificationStacks.ManuallySelectedFluorescent.LayerCount()} ]...")
-        QuantificationStacks.NeuriteDistances.append(QuantifyNeuriteLengths(Neurites, CentroidLocation))
-
-        FeatureSizePx: float = 50 / 0.7644
-        Config.DistinctOrientations = 90
-        DistinctOrientations = Config.DistinctOrientations
-        if ( Config.EnableOrientationQuantification ):
-            LogWriter.Println(f"Quantifying neurite orientations for layer [ {Index+1}/{QuantificationStacks.ManuallySelectedFluorescent.LayerCount()} ]...")
-            QuantificationStacks.NeuriteOrientations.append(QuantifyNeuriteOrientations(Layer.copy(), Neurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
-
+    FeatureSizePx: float = 50 / 0.7644
+    Config.DistinctOrientations = 90
+    DistinctOrientations = Config.DistinctOrientations
+    if ( Config.EnableOrientationQuantification ):
+        LogWriter.Println(f"Quantifying neurite orientations...")
+        QuantificationStacks.NeuriteOrientations.append(QuantifyNeuriteOrientations(Config.FluorescentImage.MaximumIntensityProjection(), QuantificationStacks.FlattenedSegmentedNeurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
     LogWriter.Println(f"Finished processing fluorescent image.")
 
     LogWriter.Println(f"Preparing neurite length visualization...")
     QuantificationStacks.MaximumNeuriteDistance = int(round(max([np.max(x) if len(x) > 0 else 0 for x in QuantificationStacks.NeuriteDistances])))
-    GenerateNeuriteLengthVisualization(QuantificationStacks.OriginalFluorescent, QuantificationStacks.ManuallySelectedFluorescent, QuantificationStacks.NeuriteDistances, CentroidLocation)
+    GenerateNeuriteLengthVisualization(
+        ZStack.ZStack.FromImage(QuantificationStacks.OriginalFluorescent.MaximumIntensityProjection()),
+        ZStack.ZStack.FromImage(QuantificationStacks.FlattenedSegmentedNeurites),
+        QuantificationStacks.NeuriteDistances,
+        CentroidLocation
+    )
 
     LogWriter.Println(f"Preparing neurite quantification figures...")
     CreateQuantificationFigures(np.array(list(itertools.chain.from_iterable(QuantificationStacks.NeuriteDistances))).flatten())
@@ -1797,7 +1801,7 @@ def PrepareResults(Results: DRGQuantificationResults) -> DRGQuantificationResult
     }
 
     #   Take the maximum intensity projection of the neurite pixel stack and compute the fraction of the available space actually occupied by neurites.
-    Results.NeuriteDensity = float(np.count_nonzero(QuantificationStacks.SatelliteRemovedFluorescent.MaximumIntensityProjection()) / GrowthRegionSize)
+    Results.NeuriteDensity = float(np.count_nonzero(QuantificationStacks.FlattenedSegmentedNeurites) / GrowthRegionSize)
 
     #   Report how many possible orientations were checked during the neurite orientation analysis
     Results.OrientationAngularResolution = 180.0 / Config.DistinctOrientations
