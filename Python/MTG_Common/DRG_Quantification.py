@@ -1512,7 +1512,8 @@ class DRGQuantificationResultsSet():
                 f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
             ]).strip(", ").replace("/", "-")
 
-            with open(os.path.join(OutputDirectory, f'{AxisTitle.replace("\n", ", ")}.csv'), "+w") as DataFile:
+            DataFilename: str = AxisTitle.replace("\n", ", ") + ".csv"
+            with open(os.path.join(OutputDirectory, DataFilename), "+w") as DataFile:
                 PlotPosition: int = 0
                 for Index, (GelMAPercentage, DegreeOfFunctionalization) in enumerate(itertools.product(GelMAPercentages, DegreeOfFunctionalizations)):
 
@@ -1639,7 +1640,8 @@ class DRGQuantificationResultsSet():
                 f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
             ]).strip(", ").replace("/", "-")
 
-            with open(os.path.join(OutputDirectory, f'{AxisTitle.replace("\n", ", ")}.csv'), "+w") as DataFile:
+            DataFilename: str = AxisTitle.replace("\n", ", ") + ".csv"
+            with open(os.path.join(OutputDirectory, DataFilename), "+w") as DataFile:
                 PlotPosition: int = 0
                 for Index, (DilutionMedium, GelMAPercentage, DegreeOfFunctionalization) in enumerate(itertools.product(DilutionMedia, GelMAPercentages, DegreeOfFunctionalizations)):
 
@@ -1768,7 +1770,8 @@ class DRGQuantificationResultsSet():
                 f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
             ]).strip(", ").replace("/", "-")
 
-            with open(os.path.join(OutputDirectory, f'{AxisTitle.replace("\n", ", ")}.csv'), "+w") as DataFile:
+            DataFilename: str = AxisTitle.replace("\n", ", ") + ".csv"
+            with open(os.path.join(OutputDirectory, DataFilename), "+w") as DataFile:
                 PlotPosition: int = 0
                 for Index, (IlluminationDuration, (SPSConcentration, RutheniumConcentration)) in enumerate(itertools.product(IlluminationDurations, zip(SodiumPerSulfateConcentrations, RutheniumConcentrations))):
 
@@ -1861,7 +1864,8 @@ class DRGQuantificationResultsSet():
                 f"\nPeptide={Example.Peptide} in {Example.PeptideIn}\nConcentration={Example.PeptideConcentration}" if Example.Peptide != '' and Example.Peptide is not None else '',
             ]).strip().strip(", ").replace("/", "-")
 
-            with open(os.path.join(OutputDirectory, f'{AxisTitle.replace("\n", ", ")}.csv'), "+w") as DataFile:
+            DataFilename: str = AxisTitle.replace("\n", ", ") + ".csv"
+            with open(os.path.join(OutputDirectory, DataFilename), "+w") as DataFile:
                 PlotPosition: int = 0
                 for Index, (BaseGel, LamininConcentration) in enumerate(itertools.product(HydroGelTypes, LamininConcentrations)):
 
