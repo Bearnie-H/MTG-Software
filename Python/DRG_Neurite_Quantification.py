@@ -152,6 +152,8 @@ class Configuration():
             f"---------- Estimated Result Values ----------",
             f"",
             f"---------- Behaviour Enable Parameters ----------",
+            f"Manual Preview Enabled:                {self.ManualPreview}",
+            f"Manual ROI Selection Enabled:         {self.ApplyManualROISelection}",
             f"Orientation Analysis Enabled:         {self.EnableOrientationQuantification}",
             f"Headless Mode:                        {self.HeadlessMode}",
             f"Dry-Run Mode:                         {self.DryRun}",
@@ -361,9 +363,9 @@ class QuantificationIntermediates():
     MaskedFluorescent: ZStack.ZStack
     FilteredFluorescent: ZStack.ZStack
     SatelliteRemovedFluorescent: ZStack.ZStack
-    ManuallySelectedFluorescent: ZStack.ZStack
     FlattenedSegmentedNeurites: np.ndarray
     OverCountingMap: np.ndarray
+    ManuallySelectedFluorescent: np.ndarray
 
     NeuriteDistances: typing.Sequence[np.ndarray]
     MaximumNeuriteDistance: int
@@ -396,9 +398,9 @@ class QuantificationIntermediates():
         self.MaskedFluorescent = ZStack.ZStack(Name="Masked Binarized Fluorescent")
         self.FilteredFluorescent = ZStack.ZStack(Name="Component Filtered Binarized Fluorescent")
         self.SatelliteRemovedFluorescent = ZStack.ZStack(Name="Disconnected Satellite Removed Fluorescent")
-        self.ManuallySelectedFluorescent = ZStack.ZStack(Name="Component Filtered Binarized Fluorescent with Manual ROI Selection")
         self.FlattenedSegmentedNeurites = np.array([])
         self.OverCountingMap = np.array([])
+        self.ManuallySelectedFluorescent = np.array([])
 
         self.NeuriteDistances = []
         self.MaximumNeuriteDistance = 0
@@ -442,7 +444,7 @@ class QuantificationIntermediates():
             self.FilteredFluorescent.SaveTIFF(Folder)
             self.SatelliteRemovedFluorescent.SaveTIFF(Folder)
             if ( Config.ApplyManualROISelection ):
-                self.ManuallySelectedFluorescent.SaveTIFF(Folder)
+                Utils.WriteImage(self.ManuallySelectedFluorescent, os.path.join(Folder, "Manually Selected Neurited.tif"))
             Utils.WriteImage(self.FlattenedSegmentedNeurites, os.path.join(Folder, "Flattened Identified Neurites.tif"))
             Utils.WriteImage(self.OverCountingMap, os.path.join(Folder, "Neurite Pixel Over-Counting Map.tif"))
             self.ColourAnnotatedNeuriteLengths.SaveTIFF(Folder)
@@ -482,11 +484,11 @@ Results: DRGQuantificationResults = DRGQuantificationResults()
 
 #   Main
 #       This is the main entry point of the script.
-def main() -> int:
+def main() -> DRGAnalysis_StatusCode:
 
     global ImageSequenceNumber
     global Results
-    ImageSequenceNumber = 1
+    ImageSequenceNumber = 0
 
     if ( Config.ManualPreview ):
         return ManualPreviewImages(Config.BrightFieldImage.MinimumIntensityProjection(), Config.FluorescentImage.MaximumIntensityProjection())
@@ -522,34 +524,33 @@ def main() -> int:
         #   Take the fluorescent image and segment out the neurite growth pixels
         Neurites: np.ndarray = ProcessFluorescent(Layer.copy(), DRGBodyMask, WellEdgeMask, CentroidLocation, DRGBodyRadius)
 
-        #   If the user has selected they would like to apply manual ROI selection to exclude specific noise regions,
-        #   perform this now.
-        Neurites, ManualExclusionMask = ApplyManualROI(Neurites, Layer.copy())
-        if ( Config.ApplyManualROISelection ):
-            DisplayAndSaveImage(Utils.ConvertTo8Bit(ManualExclusionMask), "Polygon Exclusion Mask", Config.DryRun, Config.HeadlessMode)
-            DisplayAndSaveImage(Utils.ConvertTo8Bit(Neurites), "Polygon Exclusion Masked Image", Config.DryRun, Config.HeadlessMode)
-        QuantificationStacks.ManuallySelectedFluorescent.Append(Utils.ConvertTo8Bit(Neurites))
+    QuantificationStacks.OverCountingMap = Utils.ConvertTo8Bit(QuantificationStacks.SatelliteRemovedFluorescent.AverageIntensityProjection())
+    QuantificationStacks.FlattenedSegmentedNeurites = RemoveUnconnectedSatellites(QuantificationStacks.SatelliteRemovedFluorescent.MaximumIntensityProjection(), CentroidLocation, DRGBodyRadius)
 
-    QuantificationStacks.OverCountingMap = Utils.ConvertTo8Bit(QuantificationStacks.ManuallySelectedFluorescent.AverageIntensityProjection())
-    QuantificationStacks.FlattenedSegmentedNeurites = RemoveUnconnectedSatellites(QuantificationStacks.ManuallySelectedFluorescent.MaximumIntensityProjection(), CentroidLocation, DRGBodyRadius)
+    #   If the user has selected they would like to apply manual ROI selection to exclude specific noise regions,
+    #   perform this now.
+    QuantificationStacks.ManuallySelectedFluorescent, ManualExclusionMask = ApplyManualROI(QuantificationStacks.FlattenedSegmentedNeurites, QuantificationStacks.OriginalFluorescent.MaximumIntensityProjection())
+    if ( Config.ApplyManualROISelection ):
+        DisplayAndSaveImage(Utils.ConvertTo8Bit(ManualExclusionMask), "Polygon Exclusion Mask", not Config.SaveIntermediates, Config.HeadlessMode)
+        DisplayAndSaveImage(Utils.ConvertTo8Bit(QuantificationStacks.ManuallySelectedFluorescent), "Polygon Exclusion Masked Image", not Config.SaveIntermediates, Config.HeadlessMode)
 
     #   With the centroid location and neurite pixels now identified, quantify the distribution of lengths of neurites
     LogWriter.Println(f"Quantifying neurite lengths...")
-    QuantificationStacks.NeuriteDistances.append(QuantifyNeuriteLengths(QuantificationStacks.FlattenedSegmentedNeurites, CentroidLocation))
+    QuantificationStacks.NeuriteDistances.append(QuantifyNeuriteLengths(QuantificationStacks.ManuallySelectedFluorescent, CentroidLocation))
 
     FeatureSizePx: float = 50 / 0.7644
     Config.DistinctOrientations = 90
     DistinctOrientations = Config.DistinctOrientations
     if ( Config.EnableOrientationQuantification ):
         LogWriter.Println(f"Quantifying neurite orientations...")
-        QuantificationStacks.NeuriteOrientations.append(QuantifyNeuriteOrientations(Config.FluorescentImage.MaximumIntensityProjection(), QuantificationStacks.FlattenedSegmentedNeurites, CentroidLocation, FeatureSizePx, DistinctOrientations))
+        QuantificationStacks.NeuriteOrientations.append(QuantifyNeuriteOrientations(Config.FluorescentImage.MaximumIntensityProjection(), QuantificationStacks.ManuallySelectedFluorescent, CentroidLocation, FeatureSizePx, DistinctOrientations))
     LogWriter.Println(f"Finished processing fluorescent image.")
 
     LogWriter.Println(f"Preparing neurite length visualization...")
     QuantificationStacks.MaximumNeuriteDistance = int(round(max([np.max(x) if len(x) > 0 else 0 for x in QuantificationStacks.NeuriteDistances])))
     GenerateNeuriteLengthVisualization(
         ZStack.ZStack.FromImage(QuantificationStacks.OriginalFluorescent.MaximumIntensityProjection()),
-        ZStack.ZStack.FromImage(QuantificationStacks.FlattenedSegmentedNeurites),
+        ZStack.ZStack.FromImage(QuantificationStacks.ManuallySelectedFluorescent),
         QuantificationStacks.NeuriteDistances,
         CentroidLocation
     )
@@ -591,7 +592,7 @@ def main() -> int:
 
     return DRGAnalysis_StatusCode.StatusSuccess
 
-def ManualPreviewImages(BrightFieldProjection: np.ndarray, FluorescentProjection: np.ndarray) -> int:
+def ManualPreviewImages(BrightFieldProjection: np.ndarray, FluorescentProjection: np.ndarray) -> DRGAnalysis_StatusCode:
     """
     ManualPreviewImages
 
@@ -606,22 +607,41 @@ def ManualPreviewImages(BrightFieldProjection: np.ndarray, FluorescentProjection
         ...
     """
 
-    LogWriter.Println(f"Manually previewing DRG images. Should these be processed further? (y/N)")
+    LogWriter.Println(f"Displaying Bright-Field and Fluorescence Maximum-Intensity Projection Images:")
+    LogWriter.Println(f"Take note of any issues with contrast, overexposed spots or rings, or other imaging artefacts or issues.")
+    LogWriter.Println(f"Are these images acceptable to be processed without intervention, and without issues? [y/N]: ")
 
-    KeyCode: int = Utils.DisplayImages(
-        [
+    KeyCode: int = Utils.DisplayImages([
             ("Bright Field Minimum Intensity Projection", Utils.ConvertTo8Bit(BrightFieldProjection)),
             ("Fluorescent Maximum Intensity Projection", Utils.ConvertTo8Bit(FluorescentProjection)),
-        ],
-        0,
-        True,
-        True
-    )
+        ], 0, True, True)
 
     if ( KeyCode in [ord(x) for x in 'yY'] ):
         return DRGAnalysis_StatusCode.StatusPreviewAccepted
-    else:
-        return DRGAnalysis_StatusCode.StatusPreviewRejected
+
+    #   If the image is not acceptable as-is, check if it can be fixed with just the application of a manual ROI.
+    Response: str = input("Would the image be acceptable to process after manually selecting a region of interest to process? [y/N]: ")
+    if ( 'y' in Response.lower() ):
+        return DRGAnalysis_StatusCode.StatusPreviewAccepted | DRGAnalysis_StatusCode.RequiresManualROI
+
+    Status: DRGAnalysis_StatusCode = DRGAnalysis_StatusCode.StatusPreviewRejected
+    LogWriter.Println(f"The image will not be processed further... Please classify why the image is being rejected. If multiple reasons are present, please indicate all such issues.")
+    LogWriter.Println(f"1 - Unacceptably Low Contrast")
+    LogWriter.Println(f"2 - Overexposed Rings or Spots")
+    LogWriter.Println(f"3 - Other Image Issue")
+
+    Response = input("Error(s) Present: ")
+    if ( '1' in Response ):
+        LogWriter.Println(f"The contrast of the images is too low to work with...")
+        Status |= DRGAnalysis_StatusCode.ErrorLowContrast
+    if ( '2' in Response ):
+        LogWriter.Println(f"The images contain rings or spots of overexposed signal...")
+        Status |= DRGAnalysis_StatusCode.ErrorRings
+    if ( '3' in Response ):
+        LogWriter.Println(f"Some other error has occurred within the images...")
+        Status |= DRGAnalysis_StatusCode.ErrorImagingIssue
+
+    return Status
 
 def DisplayAndSaveImage(Image: np.ndarray, Description: str, DryRun: bool, Headless: bool) -> None:
     """
@@ -1158,7 +1178,7 @@ def ComputeWellEdgeMask_Alt1(ThresholdedImage: np.ndarray, DRGBodyMask: np.ndarr
     # Utils.DisplayImage(f"Current Mask", Utils.ConvertTo8Bit(Mask), 0, True, True)
     return Mask
 
-def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
+def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> DRGAnalysis_StatusCode:
     """
     SanityCheckMasks
 
@@ -1173,7 +1193,7 @@ def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> int:
         ...
     """
 
-    MaskStatus: int = 0
+    MaskStatus: DRGAnalysis_StatusCode = 0
 
     DRGMaskMinArea: float = 0.025
     DRGMaskMaxArea: float = 0.50
@@ -1566,6 +1586,8 @@ def ApplyManualROI(ImageToFilter: np.ndarray, Background: np.ndarray) -> typing.
     if ( Config.ApplyManualROISelection ):
 
         F, Ax = plt.subplots()
+        Ax: Axes = F.gca()
+        Ax.set_title(f"Current Neurite Candidate Pixels\nClick to draw a closed contour around a region to remove.\nESC to clear the current points.\nQ to end ROI selection.")
 
         #   Prepare an overlaid image with the background being shown as-is, and the foreground neurite pixels
         #   only in the green channel.
@@ -1578,8 +1600,8 @@ def ApplyManualROI(ImageToFilter: np.ndarray, Background: np.ndarray) -> typing.
         Result = (Foreground * Alpha) + (Base * (1.0 - Alpha))
 
         #   Actually display the image and allow the user to select points on the image to draw the polygons to exclude.
-        #   TODO: Update the candidate image between each exclusion mask application?
         AxIm = Ax.imshow(Result, origin='upper')
+        F.tight_layout()
 
         #   Define the callback to run if and when the user draws a closed polygon.
         def UpdateExclusionMask(Vertices: np.ndarray) -> None:
@@ -1593,7 +1615,7 @@ def ApplyManualROI(ImageToFilter: np.ndarray, Background: np.ndarray) -> typing.
                 (int(X), int(Y)) for (X, Y) in Vertices
             ])
             PolygonExclusionMask = cv2.drawContours(PolygonExclusionMask, [Vertices], 0, 0, -1)
-            Utils.DisplayImage(f"Current Polygon Exclusion Result", Utils.ConvertTo8Bit(PolygonExclusionMask * ImageToFilter), DEBUG_DISPLAY_TIMEOUT, True, True)
+            Utils.DisplayImage(f"Current Polygon Exclusion Result", Utils.ConvertTo8Bit(PolygonExclusionMask * ImageToFilter), 0, True, Config.HeadlessMode)
 
             #   Prepare an overlaid image with the background being shown as-is, and the foreground neurite pixels
             #   only in the green channel.
@@ -1609,7 +1631,6 @@ def ApplyManualROI(ImageToFilter: np.ndarray, Background: np.ndarray) -> typing.
 
         P = PolygonSelector(Ax, onselect=UpdateExclusionMask, props=dict(color='r', linestyle='-', linewidth=2))
         plt.show(block=True)
-
 
     PolygonMaskedImage: np.ndarray = Utils.BGRToGreyscale(ImageToFilter) * PolygonExclusionMask
     return PolygonMaskedImage, PolygonExclusionMask
@@ -1801,7 +1822,7 @@ def PrepareResults(Results: DRGQuantificationResults) -> DRGQuantificationResult
     }
 
     #   Take the maximum intensity projection of the neurite pixel stack and compute the fraction of the available space actually occupied by neurites.
-    Results.NeuriteDensity = float(np.count_nonzero(QuantificationStacks.FlattenedSegmentedNeurites) / GrowthRegionSize)
+    Results.NeuriteDensity = float(np.count_nonzero(QuantificationStacks.ManuallySelectedFluorescent) / GrowthRegionSize)
 
     #   Report how many possible orientations were checked during the neurite orientation analysis
     Results.OrientationAngularResolution = 180.0 / Config.DistinctOrientations

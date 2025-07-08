@@ -50,13 +50,13 @@ def main() -> None:
     Flags.add_argument("--folder-base", dest="FolderBase", metavar="file-path", type=str, required=True, help="The path to the base folder from which the \"FilePath\" column of the spreadsheet is referenced.")
     Flags.add_argument("--json-directory", dest="JSONDirectory", metavar="file-path", type=str, required=True, help="The path to the folder in which all of the compiled JSON results will be written.")
     Flags.add_argument("--enable-orientation", dest="EnableOrientation", action="store_true", required=False, default=False, help="Enable orientation quantification. NOTE: This significantly increases execution time.")
-    Flags.add_argument("--pre-check", dest="ManualPreCheck", action="store_true", required=False, default=False, help="Manually preview the image results to check for whether or not the images should even be processed.")
+    # Flags.add_argument("--pre-check", dest="ManualPreCheck", action="store_true", required=False, default=False, help="Manually preview the image results to check for whether or not the images should even be processed.")
 
     Arguments: argparse.Namespace = Flags.parse_args()
 
     InputFile: str = Arguments.Spreadsheet
     FolderBase: str = Arguments.FolderBase
-    ManualPreview: bool = Arguments.ManualPreCheck
+    ManualPreview: bool = True  #   Enforce that the manual pre-check always occurs.
     EnableOrientation = Arguments.EnableOrientation
     JSONDirectory = Arguments.JSONDirectory
 
@@ -147,7 +147,7 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
             Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusSkipped)
         elif ( Condition.InsufficientGrowth ):
             LogWriter.Println(f"No image file provided for experimental condition [ {ConditionIndex}/{ConditionCount} ] due to insufficient growth in manual review...")
-        elif (Condition.AnalysisStatus & DRGAnalysis_StatusCode.StatusValidationFailed == 0 ):
+        elif (( Condition.AnalysisStatus & DRGAnalysis_StatusCode.StatusValidationFailed ) == 0 ):
             LogWriter.Println(f"Starting manual preview of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
             try:
 
@@ -159,11 +159,17 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
                 DRG_Neurite_Quantification.QuantificationStacks = DRG_Neurite_Quantification.QuantificationIntermediates(LogWriter=DRG_Neurite_Quantification.LogWriter)
                 DRG_Neurite_Quantification.Results = MTG_Common.DRG_Quantification.DRGQuantificationResults()
 
-                if ( DRG_Neurite_Quantification.main() == DRGAnalysis_StatusCode.StatusPreviewAccepted ):
+                #   Perform the manual preview, returning the status code with all possible errors or status flags set.
+                Status: DRGAnalysis_StatusCode = DRG_Neurite_Quantification.main()
+                if (( Status & DRGAnalysis_StatusCode.StatusPreviewAccepted ) != 0 ):
                     LogWriter.Println(f"Preview accepted for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
+                    Condition.AnalysisStatus |= ( Status & ~DRGAnalysis_StatusCode.StatusPreviewAccepted )
+                    if (( Status & DRGAnalysis_StatusCode.RequiresManualROI ) != 0 ):
+                        LogWriter.Println(f"Enabling manual ROI selection for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
+                        Condition.RequiresManualROI = True
                 else:
                     LogWriter.Errorln(f"Preview rejected for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] - [ {str(Condition.AnalysisStatus)} ({int(Condition.AnalysisStatus)})].")
-                    Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusPreviewRejected)
+                    Condition.AnalysisStatus = Status
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
                 Condition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusUnknownException)
@@ -172,7 +178,9 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
         StatusReport.write(f"{Condition.LIFFilePath},{str(DRGAnalysis_StatusCode(Condition.AnalysisStatus))},{int(DRGAnalysis_StatusCode(Condition.AnalysisStatus))}\n")
         StatusReport.flush()
 
-    return ExperimentalConditions
+    #   Return the set of experimental conditions, sorted so that all those which require manual intervention during analysis will be processed first.
+    LogWriter.Println(f"Re-sorting experimental conditions to assert those requiring manual ROI selection are processed first...")
+    return list(sorted(ExperimentalConditions, key=lambda x: x.RequiresManualROI, reverse=True))
 
 def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCondition], StatusReport: typing.TextIO) -> None:
     """
@@ -214,16 +222,19 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
                 DRG_Neurite_Quantification.Config.OutputDirectory = os.path.splitext(Condition.LIFFilePath)[0] + f" - Analyzed {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
                 DRG_Neurite_Quantification.Config.JSONDirectory = JSONDirectory
                 DRG_Neurite_Quantification.Config.EnableOrientationQuantification = EnableOrientation
+                DRG_Neurite_Quantification.Config.ApplyManualROISelection = Condition.RequiresManualROI
                 DRG_Neurite_Quantification.QuantificationStacks = DRG_Neurite_Quantification.QuantificationIntermediates(LogWriter=DRG_Neurite_Quantification.LogWriter)
                 DRG_Neurite_Quantification.Results = MTG_Common.DRG_Quantification.DRGQuantificationResults()
                 DRG_Neurite_Quantification.Results.ExtractExperimentalDetails(Condition)
                 DRG_Neurite_Quantification.Results.SourceHash = Utils.Sha256Sum(Condition.LIFFilePath)
 
-                Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRG_Neurite_Quantification.main())
-                if ( Condition.AnalysisStatus == DRGAnalysis_StatusCode.StatusSuccess ):
+                Status: DRGAnalysis_StatusCode = DRG_Neurite_Quantification.main()
+                if (( Status & DRGAnalysis_StatusCode.StatusSuccess ) != 0 ):
                     LogWriter.Println(f"Successfully finished analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ].")
                 else:
                     LogWriter.Errorln(f"Analysis failed for experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ] - [ {str(Condition.AnalysisStatus)} ({int(Condition.AnalysisStatus)})].")
+                Condition.AnalysisStatus |= Status
+                Condition.AnalysisStatus &= (~DRGAnalysis_StatusCode.StatusNotYetProcessed)
             except Exception as e:
                 LogWriter.Errorln(f"Exception raised in row ({ConditionIndex}/{ConditionCount}): [ {e} ]\n\n{''.join(traceback.format_exception(e, value=e, tb=e.__traceback__))}")
                 Condition.AnalysisStatus |= DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusUnknownException)

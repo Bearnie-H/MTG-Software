@@ -217,6 +217,13 @@ class DRGAnalysis_StatusCode(int):
     InsufficientGrowth:     DRGAnalysis_StatusCode = 1 << 14
     HighNeuriteDensity:     DRGAnalysis_StatusCode = 1 << 15
 
+    #   Status Codes associated with the manual preview process, and the known error categories
+    #   an image may fall into.
+    RequiresManualROI:      DRGAnalysis_StatusCode = 1 << 16
+    ErrorLowContrast:       DRGAnalysis_StatusCode = 1 << 17
+    ErrorRings:             DRGAnalysis_StatusCode = 1 << 18
+    ErrorImagingIssue:      DRGAnalysis_StatusCode = 1 << 19
+
     def __str__(self: DRGAnalysis_StatusCode) -> str:
 
         StatusCodeMapping: typing.OrderedDict[DRGAnalysis_StatusCode, str] = {
@@ -236,7 +243,10 @@ class DRGAnalysis_StatusCode(int):
             DRGAnalysis_StatusCode.StatusSkipped:              "Analysis Intentionally Skipped.",
             DRGAnalysis_StatusCode.InsufficientGrowth:         "Insufficient Growth to be Imaged.",
             DRGAnalysis_StatusCode.HighNeuriteDensity:         "Concerningly High Neurite Density.",
-
+            DRGAnalysis_StatusCode.RequiresManualROI:          "Image Requires Manual Region of Interest to be Selected.",
+            DRGAnalysis_StatusCode.ErrorLowContrast:           "Error: Image Contrast Concerningly Low.",
+            DRGAnalysis_StatusCode.ErrorRings:                 "Error: Overexposed Spots or Rings Present.",
+            DRGAnalysis_StatusCode.ErrorImagingIssue:          "Error: Other Image Issue Present.",
         }
 
         #   For each possible status code, check to see if the corresponding bit
@@ -355,6 +365,7 @@ class DRGExperimentalCondition():
 
     ###
     SkipProcessing: bool
+    RequiresManualROI: bool
     InsufficientGrowth: bool
     AnalysisStatus: DRGAnalysis_StatusCode
 
@@ -373,6 +384,7 @@ class DRGExperimentalCondition():
 
         #   ...
 
+        self.RequiresManualROI = False
         self.SkipProcessing = False
         self.InsufficientGrowth = False
         self.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.StatusNotYetProcessed)
