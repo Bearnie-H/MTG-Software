@@ -180,7 +180,12 @@ def ManuallyPreviewConditions(ExperimentalConditions: typing.Sequence[DRGExperim
 
     #   Return the set of experimental conditions, sorted so that all those which require manual intervention during analysis will be processed first.
     LogWriter.Println(f"Re-sorting experimental conditions to assert those requiring manual ROI selection are processed first...")
-    return list(sorted(ExperimentalConditions, key=lambda x: x.RequiresManualROI, reverse=True))
+
+    #   Specifically, we want to sort such that all of the rows which are to be skipped are processed first,
+    #   then all of the rows with pre-annotated zero-growth are next,
+    #   then those requiring manual ROI,
+    #   and finally, those which can be processed fully autonomously.
+    return list(sorted(ExperimentalConditions, key=lambda x: (x.SkipProcessing, x.InsufficientGrowth, x.RequiresManualROI), reverse=True))
 
 def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCondition], StatusReport: typing.TextIO) -> None:
     """
