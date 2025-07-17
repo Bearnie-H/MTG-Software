@@ -432,6 +432,7 @@ class QuantificationResults():
 
         #   If we have a bright-field image, extract all of the information from it
         if ( self.BrightFieldStack is not None ):
+            LogWriter.Println(f"Starting quantification of bright-field image stack...")
             self.BrightFieldMinimumProjection = self.BrightFieldStack.MinimumIntensityProjection()
 
         return
@@ -448,6 +449,7 @@ class QuantificationResults():
 
         #   If we have a nuclear-stained stack, extract what we can from it
         if ( self.NuclearStainStack is not None ):
+            LogWriter.Println(f"Starting quantification of nuclear-stained image stack...")
             self.NuclearStainStackStainMaximumProjection = self.NuclearStainStack.MaximumIntensityProjection()
 
         return
@@ -464,6 +466,7 @@ class QuantificationResults():
 
         #   If we have the neurite-stained stack, extract what we can from it.
         if ( self.NeuriteStainStack is not None ):
+            LogWriter.Println(f"Starting quantification of neurite-stained image stack...")
             self.NeuriteStainMaximumProjection = self.NeuriteStainStack.MaximumIntensityProjection()
 
             self.NeuriteDistances = ComputeNeuriteDistances(self.FilteredIdentifiedNeurites, self.ExplantBodyCentroid)
@@ -477,11 +480,11 @@ class QuantificationResults():
             self.NeuriteOrientationPlotFlattened = PlotNeuriteOrientations(self.NeuriteOrientations, flatten=True)
 
             #   Once all of the stacks and immediate results have been quantified, then compute the derived metrics and outputs
-            self.MedianNeuriteLengths = [np.median(x) for x in self.NeuriteDistances]
-            self.MeanNeuriteOrientations = [circmean(x[x != 255].flatten(), high=180, low=0) for x in self.NeuriteOrientations.Layers()]
-            self.NeuriteOrientationStDevs = [circstd(x[x != 255].flatten(), high=180, low=0) for x in self.NeuriteOrientations.Layers()]
-            AlignmentFractions: typing.List[float] = [len(x[abs(x[x != 255] - Mean) < StDev]) / len(x[x != 255]) for (x, Mean, StDev) in zip(self.NeuriteOrientations.Layers(), self.MeanNeuriteOrientations, self.NeuriteOrientationStDevs)]
-            self.NeuriteAlignmentMetrics = [Fraction / StDev for (Fraction, StDev) in zip(AlignmentFractions, self.NeuriteOrientationStDevs)]
+            # self.MedianNeuriteLengths = [np.median(x) for x in self.NeuriteDistances]
+            # self.MeanNeuriteOrientations = [circmean(x[x != 255].flatten(), high=180, low=0) for x in self.NeuriteOrientations.Layers()]
+            # self.NeuriteOrientationStDevs = [circstd(x[x != 255].flatten(), high=180, low=0) for x in self.NeuriteOrientations.Layers()]
+            # AlignmentFractions: typing.List[float] = [len(x[abs(x[x != 255] - Mean) < StDev]) / len(x[x != 255]) for (x, Mean, StDev) in zip(self.NeuriteOrientations.Layers(), self.MeanNeuriteOrientations, self.NeuriteOrientationStDevs)]
+            # self.NeuriteAlignmentMetrics = [Fraction / StDev for (Fraction, StDev) in zip(AlignmentFractions, self.NeuriteOrientationStDevs)]
 
         return
 
@@ -497,6 +500,7 @@ class QuantificationResults():
 
         #   If we have the rod-stained stack, extract what we can from it.
         if ( self.RodStainStack is not None ):
+            LogWriter.Println(f"Starting quantification of rods image stack...")
             self.RodStainMaximumProjection = self.RodStainStack.MaximumIntensityProjection()
 
             self.RodOrientations = ComputeOrientations(self.FilteredIdentifiedRods).SetName("Rod Orientations")
@@ -505,8 +509,8 @@ class QuantificationResults():
             self.RodOrientationPlotFlattened = PlotRodOrientations(self.RodOrientations, flatten=True)
 
             #   Once all of the stacks and immediate results have been quantified, then compute the derived metrics and outputs
-            self.MeanRodOrientations = [circmean(x[x != 255].flatten(), high=180, low=0) for x in self.RodOrientations.Layers()]
-            self.RodOrientationStDevs = [circstd(x[x != 255].flatten(), high=180, low=0) for x in self.RodOrientations.Layers()]
+            # self.MeanRodOrientations = [circmean(x[x != 255].flatten(), high=180, low=0) for x in self.RodOrientations.Layers()]
+            # self.RodOrientationStDevs = [circstd(x[x != 255].flatten(), high=180, low=0) for x in self.RodOrientations.Layers()]
             # AlignmentFractions: typing.List[float] = [len(x[abs(x[x != 255] - Mean) < StDev]) / len(x[x != 255]) for (x, Mean, StDev) in zip(self.RodOrientations.Layers(), self.MeanRodOrientations, self.RodOrientationStDevs)]
             # self.NeuriteAlignmentMetrics = [Fraction / StDev for (Fraction, StDev) in zip(AlignmentFractions, self.RodOrientationStDevs)]
 
@@ -949,6 +953,10 @@ def DetermineExplantCentroid(ExplantBodyMask: np.ndarray) -> typing.Tuple[int, i
         x for x in range(1, ComponentCount)
     ], key=lambda x: Stats[x, cv2.CC_STAT_AREA], reverse=True))
 
+    if ( len(SortedComponents) == 0 ):
+        LogWriter.Errorln(f"No components identified for estimation of the explant core centroid.")
+        return (0, 0)
+
     return tuple((int(x) for x in Centroids[SortedComponents[0]]))
 
 def ProcessNeuriteStain(Image: np.ndarray, ExclusionMask: np.ndarray, Results: QuantificationResults) -> None:
@@ -1109,13 +1117,15 @@ def ApplyEllipticalConvolution(Image: np.ndarray, DistinctOrientations: int, Ell
 
     #   Apply the Mexican hat filter to the image for a set of N different angles,
     #   storing each result as a layer in a new "z-stack".
-    AngleStack: np.ndarray = np.zeros((DistinctOrientations,) + Image.shape[0:2])
+    AngleStack: np.ndarray = np.zeros((DistinctOrientations,) + Image.shape[0:2], dtype=np.float32)
 
     #   For each of the orientations of interest, iterate over the half-open range of angles [90,-90)
     for Index, Angle in enumerate(np.linspace(90, -90, DistinctOrientations, endpoint=False)):
 
+        LogWriter.Println(f"Assessing correlation with ellipse rotated to [ {Angle} degrees ]...")
+
         #   Construct the rotated Difference of Gaussian kernel to apply
-        K: np.ndarray = Utils.RotateFrame(EllipticalKernel, Theta=Angle)
+        K: np.ndarray = Utils.RotateFrame(EllipticalKernel.astype(np.float32), Theta=Angle)
 
         #   Apply the kernel over the image
         G: np.ndarray = cv2.filter2D(Image, ddepth=cv2.CV_32F, kernel=K)
@@ -1130,7 +1140,7 @@ def ApplyEllipticalConvolution(Image: np.ndarray, DistinctOrientations: int, Ell
     #   resulting "angle image", by taking the maximum intensity pixel (and the
     #   angle of the filter it corresponds to) from the Z-stack.
     Mask: np.ndarray = np.max(AngleStack, axis=0)
-    Orientations: np.ndarray = (np.argmax(AngleStack, axis=0).astype(np.float64) * (180.0 / DistinctOrientations)).astype(np.uint8)
+    Orientations: np.ndarray = (np.argmax(AngleStack, axis=0).astype(np.float32) * (180.0 / DistinctOrientations)).astype(np.uint8)
 
     #   Only work with the pixels coming from the actually identified features
     Mask[Image == 0] = 0
@@ -1174,7 +1184,6 @@ def ProcessRodStain(Image: np.ndarray, ExclusionMask: np.ndarray, Results: Quant
     Foreground = Utils.ConvertTo8Bit(Foreground)
 
     Binarized: np.ndarray = cv2.threshold(Foreground, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-
     Results.FilteredIdentifiedRods.Append(Binarized)
 
     return None
@@ -1214,6 +1223,9 @@ def ErodeImageMask(Mask: np.ndarray, Size: int = 51) -> np.ndarray:
     Return (np.ndarray):
         ...
     """
+
+    if ( Mask is None ):
+        return Mask
 
     return cv2.erode(Mask, np.ones((Size, Size), dtype=np.uint8))
 
@@ -1329,7 +1341,7 @@ def ComputeOrientations(IdentifiedPixels: ZStack.ZStack) -> ZStack.ZStack:
         ...
     """
 
-    FeatureSize, DistinctOrientations = 65, 18
+    FeatureSize, DistinctOrientations = 65, 180
 
     Orientations: ZStack.ZStack = ZStack.ZStack(LogWriter).InitializePixels(IdentifiedPixels.Pixels.shape)
     for LayerIndex, Layer in enumerate(IdentifiedPixels.Layers()):
@@ -1337,6 +1349,7 @@ def ComputeOrientations(IdentifiedPixels: ZStack.ZStack) -> ZStack.ZStack:
         LayerOrientations: np.ndarray = ComputeEllipticalOrientation(Layer, FeatureSize, DistinctOrientations)
         Orientations.InsertLayer(LayerOrientations, LayerIndex)
 
+    LogWriter.Println(f"Finished computing feature orientations.")
     return Orientations
 
 def ComputeEllipticalOrientation(Image: np.ndarray, FeatureSize: float, DistinctOrientations: int) -> np.ndarray:
@@ -1571,7 +1584,7 @@ def PlotOrientationsLayer(F: Figure, Orientations: np.ndarray, LayerIndex: int =
         Ax = F.get_axes()[0]
         Ax.clear()
 
-    BinCount: int = min(100, len(np.unique(Orientations)))
+    BinCount: int = min(90, len(np.unique(Orientations)))
     n, bins = np.histogram(Orientations, bins=BinCount, density=True)
     mean, stdev = circmean(Orientations, high=180, low=0), circstd(Orientations, high=180, low=0)
 

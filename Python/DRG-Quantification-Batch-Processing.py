@@ -217,7 +217,7 @@ def AnalyzeConditions(ExperimentalConditions: typing.Sequence[DRGExperimentalCon
             LogWriter.Println(f"Insufficient growth specified for condition [ {ConditionIndex}/{ConditionCount} ]. Emitting zero quantification result for condition.")
             Condition.AnalysisStatus = DRGAnalysis_StatusCode(DRGAnalysis_StatusCode.InsufficientGrowth | DRGAnalysis_StatusCode.StatusSuccess)
             MTG_Common.DRG_Quantification.DRGQuantificationResults().ExtractExperimentalDetails(Condition).Save(JSONDirectory)
-        elif (( Condition.AnalysisStatus & DRGAnalysis_StatusCode.StatusValidationFailed ) == 0) or (( Condition.AnalysisStatus & DRGAnalysis_StatusCode.StatusPreviewRejected ) == 0):
+        elif (( Condition.AnalysisStatus & DRGAnalysis_StatusCode.StatusValidationFailed ) == 0) and (( Condition.AnalysisStatus & DRGAnalysis_StatusCode.StatusPreviewRejected ) == 0):
             LogWriter.Println(f"Starting analysis of experimental condition [ {ConditionIndex}/{ConditionCount} ] - [ {os.path.basename(Condition.LIFFilePath)} ]...")
             try:
 

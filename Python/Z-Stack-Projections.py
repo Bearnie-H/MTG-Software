@@ -46,6 +46,7 @@ def main() -> None:
             Description = "Average Intensity Projection"
         elif ( sys.argv[2].lower() == "--display" ):
             ZStack.ZStack.FromFile(sys.argv[1]).Display()
+            return
 
 
     # if ( Projection is not None ):
