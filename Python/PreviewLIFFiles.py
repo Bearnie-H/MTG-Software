@@ -1359,7 +1359,7 @@ def main() -> int:
         for SeriesIndex in range(LIFFile.num_images):
 
             CurrentImage: ZStack.LifImage = LIFFile.image_list[SeriesIndex]
-            LogWriter.Println(f"{SeriesIndex+1}/{LIFFile.num_images} - Series Name: {CurrentImage["name"]} - Dimensions: {CurrentImage['dims']}")
+            LogWriter.Println(f"{SeriesIndex+1}/{LIFFile.num_images} - Series Name: {CurrentImage['name']} - Dimensions: {CurrentImage['dims']}")
 
             if ( CurrentImage['dims'].m > 1 ):
                 LogWriter.Println(f"This series corresponds to the unstitched tiles of the next series. This will not be displayed.")
