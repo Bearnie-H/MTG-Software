@@ -100,6 +100,9 @@ class ZStack():
             ...
         """
 
+        if ( not os.path.exists(Filename) ):
+            raise ValueError(f"File [ {Filename} ] cannot be opened as the file does not exist.")
+
         match os.path.splitext(Filename)[1].lower():
             case ".lif":
                 return ZStack.FromLIF(Filename, *args)
@@ -438,6 +441,9 @@ class ZStack():
             self._LogWriter.Errorln(f"Failed to open Z-Stack from LIF file, no filename provided.")
             return False
 
+        if ( not os.path.exists(Filename) ):
+            raise ValueError(f"File [ {Filename} ] cannot be opened as the file does not exist")
+
         #   Assert the arguments are provided...
         if (( SeriesName is None ) or ( SeriesName == "" )) and ( SeriesIndex < 0 ):
             self._LogWriter.Errorln(f"Failed to open Z-Stack from LIF file, no image series provided.")
@@ -520,6 +526,9 @@ class ZStack():
             self._LogWriter.Errorln(f"Failed to open Z-Stack from TIF file, no filename provided.")
             return False
 
+        if ( not os.path.exists(Filename) ):
+            raise ValueError(f"File [ {Filename} ] cannot be opened as the file does not exist")
+
         try:
             Success, ImageStack = cv2.imreadmulti(Filename, [], cv2.IMREAD_ANYDEPTH)
             if not ( Success ):
@@ -547,6 +556,9 @@ class ZStack():
         if ( Filename is None ) or ( Filename == "" ):
             self._LogWriter.Errorln(f"Failed to open Z-Stack from CZI file, no filename provided.")
             return False
+
+        if ( not os.path.exists(Filename) ):
+            raise ValueError(f"File [ {Filename} ] cannot be opened as the file does not exist")
 
         try:
             TIFFilename: str = Filename.replace(".czi", ".tif")

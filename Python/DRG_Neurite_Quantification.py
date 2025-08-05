@@ -501,13 +501,13 @@ def main() -> DRGAnalysis_StatusCode:
     QuantificationStacks.OriginalBrightField = Config.BrightFieldImage
     CentroidLocation, DRGBodyMask, WellEdgeMask = ProcessBrightField(Config.BrightFieldImage.MinimumIntensityProjection())
 
-    MasksStatus = SanityCheckMasks(DRGBodyMask, WellEdgeMask)
+    MasksStatus = SanityCheckMasks(DRGBodyMask, WellEdgeMask, "Standard")
     if ( MasksStatus != DRGAnalysis_StatusCode.StatusSuccess ):
 
         #   Try to use the alternative mask generation algorithms?
         LogWriter.Println(f"Attempting to generate masks with alternative algorithms...")
         CentroidLocation, DRGBodyMask, WellEdgeMask = ProcessBrightField(Config.BrightFieldImage.MinimumIntensityProjection(), AlternativeMaskGeneration=True)
-        MasksStatus = SanityCheckMasks(DRGBodyMask, WellEdgeMask)
+        MasksStatus = SanityCheckMasks(DRGBodyMask, WellEdgeMask, "Alternative")
         if ( MasksStatus != DRGAnalysis_StatusCode.StatusSuccess ):
             LogWriter.Warnln(f"Alternative mask generation algorithms also failed!")
             return MasksStatus
@@ -538,7 +538,9 @@ def main() -> DRGAnalysis_StatusCode:
     LogWriter.Println(f"Quantifying neurite lengths...")
     QuantificationStacks.NeuriteDistances.append(QuantifyNeuriteLengths(QuantificationStacks.ManuallySelectedFluorescent, CentroidLocation))
 
-    FeatureSizePx: float = 50 / 0.7644
+    FeatureSizePx: float = 50
+    if ( Config.ExperimentalDetails is not None ):
+        FeatureSizePx /= Config.ExperimentalDetails.ImageResolution
     Config.DistinctOrientations = 90
     DistinctOrientations = Config.DistinctOrientations
     if ( Config.EnableOrientationQuantification ):
@@ -720,7 +722,7 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
         Centroid = EstimateCentroid(Config.DRGBodyMask.copy())
     else:
         #   Using this binarized image, identify the centroid of the DRG body
-        Centroid: typing.Tuple[int, int] = EstimateCentroid(BinarizedImage)
+        Centroid = EstimateCentroid(BinarizedImage)
 
     #   Annotate where the centroid of the DRG body is found to be, and display this to the user...
     CentroidAnnotated: np.ndarray = cv2.circle(Utils.GreyscaleToBGR(Image.copy()), Centroid, 10, (0, 0, 255), -1)
@@ -731,12 +733,12 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
     if ( Config.DRGBodyMask is not None ):
         #   With the centroid identified, review the bright field image and compute a mask which covers the
         #   body of the DRG.
-        DRGBodyMask: np.ndarray = Config.DRGBodyMask.copy()
+        DRGBodyMask = Config.DRGBodyMask.copy()
     else:
         if ( AlternativeMaskGeneration ):
-            DRGBodyMask: np.ndarray = ComputeDRGMask_Alt1(BinarizedImage, Centroid)
+            DRGBodyMask = ComputeDRGMask_Alt1(BinarizedImage, Centroid)
         else:
-            DRGBodyMask: np.ndarray = ComputeDRGMask(BinarizedImage, Centroid)
+            DRGBodyMask = ComputeDRGMask(BinarizedImage, Centroid)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(DRGBodyMask), "DRG Body Mask", not Config.SaveIntermediates, Config.HeadlessMode)
 
     WellEdgeMask: np.ndarray = None
@@ -745,9 +747,9 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
     else:
         #   Compute the mask of the well edge within the image, as this is typically the source of more noise signals than anywhere else
         if ( AlternativeMaskGeneration ):
-            WellEdgeMask: np.ndarray = ComputeWellEdgeMask_Alt1(BinarizedImage, DRGBodyMask, Centroid)
+            WellEdgeMask = ComputeWellEdgeMask_Alt1(BinarizedImage, DRGBodyMask, Centroid)
         else:
-            WellEdgeMask: np.ndarray = ComputeWellEdgeMask(BinarizedImage, Centroid)
+            WellEdgeMask = ComputeWellEdgeMask(BinarizedImage, Centroid)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(WellEdgeMask), "Well Edge Mask", not Config.SaveIntermediates, Config.HeadlessMode)
 
     QuantificationStacks.BrightFieldExclusionMask = Utils.ConvertTo8Bit(DRGBodyMask * WellEdgeMask)
@@ -1178,7 +1180,7 @@ def ComputeWellEdgeMask_Alt1(ThresholdedImage: np.ndarray, DRGBodyMask: np.ndarr
     # Utils.DisplayImage(f"Current Mask", Utils.ConvertTo8Bit(Mask), 0, True, True)
     return Mask
 
-def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> DRGAnalysis_StatusCode:
+def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray, AlgorithmType: str = "Standard") -> DRGAnalysis_StatusCode:
     """
     SanityCheckMasks
 
@@ -1187,6 +1189,8 @@ def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> DRGAn
     DRGBodyMask:
         ...
     WellEdgeMask:
+        ...
+    AlgorithmType:
         ...
 
     Return (int):
@@ -1209,6 +1213,7 @@ def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> DRGAn
     if ( DRGBodyFraction < DRGMaskMinArea ) or ( DRGBodyFraction > DRGMaskMaxArea ):
         MaskStatus |= DRGAnalysis_StatusCode.StatusBodyMaskFailed
         LogWriter.Warnln(f"DRG Body mask coverage fraction is concerningly high (or low)! [ {DRGBodyFraction:.2f} ]")
+        Utils.WriteImage(Utils.ConvertTo8Bit(DRGBodyMask), os.path.join(Config.OutputDirectory, f"DRG Body Mask - Generation Failed - {AlgorithmType}.png"))
     #   ...
 
     #   As for the well interior mask, this should similarly constitute a meaningful
@@ -1218,6 +1223,7 @@ def SanityCheckMasks(DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray) -> DRGAn
     if ( WellInteriorFraction < WellInteriorMinArea ):
         MaskStatus |= DRGAnalysis_StatusCode.StatusWellMaskFailed
         LogWriter.Warnln(f"Well interior mask coverage fraction is concerningly low! [ {WellInteriorFraction:.2f} ]")
+        Utils.WriteImage(Utils.ConvertTo8Bit(DRGBodyMask), os.path.join(Config.OutputDirectory, f"Well Interior Mask - Generation Failed - {AlgorithmType}.png"))
 
     #   If both masks are acceptable, return a success code.
     if ( MaskStatus == 0 ):
@@ -1753,6 +1759,10 @@ def CreateQuantificationFigures(NeuriteLengths: np.ndarray) -> None:
     if ( len(NeuriteLengths) == 0 ):
         return
 
+    LengthUnits: str = "px"
+    if ( Config.ExperimentalDetails is not None ) and ( Config.ExperimentalDetails.ImageResolution != 0 ):
+        LengthUnits = "µm"
+
     BinCount: int = 100
     n, bins = np.histogram(NeuriteLengths, bins=BinCount, density=True)
     median, mean, stdev = np.median(NeuriteLengths), np.mean(NeuriteLengths), np.std(NeuriteLengths)
@@ -1762,13 +1772,13 @@ def CreateQuantificationFigures(NeuriteLengths: np.ndarray) -> None:
 
     F.suptitle(f"<Experimental Identification Here>")
     A.set_title(f"Neurite Length Quantification - Total Pixel Count {len(NeuriteLengths)}")
-    A.set_xlabel(f"Neurite Length (px)")
+    A.set_xlabel(f"Neurite Length ({LengthUnits})")
     A.set_ylabel(f"Normalized Pixel Count")
 
     A.plot(bins[:-1], n, color='b')
-    A.vlines(median, ymin=0, ymax=np.max(n), label=f"Median Length ({median:.0f}px)", color='g')
-    A.vlines(mean, ymin=0, ymax=np.max(n), label=f"Mean Length ({mean:.0f}px)", color='r')
-    A.vlines([mean + stdev, mean - stdev], ymin=0, ymax=np.max(n), label=f"1σ Length ({stdev:.0f}px)", color='k')
+    A.vlines(median, ymin=0, ymax=np.max(n), label=f"Median Length ({median:.0f}{LengthUnits})", color='g')
+    A.vlines(mean, ymin=0, ymax=np.max(n), label=f"Mean Length ({mean:.0f}{LengthUnits})", color='r')
+    A.vlines([mean + stdev, mean - stdev], ymin=0, ymax=np.max(n), label=f"1σ Length ({stdev:.0f}{LengthUnits})", color='k')
     A.legend()
 
     DisplayAndSaveImage(Utils.FigureToImage(F), "Neurite Length Distribution", Config.DryRun, Config.HeadlessMode)
