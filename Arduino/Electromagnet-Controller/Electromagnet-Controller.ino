@@ -412,7 +412,8 @@ typedef struct WelfordAccumulator_t {
     /*
         Copy Assignment Operator Overload
 
-        This function...
+        This function implements the copy-assignment operation, creating a copy
+        of the class instance and assigning this to a *new* variable.
     */
     WelfordAccumulator_t& operator= (const WelfordAccumulator_t& copy);
 
@@ -709,7 +710,7 @@ constexpr Duration_t InterruptFrequencyDefaultUpdatePeriod = (Duration_t)(2 * Se
 typedef struct LoadElement_t {
 
     /*
-        ...
+        Define the PWM and Enable pin(s) for the particular load element.
     */
     Pin_t PWM;
     Pin_t Enable;
@@ -743,9 +744,11 @@ typedef struct LoadElement_t {
         LoadElement_t instance is ready for use.
 
         PWMPin:
-            ...
+            The Arduino Pin corresponding to the PWM signal to use for this
+            load element.
         EnablePin:
-            ...
+            The Arduino Pin corresponding to the Enable signal to use for this
+            load element.
 
         Return (LoadElement_t):
             This function returns the allocated and initialized LoadElement_t
@@ -2075,7 +2078,8 @@ constexpr Pin_t DeviceInitializedPin = 12;
 /*
     FieldTrajectoryEnablePin
 
-    This pin...
+    This pin is used to set the status LEDs to indicate that the field trajectory
+    is enabled and running.
 */
 constexpr Pin_t FieldTrajectoryEnablePin = 13;
 
@@ -2288,7 +2292,9 @@ uint8_t Timer2PrescalerExponent = 6;
 /*
     FieldTrajectory_Enable
 
-    This boolean...
+    This boolean contains the state of whether or not the "Start" button for
+    beginning the field trajectory has been pressed. Only when this is non-zero
+    will the actual field trajectory calculations occur.
 */
 uint8_t FieldTrajectory_Enable = 0;
 
@@ -2329,7 +2335,7 @@ uint8_t FieldTrajectory_Enable = 0;
 */
 void setup() {
 
-    // ...
+    // Write out a log message to indicate that the set-up process has started.
     LogSetupStarting();
 
     // Check for whether the controller is powering up for the first time, or a
@@ -2356,7 +2362,9 @@ void setup() {
     // based Timestamp_t API
     InitializeTimestamp();
 
-    // ...
+    // Hard reset the internal state of the global interrupt frequency counter,
+    // in case this was a watchdog or other soft reset leading back to the
+    // setup() function.
     InterruptFrequency.Reset();
 
     // Configure the Interrupt Service Routine (ISR) used to update the field
@@ -2367,7 +2375,8 @@ void setup() {
     // Interrupt signal attached to TimingInterruptPin.
     InterruptFrequency.Initialize();
 
-    // ...
+    // Assert that the pin associated with the "Start" button is configured to accept
+    // the input signal and associated interrupt.
     ConfigurePushButtonInterrupt(PushButtonInputPin);
 
     // Initialize the watchdog timer, with a timeout of 500ms and in a mode such
@@ -2395,11 +2404,6 @@ void setup() {
         This function returns nothing to the caller.
 */
 void loop() {
-
-    /*
-        ...
-    */
-    // wdt_reset();
 
     /*
         Update the duty cycles applied to the phase windings of the Emitter.
@@ -2519,14 +2523,14 @@ void CheckResetState(void) {
 void ConfigureStatusLEDPins(void) {
 
     /*
-        ...
+        Set up the pin associated with the initialization status LEDs
     */
     pinMode(DeviceInitializedPin, OUTPUT);
     LogPinMode(DeviceInitializedPin, OUTPUT);
     Pin_TriggerOff(DeviceInitializedPin);
 
     /*
-        ...
+        Set up the pin associated with the field active status LED.
     */
     pinMode(FieldTrajectoryEnablePin, OUTPUT);
     LogPinMode(FieldTrajectoryEnablePin, OUTPUT);
@@ -2613,8 +2617,7 @@ void ConfigurePushButtonInterrupt(const Pin_t InterruptPin) {
             PCMSK1 |= (1 << (InterruptPin - A0));
             break;
         default:
-            // Log an error, this pin is unsupported.
-            // ...
+            // The pin is unknown or erroneous, so do nothing.
             return;
     }
 
@@ -3057,7 +3060,7 @@ void FieldEmitter_t::ApplyDutyCycles(void) const {
         const LoadElement_t& PhaseWinding = this->Phases[PhaseIndex];
 
         /*
-            ...
+            Get a constant local reference to the required pins for this load element.
         */
         const Pin_t PWM = PhaseWinding.PWM;
         const Pin_t Enable = PhaseWinding.Enable;
@@ -3070,12 +3073,12 @@ void FieldEmitter_t::ApplyDutyCycles(void) const {
         const uint8_t DutyCycle = PhaseWinding.DutyCycle;
 
         /*
-            ...
+            Write out the PWM signal to the specified pin, and enable this PWM output signal.
         */
         analogWrite(PWM, DutyCycle);
         digitalWrite(Enable, HIGH);
 
-        // ...
+        // Write out the phase, duty cycle, and associated pin details to the log.
         LogCurrentPhaseDutyCycle(PhaseIndex, PWM, DutyCycle);
     }
 
@@ -3360,10 +3363,13 @@ void InterruptFrequency_t::SetDeltaT(const Timestamp_t& Now, const Timestamp_t& 
 
     } else {
 
-        // If the interrupt frequency has not yet been estimated, then we need to do so
-        // from the ground up here. We need to be careful that it's possible for the interrupt
-        // to "skip" once in a while as a result of disabling interrupts to guarantee that the InterruptFrequency.Update()
-        // function reads the current and previous timestamps atomically.
+        // If the interrupt frequency has not yet been estimated, then we need
+        // to do so from the ground up here. We need to be careful that it's
+        // possible for the interrupt to "skip" once in a while as a result of
+        // disabling interrupts to guarantee that the
+        // InterruptFrequency.Update() function reads the current and previous
+        // timestamps atomically. This implements a rough K-means type algorithm
+        // to identify the "true" period.
         constexpr static uint8_t nClusters = 3;
         static WelfordAccumulator_t Clusters[nClusters] = { WelfordAccumulator_t(WelfordAccumulator_DefaultMaxCount), WelfordAccumulator_t(WelfordAccumulator_DefaultMaxCount), WelfordAccumulator_t(WelfordAccumulator_DefaultMaxCount) };
 
@@ -3373,11 +3379,11 @@ void InterruptFrequency_t::SetDeltaT(const Timestamp_t& Now, const Timestamp_t& 
             Clusters[ClusterIndex].TestUpdate(InterruptInterval, NextMean, NextVariance);
             double IncrementVariance = abs(Clusters[ClusterIndex].Variance() - NextVariance);
 
-            // ...
+            // If the incremental variance for the given cluster is low enough, update the cluster.
             if ( IncrementVariance <= ( 5 * Clusters[ClusterIndex].Mean )) {
                 Clusters[ClusterIndex].Update(InterruptInterval);
 
-                // ...
+                // Assert finite cluster sizes.
                 if ( Clusters[ClusterIndex].Count == Clusters[ClusterIndex].MaxCount ) {
                     this->FrequencyEstimator = Clusters[ClusterIndex];
                     break;
@@ -3386,7 +3392,7 @@ void InterruptFrequency_t::SetDeltaT(const Timestamp_t& Now, const Timestamp_t& 
         }
     }
 
-    // ...
+    // Update the internal state, and report out the current ∆t value.
     this->DeltaT = Duration_ToSeconds(this->FrequencyEstimator.Mean);
     this->LastUpdateTimeStamp = Now;
     this->IsSet = true;
@@ -3480,7 +3486,8 @@ void ComputeNextFieldOrientation(void) {
     InterruptCount = 0;
 
     /*
-        ...
+        Allow interrupts to occur during this interrupt, as this is required
+        for the global InterruptFrequency_t instance to operate properly.
     */
     interrupts();
 
@@ -3592,16 +3599,6 @@ void ComputeNextFieldOrientation(void) {
     */
 
     /*
-        Implement the actual logic for the frequency de-rating functionality. If
-        the number of times this interrupt has been called since the last time
-        is less than the count implied by the de-rating factor, just skip
-        executing this iteration and return "immediately".
-
-        If this is equal to the count implied by the de-rating factor, actually
-        continue on with the standard logic.
-    */
-
-    /*
         Tick the clock of the InterruptFrequency_t instance, to measure the
         interval between this interrupt and the previous one.
     */
@@ -3645,14 +3642,17 @@ void ComputeNextFieldOrientation(void) {
     */
     static double t = 0;
 
-    // Don't trigger until all setup is completed.
+    /*
+        Don't do any calculations until requested to do so and all other hardware
+        setup is completed.
+    */
     if ( 0 == FieldTrajectory_Enable ) {
         Phi = 0;
         t = 0;
         Emitter.DesiredFieldOrientation = FIELD_ORIENTATION_OFF;
         return;
     }
-    Emitter.Trigger();
+    Emitter.Trigger();  // Simply signal that the field orientation calculations are occurring.
 
     /*
         dt
@@ -3678,8 +3678,8 @@ void ComputeNextFieldOrientation(void) {
     static constexpr double Omega = (1.0 / 10.0); // Hz, rotational frequency
     static constexpr double Alpha = 0.0;  // Hz^2, rotational acceleration
 
-    static constexpr double Period = 180.0;
-    static constexpr double OffDelay = 0.0; //Period / Segments;
+    static constexpr double Period = 180.0; // Seconds, after which the trajectory ends.
+    static constexpr double OffDelay = 0.0;
 
     if ( t <= Period ) {
         Phi += ((TWO_PI * Omega * dt) + (TWO_PI * 2 * Alpha * t * dt));
@@ -3713,9 +3713,6 @@ void ComputeNextFieldOrientation(void) {
     return;
 }
 
-/*
-    ...
-*/
 void Timer2Overflow_Timestamp(void);
 #if defined(TIM2_OVF_vect)
 ISR(TIM2_OVF_vect) {
@@ -3737,9 +3734,6 @@ ISR(TIMER2_OVF_vect){
     #warning "Unknown or missing Timer2 Overflow Vector definition!"
 #endif
 
-/*
-    ...
-*/
 #if defined(PCINT1_vect)
 ISR(PCINT1_vect) {
 
