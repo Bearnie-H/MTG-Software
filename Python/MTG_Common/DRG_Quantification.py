@@ -1335,32 +1335,46 @@ class DRGQuantificationResultsSet():
 
         #   We also want to explore the differences between the 3% and 6% GelMA,
         #   for each of the 50 and 80 DOF formulations.
-        self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF"), CollapseDates=True)
-        self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF By Date"))
-        self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
-        self._GelMAPercentageAndDOF(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF By Date - ALL"), IncludeInsufficientGrowth=True)
+        self._GelMAPercentageAndDOF_Length(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF"), CollapseDates=True)
+        self._GelMAPercentageAndDOF_Length(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF By Date"))
+        self._GelMAPercentageAndDOF_Length(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._GelMAPercentageAndDOF_Length(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage and DOF By Date - ALL"), IncludeInsufficientGrowth=True)
+        self._GelMAPercentageAndDOF_Density(os.path.join(OutputDirectory, f"Neurite Density by GelMA Percentage and DOF"), CollapseDates=True)
+        self._GelMAPercentageAndDOF_Density(os.path.join(OutputDirectory, f"Neurite Density by GelMA Percentage and DOF By Date"))
+        self._GelMAPercentageAndDOF_Density(os.path.join(OutputDirectory, f"Neurite Density by GelMA Percentage and DOF - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._GelMAPercentageAndDOF_Density(os.path.join(OutputDirectory, f"Neurite Density by GelMA Percentage and DOF By Date - ALL"), IncludeInsufficientGrowth=True)
 
         #   We want to examine how GelMA percentage and DOF vary across the different dilution media
         #   which have been used to create the gels.
-        self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium"), CollapseDates=True)
-        self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium By Date"))
-        self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
-        self._GelMAPercentageAndDOFByDilutionMedia(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium By Date - ALL"), IncludeInsufficientGrowth=True)
+        self._GelMAPercentageAndDOFByDilutionMedia_Length(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium"), CollapseDates=True)
+        self._GelMAPercentageAndDOFByDilutionMedia_Length(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium By Date"))
+        self._GelMAPercentageAndDOFByDilutionMedia_Length(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._GelMAPercentageAndDOFByDilutionMedia_Length(os.path.join(OutputDirectory, f"Neurite Length by GelMA Percentage, DOF, and Dilution Medium By Date - ALL"), IncludeInsufficientGrowth=True)
+        self._GelMAPercentageAndDOFByDilutionMedia_Density(os.path.join(OutputDirectory, f"Neurite Density by GelMA Percentage, DOF, and Dilution Medium"), CollapseDates=True)
+        self._GelMAPercentageAndDOFByDilutionMedia_Density(os.path.join(OutputDirectory, f"Neurite Density by GelMA Percentage, DOF, and Dilution Medium By Date"))
+        self._GelMAPercentageAndDOFByDilutionMedia_Density(os.path.join(OutputDirectory, f"Neurite Density by GelMA Percentage, DOF, and Dilution Medium - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._GelMAPercentageAndDOFByDilutionMedia_Density(os.path.join(OutputDirectory, f"Neurite Density by GelMA Percentage, DOF, and Dilution Medium By Date - ALL"), IncludeInsufficientGrowth=True)
 
         #   Iryna is interested in the trials of Ultimatrix where Ru/SPS and illumination with the
         #   LED was included.
-        self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time"), CollapseDates=True)
-        self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time By Date"))
-        self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
-        self._UltimatrixByCrosslinkerAndIllumination(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time By Date - ALL"), IncludeInsufficientGrowth=True)
+        self._UltimatrixByCrosslinkerAndIllumination_Length(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time"), CollapseDates=True)
+        self._UltimatrixByCrosslinkerAndIllumination_Length(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time By Date"))
+        self._UltimatrixByCrosslinkerAndIllumination_Length(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._UltimatrixByCrosslinkerAndIllumination_Length(os.path.join(OutputDirectory, f"Neurite Length in Ultimatrix by RuSPS and Illumination Time By Date - ALL"), IncludeInsufficientGrowth=True)
+        self._UltimatrixByCrosslinkerAndIllumination_Density(os.path.join(OutputDirectory, f"Neurite Density in Ultimatrix by RuSPS and Illumination Time"), CollapseDates=True)
+        self._UltimatrixByCrosslinkerAndIllumination_Density(os.path.join(OutputDirectory, f"Neurite Density in Ultimatrix by RuSPS and Illumination Time By Date"))
+        self._UltimatrixByCrosslinkerAndIllumination_Density(os.path.join(OutputDirectory, f"Neurite Density in Ultimatrix by RuSPS and Illumination Time - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._UltimatrixByCrosslinkerAndIllumination_Density(os.path.join(OutputDirectory, f"Neurite Density in Ultimatrix by RuSPS and Illumination Time By Date - ALL"), IncludeInsufficientGrowth=True)
 
         #   ...
-        self._ByHydrogelFormulationAndLaminin(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration"), CollapseDates=True)
-        self._ByHydrogelFormulationAndLaminin(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration By Date"))
-        self._ByHydrogelFormulationAndLaminin(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
-        self._ByHydrogelFormulationAndLaminin(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration By Date - ALL"), IncludeInsufficientGrowth=True)
-
-        #   ...
+        self._ByHydrogelFormulationAndLaminin_Length(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration"), CollapseDates=True)
+        self._ByHydrogelFormulationAndLaminin_Length(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration By Date"))
+        self._ByHydrogelFormulationAndLaminin_Length(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._ByHydrogelFormulationAndLaminin_Length(os.path.join(OutputDirectory, f"Neurite Length in Nasrin's Hydrogels by Formulation and Laminin Concentration By Date - ALL"), IncludeInsufficientGrowth=True)
+        self._ByHydrogelFormulationAndLaminin_Density(os.path.join(OutputDirectory, f"Neurite Density in Nasrin's Hydrogels by Formulation and Laminin Concentration"), CollapseDates=True)
+        self._ByHydrogelFormulationAndLaminin_Density(os.path.join(OutputDirectory, f"Neurite Density in Nasrin's Hydrogels by Formulation and Laminin Concentration By Date"))
+        self._ByHydrogelFormulationAndLaminin_Density(os.path.join(OutputDirectory, f"Neurite Density in Nasrin's Hydrogels by Formulation and Laminin Concentration - ALL"), CollapseDates=True, IncludeInsufficientGrowth=True)
+        self._ByHydrogelFormulationAndLaminin_Density(os.path.join(OutputDirectory, f"Neurite Density in Nasrin's Hydrogels by Formulation and Laminin Concentration By Date - ALL"), IncludeInsufficientGrowth=True)
 
         return
 
@@ -1432,9 +1446,9 @@ class DRGQuantificationResultsSet():
 
         return
 
-    def _GelMAPercentageAndDOF(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
+    def _GelMAPercentageAndDOF_Length(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
         """
-        _GelMAPercentageAndDOF
+        _GelMAPercentageAndDOF_Length
 
         This function compares the median neurite length as a function of the
         GelMA percentage and degree of functionalization, for each of the
@@ -1561,9 +1575,138 @@ class DRGQuantificationResultsSet():
 
         return
 
-    def _GelMAPercentageAndDOFByDilutionMedia(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
+    def _GelMAPercentageAndDOF_Density(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
         """
-        _GelMAPercentageAndDOFByDilutionMedia
+        _GelMAPercentageAndDOF_Density
+
+        This function compares the neurite density as a function of the
+        GelMA percentage and degree of functionalization, for each of the
+        permutations of the other experimental variables.  This aims to
+        demonstrate whether the GelMA percentage and/or degree of
+        functionalization alone appear to provide statistically significant
+        differences to neurite growth.
+
+        OutputDirectory:
+            The directory into which the resulting figures should be written to.
+        CollapseDates:
+            Should replicate conditions across multiple experimental dates be
+            collapsed together, or should these be treated as independent
+            trials?
+        IncludeInsufficientGrowth:
+            Should this analysis include results from DRGs which are known to
+            have been cultured, but were not imaged due to insufficient growth?
+            This adds a 0 value for each such example.
+
+        Return (None):
+            None, the figure(s) are generated and written out to the provided
+            directory.
+
+        NOTE:
+            In addition to an image file showing each figure, a *.csv file is
+            also generated with the same naming convention to provide the raw
+            data behind the figure. This allows the data to be provided to
+            alternative plotting or visualization tools to allow customizing of
+            the figures as the user requires.
+        """
+
+        self._LogWriter.Println(f"Preparing boxplots of neurite density as a function of GelMA percentage and degree of functionalization...")
+
+        if ( not os.path.exists(OutputDirectory) ):
+            os.makedirs(OutputDirectory, mode=0o755, exist_ok=True)
+            self._LogWriter.Println(f"Creating output directory [ {OutputDirectory } ]...")
+
+        GelMAResults: DRGQuantificationResultsSet = self.Filter(
+            lambda x:
+                x.BaseGel == BaseGels.BaseGel_GelMA
+        )
+        if ( not IncludeInsufficientGrowth ):
+            GelMAResults = GelMAResults.Filter(
+                lambda x:
+                    x.InsufficientGrowth == False
+            )
+        if ( len(GelMAResults) == 0 ):
+            self._LogWriter.Println(f"No results were found where BaseGel=GelMA...")
+            return
+
+        #   Identify the possible values for the GelMA percentage and the Degree of Functionalization of the gel.
+        GelMAPercentages: typing.Sequence[float] = GelMAResults.Unique(lambda x: x.GelMAPercentage)
+        DegreeOfFunctionalizations: typing.Sequence[float] = GelMAResults.Unique(lambda x: x.DegreeOfFunctionalization)
+
+        self._LogWriter.Println(f"Found results for GelMA percentages: [ {GelMAPercentages} ]...")
+        self._LogWriter.Println(f"Found results for degree of functionalizaton: [ {DegreeOfFunctionalizations} ]...")
+
+        #   We need to generate groups which are unique in all parameters *Except* the GelMA percentage and Degree of Functionalization.
+        #   Then, we can split on these last two parameters and get meaningful comparisons across these two experimental variables for
+        #   every other larger set of experimental variables.
+        Template: DRGQuantificationResults = DRGQuantificationResults()
+        if ( CollapseDates ):
+            Template.ExperimentDate = None
+        Template.GelMAPercentage = None
+        Template.DegreeOfFunctionalization = None
+        Groups: typing.Sequence[DRGQuantificationResultsSet] = GelMAResults.GroupBy(Template)
+
+        #   For each set of experimental conditions, identify the cases we care about for these figures:
+        for GroupIndex, Group in enumerate(Groups, start=1):
+            self._LogWriter.Println(f"Preparing boxplot for condition [ {GroupIndex}/{len(Groups)} ]...")
+            F: Figure = Utils.PrepareFigure()
+            Ax: Axes = F.add_subplot(111)
+            Example: DRGQuantificationResults = Group._Results[0]
+            AxisTitle: str = "".join([
+                f"{Example.ExperimentDate if not CollapseDates else ''}",
+                f", {Example.DilutionMedia}",
+                f', Phenol Red' if Example.IncludesPhenolRed else '',
+                f', B27' if Example.IncludesB27 else '',
+                f', FBS' if Example.IncludesFetalBovineSerum else '',
+                f', Ru-SPS {Example.RutheniumConcentration}-{Example.SodiumPersulfateConcentration}' if Example.RutheniumConcentration != 0 and Example.SodiumPersulfateConcentration != 0 else f', Riboflavin {Example.RiboflavinConcentration}',
+                f', Illumination Time {Example.GelIlluminationDuration}s',
+                f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
+                f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
+                f', Glutathione {Example.GlutathioneConcentration}' if Example.Glutathione else '',
+                f', GDNF {Example.GDNFConcentration}' if Example.GDNF else '',
+                f', BDNF {Example.BDNFConcentration}' if Example.BDNF else '',
+                f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
+            ]).strip(", ").replace("/", "-")
+
+            DataFilename: str = AxisTitle.replace("\n", ", ") + ".csv"
+            with open(os.path.join(OutputDirectory, DataFilename), "+w") as DataFile:
+                PlotPosition: int = 0
+                for Index, (GelMAPercentage, DegreeOfFunctionalization) in enumerate(itertools.product(GelMAPercentages, DegreeOfFunctionalizations)):
+
+                    Condition: DRGQuantificationResultsSet = Group.Filter(
+                        lambda x:
+                            x.GelMAPercentage == GelMAPercentage and \
+                            x.DegreeOfFunctionalization == DegreeOfFunctionalization
+                    )
+                    Densities: typing.List[float] = [x.NeuriteDensity for x in Condition if math.isfinite(x.NeuriteDensity)]
+                    if ( len(Condition) > 0 ):
+                        Ax.boxplot(Densities, sym='', positions=[PlotPosition], labels=[f"{GelMAPercentage}% GelMA\n{DegreeOfFunctionalization} DOF\nn={len(Condition)}\nµ={np.mean(Densities) if len(Densities) > 0 else 0:.2f}µm"])
+                        Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Densities)), Densities, c='k', alpha=0.5)
+                        PlotPosition += 1
+
+                    DataFile.write(f"{GelMAPercentage}% GelMA - {DegreeOfFunctionalization} DOF")
+                    DataFile.write(''.join([f",{x}" for x in Densities]))
+                    DataFile.write("\n")
+
+            F.suptitle(f"DRG Neurite Density versus GelMA Concentration and Degree of Functionalization{' (Including Insufficient Growth)' if IncludeInsufficientGrowth else ''}")
+            Ax.set_title(AxisTitle)
+            Ax.minorticks_on()
+            Ax.set_ylim(bottom=0.0)
+            Ax.set_ylabel(f"Neurite Density (n.d.)")
+            Ax.set_xlabel(f"GelMA Percentage & Degree of Functionalization")
+            F.tight_layout()
+            self._LogWriter.Println(f"Created boxplot for condition [ {GroupIndex}/{len(Groups)} ].")
+
+            Utils.WriteImage(Utils.FigureToImage(F), os.path.join(OutputDirectory, f"{AxisTitle}.png"))
+            self._LogWriter.Println(f"Saved figure to file [ {AxisTitle}.png ]...")
+            F.clear()
+
+        self._LogWriter.Println(f"Finished creating boxplots of neurite density as a function of GelMA percentage and degree of functionalization.")
+
+        return
+
+    def _GelMAPercentageAndDOFByDilutionMedia_Length(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
+        """
+        _GelMAPercentageAndDOFByDilutionMedia_Length
 
         This function is essentially the same as _GelMAPercentageAndDOF, but
         also splits the data apart on the dilution medium used in the
@@ -1690,9 +1833,138 @@ class DRGQuantificationResultsSet():
 
         return
 
-    def _UltimatrixByCrosslinkerAndIllumination(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
+    def _GelMAPercentageAndDOFByDilutionMedia_Density(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
         """
-        _UltimatrixByCrosslinkerAndIllumination
+        _GelMAPercentageAndDOFByDilutionMedia_Density
+
+        This function is essentially the same as _GelMAPercentageAndDOF, but
+        also splits the data apart on the dilution medium used in the
+        preparation of the gel.
+
+        OutputDirectory:
+            The directory into which the resulting figures should be written to.
+        CollapseDates:
+            Should replicate conditions across multiple experimental dates be
+            collapsed together, or should these be treated as independent
+            trials?
+        IncludeInsufficientGrowth:
+            Should this analysis include results from DRGs which are known to
+            have been cultured, but were not imaged due to insufficient growth?
+            This adds a 0 value for each such example.
+
+        Return (None):
+            None, the figure(s) are generated and written out to the provided
+            directory.
+
+        NOTE:
+            In addition to an image file showing each figure, a *.csv file is
+            also generated with the same naming convention to provide the raw
+            data behind the figure. This allows the data to be provided to
+            alternative plotting or visualization tools to allow customizing of
+            the figures as the user requires.
+        """
+
+        self._LogWriter.Println(f"Preparing boxplots of neurite density as a function of GelMA percentage, degree of functionalization, and dilution media...")
+
+        if ( not os.path.exists(OutputDirectory) ):
+            os.makedirs(OutputDirectory, mode=0o755, exist_ok=True)
+            self._LogWriter.Println(f"Creating output directory [ {OutputDirectory } ]...")
+
+        GelMAResults: DRGQuantificationResultsSet = self.Filter(
+            lambda x:
+                x.BaseGel == BaseGels.BaseGel_GelMA
+        )
+        if ( not IncludeInsufficientGrowth ):
+            GelMAResults = GelMAResults.Filter(
+                lambda x:
+                    x.InsufficientGrowth == False
+            )
+        if ( len(GelMAResults) == 0 ):
+            self._LogWriter.Println(f"No results were found where BaseGel=GelMA...")
+            return
+
+        #   Identify the possible values for the GelMA percentage and the Degree of Functionalization of the gel.
+        GelMAPercentages: typing.Sequence[float] = GelMAResults.Unique(lambda x: x.GelMAPercentage)
+        DegreeOfFunctionalizations: typing.Sequence[float] = GelMAResults.Unique(lambda x: x.DegreeOfFunctionalization)
+        DilutionMedia: typing.Sequence[str] = GelMAResults.Unique(lambda x: x.DilutionMedia)
+
+        self._LogWriter.Println(f"Found results for GelMA percentages: [ {GelMAPercentages} ]...")
+        self._LogWriter.Println(f"Found results for degree of functionalizaton: [ {DegreeOfFunctionalizations} ]...")
+        self._LogWriter.Println(f"Found results for dilution media: [ {DilutionMedia} ]...")
+
+        #   We need to generate groups which are unique in all parameters *Except* the GelMA percentage and Degree of Functionalization.
+        #   Then, we can split on these last two parameters and get meaningful comparisons across these two experimental variables for
+        #   every other larger set of experimental variables.
+        Template: DRGQuantificationResults = DRGQuantificationResults()
+        if ( CollapseDates ):
+            Template.ExperimentDate = None
+        Template.GelMAPercentage = None
+        Template.DegreeOfFunctionalization = None
+        Template.DilutionMedia = None
+        Groups: typing.Sequence[DRGQuantificationResultsSet] = GelMAResults.GroupBy(Template)
+
+        #   For each set of experimental conditions, identify the 4 cases we care about for these figures:
+        for GroupIndex, Group in enumerate(Groups, start=1):
+            self._LogWriter.Println(f"Preparing boxplot for condition [ {GroupIndex}/{len(Groups)} ]...")
+            F: Figure = Utils.PrepareFigure()
+            Ax: Axes = F.add_subplot(111)
+            Example: DRGQuantificationResults = Group._Results[0]
+            AxisTitle: str = "".join([
+                f"{Example.ExperimentDate if not CollapseDates else ''}",
+                f', Phenol Red' if Example.IncludesPhenolRed else '',
+                f', B27' if Example.IncludesB27 else '',
+                f', FBS' if Example.IncludesFetalBovineSerum else '',
+                f', Ru-SPS {Example.RutheniumConcentration}-{Example.SodiumPersulfateConcentration}' if Example.RutheniumConcentration != 0 and Example.SodiumPersulfateConcentration != 0 else f', Riboflavin {Example.RiboflavinConcentration}',
+                f', Illumination Time {Example.GelIlluminationDuration}s',
+                f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
+                f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
+                f', Glutathione {Example.GlutathioneConcentration}' if Example.Glutathione else '',
+                f', GDNF {Example.GDNFConcentration}' if Example.GDNF else '',
+                f', BDNF {Example.BDNFConcentration}' if Example.BDNF else '',
+                f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
+            ]).strip(", ").replace("/", "-")
+
+            DataFilename: str = AxisTitle.replace("\n", ", ") + ".csv"
+            with open(os.path.join(OutputDirectory, DataFilename), "+w") as DataFile:
+                PlotPosition: int = 0
+                for Index, (DilutionMedium, GelMAPercentage, DegreeOfFunctionalization) in enumerate(itertools.product(DilutionMedia, GelMAPercentages, DegreeOfFunctionalizations)):
+
+                    Condition: DRGQuantificationResultsSet = Group.Filter(
+                        lambda x:
+                            x.GelMAPercentage == GelMAPercentage and \
+                            x.DegreeOfFunctionalization == DegreeOfFunctionalization and \
+                            x.DilutionMedia == DilutionMedium
+                    )
+                    Densities: typing.List[float] = [x.NeuriteDensity for x in Condition if math.isfinite(x.NeuriteDensity)]
+                    if ( len(Condition) > 0 ):
+                        Ax.boxplot(Densities, sym='', positions=[PlotPosition], labels=[f"{DilutionMedium}\n{GelMAPercentage}% GelMA\n{DegreeOfFunctionalization} DOF\nn={len(Condition)}\nµ={np.mean(Densities) if len(Densities) > 0 else 0:.2f}µm"])
+                        Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Densities)), Densities, c='k', alpha=0.5)
+                        PlotPosition += 1
+
+                    DataFile.write(f"{DilutionMedium} - {GelMAPercentage}% GelMA - {DegreeOfFunctionalization} DOF")
+                    DataFile.write(''.join([f",{x}" for x in Densities]))
+                    DataFile.write("\n")
+
+            F.suptitle(f"Neurite Density versus GelMA Concentration, Degree of Functionalization, and Dilution Medium{' (Including Insufficient Growth)' if IncludeInsufficientGrowth else ''}")
+            Ax.set_title(AxisTitle)
+            Ax.minorticks_on()
+            Ax.set_ylim(bottom=0.0)
+            Ax.set_ylabel(f"Neurite Density (n.d.)")
+            Ax.set_xlabel(f"Dilution Medium, GelMA Percentage, Degree of Functionalization")
+            F.tight_layout()
+            self._LogWriter.Println(f"Created boxplot for condition [ {GroupIndex}/{len(Groups)} ].")
+
+            Utils.WriteImage(Utils.FigureToImage(F), os.path.join(OutputDirectory, f"{AxisTitle}.png"))
+            self._LogWriter.Println(f"Saved figure to file [ {AxisTitle}.png ]...")
+            F.clear()
+
+        self._LogWriter.Println(f"Finished creating boxplots of neurite density as a function of GelMA percentage, degree of functionalization, and dilution medium.")
+
+        return
+
+    def _UltimatrixByCrosslinkerAndIllumination_Length(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
+        """
+        _UltimatrixByCrosslinkerAndIllumination_Length
 
         This function plots the median neurite length as a function of the
         concentration of Ru/SPS and illumination duration, for Ultimatrix gel
@@ -1820,9 +2092,139 @@ class DRGQuantificationResultsSet():
 
         return
 
-    def _ByHydrogelFormulationAndLaminin(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
+    def _UltimatrixByCrosslinkerAndIllumination_Density(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
         """
-        _ByHydrogelFormulationAndLaminin
+        _UltimatrixByCrosslinkerAndIllumination_Density
+
+        This function plots the median neurite length as a function of the
+        concentration of Ru/SPS and illumination duration, for Ultimatrix gel
+        samples. This aimed to explore whether these factors alone significantly
+        influence the resulting DRG growth in the gels, as a test against those
+        samples grown in GelMA.
+
+        OutputDirectory:
+            The directory into which the resulting figures should be written to.
+        CollapseDates:
+            Should replicate conditions across multiple experimental dates be
+            collapsed together, or should these be treated as independent
+            trials?
+        IncludeInsufficientGrowth:
+            Should this analysis include results from DRGs which are known to
+            have been cultured, but were not imaged due to insufficient growth?
+            This adds a 0 value for each such example.
+
+        Return (None):
+            None, the figure(s) are generated and written out to the provided
+            directory.
+
+        NOTE:
+            In addition to an image file showing each figure, a *.csv file is
+            also generated with the same naming convention to provide the raw
+            data behind the figure. This allows the data to be provided to
+            alternative plotting or visualization tools to allow customizing of
+            the figures as the user requires.
+        """
+
+        self._LogWriter.Println(f"Preparing boxplots of neurite density as a function of Ru-SPS and Gel Illumination for Ultimatrix...")
+
+        if ( not os.path.exists(OutputDirectory) ):
+            os.makedirs(OutputDirectory, mode=0o755, exist_ok=True)
+            self._LogWriter.Println(f"Creating output directory [ {OutputDirectory } ]...")
+
+        UltimatrixResults: DRGQuantificationResultsSet = self.Filter(
+            lambda x:
+                x.BaseGel == BaseGels.BaseGel_Ultimatrix
+        )
+        if ( not IncludeInsufficientGrowth ):
+            UltimatrixResults = UltimatrixResults.Filter(
+                lambda x:
+                    x.InsufficientGrowth == False
+            )
+        if ( len(UltimatrixResults) == 0 ):
+            self._LogWriter.Println(f"No results were found where BaseGel=Ultimatrix...")
+            return
+
+        #   Identify the possible values for the GelMA percentage and the Degree of Functionalization of the gel.
+        RutheniumConcentrations: typing.Sequence[float] = UltimatrixResults.Unique(lambda x: x.RutheniumConcentration)
+        SodiumPerSulfateConcentrations: typing.Sequence[float] = UltimatrixResults.Unique(lambda x: x.SodiumPersulfateConcentration)
+        IlluminationDurations: typing.Sequence[float] = UltimatrixResults.Unique(lambda x: x.GelIlluminationDuration)
+
+        self._LogWriter.Println(f"Found results for Ruthenium Concentrations: [ {RutheniumConcentrations} ]...")
+        self._LogWriter.Println(f"Found results for SPS Concentrations: [ {SodiumPerSulfateConcentrations} ]...")
+        self._LogWriter.Println(f"Found results for Gel Illumination Durations: [ {IlluminationDurations} ]...")
+
+        #   We need to generate groups which are unique in all parameters *Except* the GelMA percentage and Degree of Functionalization.
+        #   Then, we can split on these last two parameters and get meaningful comparisons across these two experimental variables for
+        #   every other larger set of experimental variables.
+        Template: DRGQuantificationResults = DRGQuantificationResults()
+        if ( CollapseDates ):
+            Template.ExperimentDate = None
+        Template.RutheniumConcentration = None
+        Template.SodiumPersulfateConcentration = None
+        Template.GelIlluminationDuration = None
+        Groups: typing.Sequence[DRGQuantificationResultsSet] = UltimatrixResults.GroupBy(Template)
+
+        #   For each set of experimental conditions, identify the 4 cases we care about for these figures:
+        for GroupIndex, Group in enumerate(Groups, start=1):
+            self._LogWriter.Println(f"Preparing boxplot for condition [ {GroupIndex}/{len(Groups)} ]...")
+            F: Figure = Utils.PrepareFigure()
+            Ax: Axes = F.add_subplot(111)
+            Example: DRGQuantificationResults = Group._Results[0]
+            AxisTitle: str = "".join([
+                f"{Example.ExperimentDate if not CollapseDates else ''}",
+                f', {Example.DilutionMedia}',
+                f', Phenol Red' if Example.IncludesPhenolRed else '',
+                f', B27' if Example.IncludesB27 else '',
+                f', FBS' if Example.IncludesFetalBovineSerum else '',
+                f', IKVAV {Example.IKVAVConcentration}' if Example.IKVAV else '',
+                f', Gelatin {Example.GelatinConcentration}' if Example.Gelatin else '',
+                f', Glutathione {Example.GlutathioneConcentration}' if Example.GlutathioneConcentration else '',
+                f', GDNF {Example.GDNFConcentration}' if Example.GDNF else '',
+                f', BDNF {Example.BDNFConcentration}' if Example.BDNF else '',
+                f', Laminin {Example.LamininConcentration}' if Example.Laminin else '',
+            ]).strip(", ").replace("/", "-")
+
+            DataFilename: str = AxisTitle.replace("\n", ", ") + ".csv"
+            with open(os.path.join(OutputDirectory, DataFilename), "+w") as DataFile:
+                PlotPosition: int = 0
+                for Index, (IlluminationDuration, (SPSConcentration, RutheniumConcentration)) in enumerate(itertools.product(IlluminationDurations, zip(SodiumPerSulfateConcentrations, RutheniumConcentrations))):
+
+                    Condition: DRGQuantificationResultsSet = Group.Filter(
+                        lambda x:
+                            x.SodiumPersulfateConcentration == SPSConcentration and \
+                            x.RutheniumConcentration == RutheniumConcentration and \
+                            x.GelIlluminationDuration == IlluminationDuration
+                    )
+                    Densities: typing.List[float] = [x.NeuriteDensity for x in Condition if math.isfinite(x.NeuriteDensity)]
+                    if ( len(Condition) > 0 ):
+                        Ax.boxplot(Densities, sym='', positions=[PlotPosition], labels=[f"{IlluminationDuration}s\n{SPSConcentration}mM SPS\n{RutheniumConcentration}mM Ru\nn={len(Condition)}\nµ={np.mean(Densities) if len(Densities) > 0 else 0:.2f}µm"])
+                        Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Densities)), Densities, c='k', alpha=0.5)
+                        PlotPosition += 1
+
+                    DataFile.write(f"{IlluminationDuration}s - {SPSConcentration}mM SPS - {RutheniumConcentration}mM Ru")
+                    DataFile.write(''.join([f",{x}" for x in Densities]))
+                    DataFile.write("\n")
+
+            F.suptitle(f"Neurite Density versus Ru-SPS and Gel Illumination{' (Including Insufficient Growth)' if IncludeInsufficientGrowth else ''}")
+            Ax.set_title(AxisTitle)
+            Ax.minorticks_on()
+            Ax.set_ylim(bottom=0.0)
+            Ax.set_ylabel(f"Neurite Density (n.d.)")
+            Ax.set_xlabel(f"Illumination Duration, SPS Concentration, Ruthenium Concentration")
+            F.tight_layout()
+            self._LogWriter.Println(f"Created boxplot for condition [ {GroupIndex}/{len(Groups)} ].")
+
+            Utils.WriteImage(Utils.FigureToImage(F), os.path.join(OutputDirectory, f"{AxisTitle}.png"))
+            self._LogWriter.Println(f"Saved figure to file [ {AxisTitle}.png ]...")
+            F.clear()
+
+        self._LogWriter.Println(f"Finished creating boxplots of neurite density as a function of Ru-SPS and Gel Illumination for Ultimatrix...")
+
+        return
+
+    def _ByHydrogelFormulationAndLaminin_Length(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
+        """
+        _ByHydrogelFormulationAndLaminin_Length
 
         This function...
         """
@@ -1911,5 +2313,99 @@ class DRGQuantificationResultsSet():
             F.clear()
 
         self._LogWriter.Println(f"Finished creating boxplots of neurite length as a function of hydrogel formulation and laminin concentration for gels H6, H7, and H8.")
+
+        return
+
+    def _ByHydrogelFormulationAndLaminin_Density(self: DRGQuantificationResultsSet, OutputDirectory: str, CollapseDates: bool = False, IncludeInsufficientGrowth: bool = False) -> None:
+        """
+        _ByHydrogelFormulationAndLaminin_Density
+
+        This function...
+        """
+
+        self._LogWriter.Println(f"Preparing boxplots of neurite density as a function of hydrogel formulation and laminin concentration for gels H6, H7, and H8...")
+
+        if ( not os.path.exists(OutputDirectory) ):
+            os.makedirs(OutputDirectory, mode=0o755, exist_ok=True)
+            self._LogWriter.Println(f"Creating output directory [ {OutputDirectory } ]...")
+
+        HydrogelsResults: DRGQuantificationResultsSet = self.Filter(
+            lambda x:
+                x.BaseGel in (BaseGels.BaseGel_H6, BaseGels.BaseGel_H7, BaseGels.BaseGel_H8)
+        )
+        if ( not IncludeInsufficientGrowth ):
+            HydrogelsResults = HydrogelsResults.Filter(
+                lambda x:
+                    x.InsufficientGrowth == False
+            )
+        if ( len(HydrogelsResults) == 0 ):
+            self._LogWriter.Println(f"No results were found where BaseGel is one of (H6, H7, or H8)...")
+            return
+
+        #   Identify the possible values for the GelMA percentage and the Degree of Functionalization of the gel.
+        HydroGelTypes: typing.Sequence[float] = HydrogelsResults.Unique(lambda x: x.BaseGel)
+        LamininConcentrations: typing.Sequence[float] = HydrogelsResults.Unique(lambda x: x.LamininConcentration)
+
+        self._LogWriter.Println(f"Found results for Base Gels: [ {HydroGelTypes} ]...")
+        self._LogWriter.Println(f"Found results for Laminin Concentrations: [ {LamininConcentrations} ]...")
+
+        #   We need to generate groups which are unique in all parameters *Except* the GelMA percentage and Degree of Functionalization.
+        #   Then, we can split on these last two parameters and get meaningful comparisons across these two experimental variables for
+        #   every other larger set of experimental variables.
+        Template: DRGQuantificationResults = DRGQuantificationResults()
+        if ( CollapseDates ):
+            Template.ExperimentDate = None
+        Template.BaseGel = None
+        Template.LamininConcentration = None
+        Groups: typing.Sequence[DRGQuantificationResultsSet] = HydrogelsResults.GroupBy(Template)
+
+        #   For each set of experimental conditions, identify the 4 cases we care about for these figures:
+        for GroupIndex, Group in enumerate(Groups, start=1):
+            self._LogWriter.Println(f"Preparing boxplot for condition [ {GroupIndex}/{len(Groups)} ]...")
+            F: Figure = Utils.PrepareFigure()
+            Ax: Axes = F.add_subplot(111)
+            Example: DRGQuantificationResults = Group._Results[0]
+            AxisTitle: str = "".join([
+                f"{Example.ExperimentDate}" if not CollapseDates else '',
+                f"\nCrosslinker={Example.Crosslinker}" if Example.Crosslinker != '' else '',
+                f"\nPolymer={Example.Polymer}" if Example.Polymer != '' else '',
+                f"\nPeptide={Example.Peptide} in {Example.PeptideIn}\nConcentration={Example.PeptideConcentration}" if Example.Peptide != '' and Example.Peptide is not None else '',
+            ]).strip().strip(", ").replace("/", "-")
+
+            DataFilename: str = AxisTitle.replace("\n", ", ") + ".csv"
+            with open(os.path.join(OutputDirectory, DataFilename), "+w") as DataFile:
+                PlotPosition: int = 0
+                for Index, (BaseGel, LamininConcentration) in enumerate(itertools.product(HydroGelTypes, LamininConcentrations)):
+
+                    Condition: DRGQuantificationResultsSet = Group.Filter(
+                        lambda x:
+                            x.BaseGel == BaseGel and \
+                            x.LamininConcentration == LamininConcentration
+                    )
+                    Densities: typing.List[float] = [x.NeuriteDensity for x in Condition if math.isfinite(x.NeuriteDensity)]
+                    if ( len(Condition) > 0 ):
+                        Ax.boxplot(Densities, sym='', positions=[PlotPosition], labels=[f"{BaseGel}\n{LamininConcentration}µg/mL Laminin\nn={len(Condition)}\nµ={np.mean(Densities) if len(Densities) > 0 else 0:.2f}µm"])
+                        Ax.scatter(np.random.normal(PlotPosition, 0.04, len(Densities)), Densities, c='k', alpha=0.5)
+                        PlotPosition += 1
+
+                    DataFile.write(f"{BaseGel} - {LamininConcentration}µg/mL Laminin")
+                    DataFile.write(''.join([f",{x}" for x in Densities]))
+                    DataFile.write("\n")
+
+            F.suptitle(f"Neurite Density versus Hydrogel Formulation and Laminin Concentration{' (Including Insufficient Growth)' if IncludeInsufficientGrowth else ''}")
+            Ax.set_title(AxisTitle)
+            Ax.minorticks_on()
+            Ax.set_ylim(bottom=0.0)
+            Ax.set_ylabel(f"Neurite Density (n.d.)")
+            Ax.set_xlabel(f"Hydrogel Formulation & Laminin Concentration")
+            F.tight_layout()
+            self._LogWriter.Println(f"Created boxplot for condition [ {GroupIndex}/{len(Groups)} ].")
+
+            FigureFilename: str = AxisTitle.replace("\n", ", ")
+            Utils.WriteImage(Utils.FigureToImage(F), os.path.join(OutputDirectory, f"{FigureFilename}.png"))
+            self._LogWriter.Println(f"Saved figure to file [ {FigureFilename}.png ]...")
+            F.clear()
+
+        self._LogWriter.Println(f"Finished creating boxplots of neurite density as a function of hydrogel formulation and laminin concentration for gels H6, H7, and H8.")
 
         return
