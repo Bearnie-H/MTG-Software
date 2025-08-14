@@ -470,7 +470,7 @@ class QuantificationResults():
             self.NeuriteStainMaximumProjection = self.NeuriteStainStack.MaximumIntensityProjection()
 
             self.NeuriteDistances = ComputeNeuriteDistances(self.FilteredIdentifiedNeurites, self.ExplantBodyCentroid)
-            self.NeuriteDistanceVisualizationStack = ColourNeuriteDistances(self.NeuriteStainStack, self.FilteredIdentifiedNeurites, self.ExplantBodyCentroid, max([np.max(x) for x in self.NeuriteDistances])).SetName(f"Neurite Distance Visualization")
+            self.NeuriteDistanceVisualizationStack = ColourNeuriteDistances(self.NeuriteStainStack, self.FilteredIdentifiedNeurites, self.ExplantBodyCentroid, max([np.max(x) if len(x) > 0 else 0 for x in self.NeuriteDistances])).SetName(f"Neurite Distance Visualization")
             self.NeuriteDistancePlotStack = PlotNeuriteDistances(self.NeuriteDistances, flatten=False).SetName("Neurite Distance Plots")
             self.NeuriteDistancePlotFlattened = PlotNeuriteDistances(self.NeuriteDistances, flatten=True)
 
@@ -1430,7 +1430,7 @@ def ColourOrientations(BackgroundImage: ZStack.ZStack, IdentifiedPixels: ZStack.
         Coordinates = np.argwhere(Orientation != 255)
         for Coordinate in Coordinates:
             if ( len(Coordinate) == 2 ):
-                Foreground[*Coordinate, :] = (Orientation[*Coordinate], 255, 255)
+                Foreground[Coordinate[0], Coordinate[1], :] = (Orientation[Coordinate[0], Coordinate[1]], 255, 255)
             else:
                 break
 
@@ -1456,7 +1456,7 @@ def PlotNeuriteDistances(DistancesByLayer: typing.Sequence[np.ndarray], flatten:
     """
 
     F: Figure = Utils.PrepareFigure(Interactive=False)
-    MaximumDistance: float = max([np.max(x) for x in DistancesByLayer])
+    MaximumDistance: float = max([np.max(x) if len(x) > 0 else 1 for x in DistancesByLayer])
 
     if ( flatten ):
         Distances: np.ndarray = np.concatenate([x for x in DistancesByLayer])
@@ -1583,6 +1583,9 @@ def PlotOrientationsLayer(F: Figure, Orientations: np.ndarray, LayerIndex: int =
     else:
         Ax = F.get_axes()[0]
         Ax.clear()
+
+    if ( len(Orientations) == 0 ):
+        return F
 
     BinCount: int = min(90, len(np.unique(Orientations)))
     n, bins = np.histogram(Orientations, bins=BinCount, density=True)
