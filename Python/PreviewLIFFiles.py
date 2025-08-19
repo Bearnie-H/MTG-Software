@@ -1353,32 +1353,41 @@ def main() -> int:
         LogWriter.Println(f"Found *.LIF file [ {ImageFile} ]...")
 
         FullPath: str = os.path.join(SourceDirectory, ImageFile)
-        LIFFile: ZStack.LifFile = ZStack.LifFile(FullPath)
+        LIFFile: LifFile = LifFile(FullPath)
 
-        LogWriter.Println(f"This file contains a total of [ {LIFFile.num_images} ] image series:")
+        LogWriter.Println(f"This file contains a total of [ {LIFFile.num_images} ] image series.")
         for SeriesIndex in range(LIFFile.num_images):
 
-            CurrentImage: ZStack.LifImage = LIFFile.image_list[SeriesIndex]
-            LogWriter.Println(f"{SeriesIndex+1}/{LIFFile.num_images} - Series Name: {CurrentImage['name']} - Dimensions: {CurrentImage['dims']}")
+            CurrentImage: LifImage = LIFFile.image_list[SeriesIndex]
+            LogWriter.Println(f"({SeriesIndex+1}/{LIFFile.num_images}) - Series: {SeriesIndex} - Name: {CurrentImage['name']} - Dimensions: {CurrentImage['dims']}")
 
             if ( CurrentImage['dims'].m > 1 ):
-                LogWriter.Println(f"This series corresponds to the unstitched tiles of the next series. This will not be displayed.")
+                LogWriter.Println(f"This image series corresponds to the unstitched tiles of the next series. This will not be displayed.")
                 continue
 
-            LogWriter.Println(f"This series contains [ {CurrentImage['channels']} ] colour channels.")
+            LogWriter.Println(f"This image series contains [ {CurrentImage['channels']} ] colour channels.")
             for ChannelIndex in range(CurrentImage['channels']):
-                LogWriter.Println(f"Preparing preview of Series [ {CurrentImage['name']} ], Channel [ {ChannelIndex+1} ]...")
-                Stack: ZStack.ZStack = ZStack.ZStack.FromLIF(FullPath, SeriesIndex=SeriesIndex, ChannelIndex=ChannelIndex)
+                LogWriter.Println(f"Preparing preview of Image Series [ {SeriesIndex} ] - [ {CurrentImage['name']} ], Channel [ {ChannelIndex+1} ]...")
+                Stack: ZStack = ZStack.FromLIF(FullPath, SeriesIndex=SeriesIndex, ChannelIndex=ChannelIndex)
 
                 MinProjection, MaxProjection = Stack.MinimumIntensityProjection(), Stack.MaximumIntensityProjection()
 
                 DisplayImages([
-                        (f"Maximum Intensity Projection - Series {CurrentImage['name']} - Channel [ {ChannelIndex+1} ]", MaxProjection),
-                        (f"Minimum Intensity Projection - Series {CurrentImage['name']} - Channel [ {ChannelIndex+1} ]", MinProjection),
+                        (f"Maximum Intensity Projection - Series [ {SeriesIndex} ] - [ {CurrentImage['name']} ] - Channel [ {ChannelIndex+1} ]", ConvertTo8Bit(MaxProjection)),
+                        (f"Minimum Intensity Projection - Series [ {SeriesIndex} ] - [ {CurrentImage['name']} ] - Channel [ {ChannelIndex+1} ]", ConvertTo8Bit(MinProjection)),
                     ],
                     HoldTime=0,
                     Topmost=True
                 )
+
+                MaxProjectionFilename: str = os.path.join(SourceDirectory, os.path.splitext(ImageFile)[0] + f" - Maximum Intensity Projection - Series {SeriesIndex} - {CurrentImage['name']} - Channel {ChannelIndex}.tif")
+                MinProjectionFilename: str = os.path.join(SourceDirectory, os.path.splitext(ImageFile)[0] + f" - Minimum Intensity Projection - Series {SeriesIndex} - {CurrentImage['name']} - Channel {ChannelIndex}.tif")
+
+                cv2.imwrite(MaxProjectionFilename, MaxProjection)
+                LogWriter.Println(f"Saving Maximum Intensity Projection to file [ {MaxProjectionFilename} ].")
+
+                cv2.imwrite(MinProjectionFilename, MinProjection)
+                LogWriter.Println(f"Saving Minimum Intensity Projection to file [ {MinProjectionFilename} ].")
 
         LogWriter.Println(f"Finished previewing *.LIF file [ {ImageFile} ].")
     else:
