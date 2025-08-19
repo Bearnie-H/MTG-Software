@@ -525,7 +525,7 @@ def main() -> DRGAnalysis_StatusCode:
         Neurites: np.ndarray = ProcessFluorescent(Layer.copy(), DRGBodyMask, WellEdgeMask, CentroidLocation, DRGBodyRadius)
 
     QuantificationStacks.OverCountingMap = Utils.ConvertTo8Bit(QuantificationStacks.SatelliteRemovedFluorescent.AverageIntensityProjection())
-    QuantificationStacks.FlattenedSegmentedNeurites = RemoveUnconnectedSatellites(QuantificationStacks.SatelliteRemovedFluorescent.MaximumIntensityProjection(), CentroidLocation, DRGBodyRadius)
+    QuantificationStacks.FlattenedSegmentedNeurites = Utils.ConvertTo8Bit(RemoveUnconnectedSatellites(QuantificationStacks.SatelliteRemovedFluorescent.MaximumIntensityProjection(), CentroidLocation, DRGBodyRadius))
 
     #   If the user has selected they would like to apply manual ROI selection to exclude specific noise regions,
     #   perform this now.

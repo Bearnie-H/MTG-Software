@@ -50,13 +50,14 @@ def main() -> None:
     Flags.add_argument("--folder-base", dest="FolderBase", metavar="file-path", type=str, required=True, help="The path to the base folder from which the \"FilePath\" column of the spreadsheet is referenced.")
     Flags.add_argument("--json-directory", dest="JSONDirectory", metavar="file-path", type=str, required=True, help="The path to the folder in which all of the compiled JSON results will be written.")
     Flags.add_argument("--enable-orientation", dest="EnableOrientation", action="store_true", required=False, default=False, help="Enable orientation quantification. NOTE: This significantly increases execution time.")
-    # Flags.add_argument("--pre-check", dest="ManualPreCheck", action="store_true", required=False, default=False, help="Manually preview the image results to check for whether or not the images should even be processed.")
+    Flags.add_argument("--pre-check", dest="ManualPreCheck", action="store_true", required=False, default=False, help="Manually preview the image results to check for whether or not the images should even be processed.")
 
     Arguments: argparse.Namespace = Flags.parse_args()
 
     InputFile: str = Arguments.Spreadsheet
     FolderBase: str = Arguments.FolderBase
-    ManualPreview: bool = True  #   Enforce that the manual pre-check always occurs.
+    ManualPreview: bool = Arguments.ManualPreCheck  #   Enforce that the manual pre-check always occurs.
+    # ManualPreview: bool = True  #   Enforce that the manual pre-check always occurs.
     EnableOrientation = Arguments.EnableOrientation
     JSONDirectory = Arguments.JSONDirectory
 

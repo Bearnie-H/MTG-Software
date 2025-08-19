@@ -255,6 +255,9 @@ def GammaCorrection(Image: np.ndarray = None, Gamma: float = 1.0, Minimum: int =
     else:
         raise TypeError(f"Numpy NDArray has non-integral and non-floating point dtype!")
 
+    if ( np.min(Image) == np.max(Image) ):
+        return np.ones_like(Image) * Maximum
+
     #   Perform the non-linear exponentiation operation
     #       allowing short-cutting for the no-op of exponentiation by 1.
     Scaled = Image.astype(np.float64)
