@@ -76,7 +76,7 @@ class ZStack():
             ...
         """
 
-        self.Name = Name
+        self.Name = Name if Name is not None else ""
 
         self.Pixels = None
         self._LogWriter = LogWriter
@@ -99,6 +99,9 @@ class ZStack():
         Return (ZStack):
             ...
         """
+
+        if ( os.path.dirname(Filename) == "" ):
+            Filename = os.path.join(os.getcwd(), Filename)
 
         if ( not os.path.exists(Filename) ):
             raise ValueError(f"File [ {Filename} ] cannot be opened as the file does not exist.")
@@ -240,6 +243,32 @@ class ZStack():
         self.Pixels = np.zeros(Shape, np.uint8)
 
         return self
+
+    def NormalizeLayers(self: ZStack, *, Global: bool = False) -> ZStack:
+        """
+        NormalizeLayers
+
+        This function...
+
+        Global:
+            ...
+
+        Return (ZStack):
+            ...
+        """
+
+        Normalized: ZStack = self.Copy().SetName(self.Name + " (Normalized)")
+
+        if ( Global ):
+            Mean, StandardDeviation = np.mean(Normalized.Pixels), np.std(Normalized.Pixels)
+            Normalized.Pixels = (Normalized.Pixels - Mean) / StandardDeviation
+            return Normalized
+
+        for LayerIndex, Layer in enumerate(Normalized.Layers()):
+            Mean, StandardDeviation = np.mean(Layer), np.std(Layer)
+            Normalized.Pixels[LayerIndex, :, :] = (Layer - Mean) / StandardDeviation
+
+        return Normalized
 
     def Append(self: ZStack, ToAppend: np.ndarray) -> ZStack:
         """

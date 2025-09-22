@@ -25,7 +25,7 @@ from MTG_Common import ZStack
 
 #   Define the globals to set by the command-line arguments
 #   ...
-LogWriter: Logger.Logger = Logger.Logger(Prefix="Maximum-Intensity-Projection.py")
+LogWriter: Logger.Logger = Logger.Logger(Prefix="Z-Stack-Projections.py")
 
 #   Main
 #       This is the main entry point of the script.
@@ -35,17 +35,33 @@ def main() -> None:
     Projection: np.ndarray = None
 
     if ( len(sys.argv) == 3 ):
+        LogWriter.Println(f"Attempting to work with file [ {sys.argv[1]} ]...")
+        Stack: ZStack.ZStack = ZStack.ZStack.FromFile(sys.argv[1])
+        LayerNormalized: ZStack.ZStack = Stack.NormalizeLayers()
+        GlobalNormalized: ZStack.ZStack = Stack.NormalizeLayers(Global=True)
         if ( sys.argv[2].lower() == "--min" ):
-            Projection = ZStack.ZStack.FromFile(sys.argv[1]).MinimumIntensityProjection()
+            LogWriter.Println(f"Preparing Minimum Intensity Projection Image...")
+            Projection = Stack.MinimumIntensityProjection()
+            LocalNormProjection = LayerNormalized.MinimumIntensityProjection()
+            GlobalNormProjection = GlobalNormalized.MinimumIntensityProjection()
             Description = "Minimum Intensity Projection"
         elif ( sys.argv[2].lower() == "--max" ):
-            Projection = ZStack.ZStack.FromFile(sys.argv[1]).MaximumIntensityProjection()
+            LogWriter.Println(f"Preparing Maximum Intensity Projection Image...")
+            Projection = Stack.MaximumIntensityProjection()
+            LocalNormProjection = LayerNormalized.MaximumIntensityProjection()
+            GlobalNormProjection = GlobalNormalized.MaximumIntensityProjection()
             Description = "Maximum Intensity Projection"
         elif ( sys.argv[2].lower() == "--avg" ):
-            Projection = ZStack.ZStack.FromFile(sys.argv[1]).AverageIntensityProjection()
+            LogWriter.Println(f"Preparing Average Intensity Projection Image...")
+            Projection = Stack.AverageIntensityProjection()
+            LocalNormProjection = LayerNormalized.AverageIntensityProjection()
+            GlobalNormProjection = GlobalNormalized.AverageIntensityProjection()
             Description = "Average Intensity Projection"
         elif ( sys.argv[2].lower() == "--display" ):
-            ZStack.ZStack.FromFile(sys.argv[1]).Display()
+            LogWriter.Println(f"Preparing to display Z-Stack...")
+            Stack.Display()
+            LayerNormalized.Display()
+            GlobalNormalized.Display()
             return
 
 
@@ -58,6 +74,8 @@ def main() -> None:
     #     )
 
         Utils.WriteImage(Utils.ConvertTo8Bit(Projection), os.path.join(os.path.dirname(sys.argv[1]), f"{os.path.splitext(os.path.basename(sys.argv[1]))[0]} - {Description}.tif"))
+        Utils.WriteImage(Utils.ConvertTo8Bit(LocalNormProjection), os.path.join(os.path.dirname(sys.argv[1]), f"{os.path.splitext(os.path.basename(sys.argv[1]))[0]} - {Description} - Layer Normalized.tif"))
+        Utils.WriteImage(Utils.ConvertTo8Bit(GlobalNormProjection), os.path.join(os.path.dirname(sys.argv[1]), f"{os.path.splitext(os.path.basename(sys.argv[1]))[0]} - {Description} - Global Normalized.tif"))
 
     return
 

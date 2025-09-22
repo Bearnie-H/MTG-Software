@@ -256,6 +256,8 @@ def GammaCorrection(Image: np.ndarray = None, Gamma: float = 1.0, Minimum: int =
         raise TypeError(f"Numpy NDArray has non-integral and non-floating point dtype!")
 
     if ( np.min(Image) == np.max(Image) ):
+        if ( np.min(Image) == 0 ):
+            return np.zeros_like(Image)
         return np.ones_like(Image) * Maximum
 
     #   Perform the non-linear exponentiation operation
@@ -296,6 +298,26 @@ def ConvertTo8Bit(Image: np.ndarray) -> np.ndarray:
 
     return GammaCorrection(Image=Image.copy(), Gamma=1, Minimum=0, Maximum=255).astype(np.uint8)
 
+def NormalizeImage(Image: np.ndarray) -> np.ndarray:
+    """
+    NormalizeImage
+
+    This function...
+
+    Image:
+        ...
+
+    Return (np.ndarray):
+        ...
+    """
+
+    StandardDeviation: float = np.std(Image)
+    Mean: float = np.mean(Image)
+
+    Normalized: np.ndarray = (Image.astype(np.float64) - Mean) / StandardDeviation
+
+    return ConvertTo8Bit(Normalized)
+
 def WriteImage(Image: np.ndarray, Filepath: str) -> bool:
     """
     WriteImage
@@ -316,6 +338,9 @@ def WriteImage(Image: np.ndarray, Filepath: str) -> bool:
 
     if ( Filepath is None ) or ( Filepath == "" ):
         raise ValueError(f"Filepath is not provided!")
+
+    if ( os.path.dirname(Filepath) == "" ):
+        Filepath = os.path.join(os.getcwd(), Filepath)
 
     if ( not os.path.exists(os.path.dirname(Filepath)) ):
         os.makedirs(os.path.dirname(Filepath), mode=0o755, exist_ok=True)

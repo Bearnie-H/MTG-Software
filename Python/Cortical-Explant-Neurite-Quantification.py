@@ -597,6 +597,8 @@ Results: QuantificationResults = QuantificationResults(LogWriter=LogWriter)
 #       This is the main entry point of the script.
 def main() -> int:
 
+    return main_alt()
+
     ChipExclusionMask: np.ndarray = None
     ExplantBodyExclusionMask: np.ndarray = None
 
@@ -659,7 +661,310 @@ def main() -> int:
 
     return STATUS_SUCCESS
 
+def main_alt() -> int:
+
+    #   Generate the image mask used to remove the region of the Z-Stack which
+    #   does not correspond to the region in which growth is possible.
+    GrowthRegionMask: np.ndarray = GenerateGrowthRegionMask()
+
+    #   Segment the neurites, if present, extracting out a 3D set of labels for
+    #   all pixels of the stack.
+    SegmentNeurites(GrowthRegionMask)
+
+    #   Segment the rods, if present, extracting out a 3D set of labels for all
+    #   pixels of the stack.
+    SegmentRods(GrowthRegionMask)
+
+
+    #   Apply the quantification algorithms to the labelled neurite stack.
+    QuantifyNeurites()
+
+    #   Apply the quantification algorithms to the labelled rods stack.
+    QuantifyRods()
+
+    Results.Quantify()
+    Config.Save(Text=True, JSON=True)
+    Results.Save(Folder=Config.OutputDirectory, DryRun=False)
+
+    return STATUS_SUCCESS
+
+def GenerateGrowthRegionMask() -> np.ndarray:
+    """
+    GenerateGrowthRegionMask
+
+    This function generates and returns the mask corresponding to the region
+    within which neurite growth can occur. The area(s) removed by this mask
+    correspond to either the exterior of the culture well, or some other
+    obstruction preventing neurite growth.
+
+    Return ():
+        ...
+    """
+    #   Determine where there appears to be the most fluorescent signal in the image, as this should correspond to the location
+    #   of the stains and fluorophores we're interested in imaging
+    # InitialFluorescentMask: np.ndarray = np.ones(Config.BrightFieldImage.Pixels.shape[1:])
+    InitialFluorescentMask: np.ndarray = ExtractInitialFluorescentMask()
+    Utils.DisplayImage("Initial Mask from Fluorescent Channels", Utils.ConvertTo8Bit(InitialFluorescentMask), 5, True, True)
+
+
+    #   Using the mask of where fluorescent signal appears in the image,
+    #   potentially across multiple fluorescent channels, segment the
+    #   bright-field image in order to further refine the mask of where neurite
+    #   growth can occur.
+    InitialBrightFieldMask: np.ndarray = ExtractBrightFieldMask(Config.BrightFieldImage, InitialFluorescentMask)
+    Utils.DisplayImage("Initial Mask from Bright Field Channel", Utils.ConvertTo8Bit(InitialBrightFieldMask), 5, True, True)
+
+    KernelSize: int = Utils.RoundUpKernelToOdd(0.05 * np.min(InitialBrightFieldMask.shape))
+    ErodedBrightFieldMask: np.ndarray = cv2.erode(InitialBrightFieldMask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(KernelSize, KernelSize)))
+
+    # Utils.DisplayImage("qlrkjnqw", ErodedBrightFieldMask * Config.BrightFieldImage.MinimumIntensityProjection(), 0, True, True)
+    # Utils.DisplayImage("qlrkjnqw", ErodedBrightFieldMask * Config.NeuriteStainedImage.MaximumIntensityProjection(), 0, True, True)
+    # Utils.DisplayImage("qlrkjnqw", ErodedBrightFieldMask * Config.NuclearStainedImage.MaximumIntensityProjection(), 0, True, True)
+    # Utils.DisplayImage("qlrkjnqw", ErodedBrightFieldMask * Config.RodsStainedImage.MaximumIntensityProjection(), 0, True, True)
+
+    #   ...
+
+    return InitialFluorescentMask
+
+def ExtractInitialFluorescentMask() -> np.ndarray:
+    """
+    ExtractInitialFluorescentMask
+
+    This function...
+
+    Return (np.ndarray):
+        ...
+    """
+
+    InitialNeuritesMask: np.ndarray = ExtractSignalMask(Config.NeuriteStainedImage, ApplyThreshold=False, BrightSignal=True)
+    Utils.DisplayImage(f"Initial Neurite Mask", Utils.ConvertTo8Bit(InitialNeuritesMask), 5, True, True)
+
+    #   Apply a morphological operation to remove small speckles
+    KernelSize: int = Utils.RoundUpKernelToOdd(int(0.025 * np.min(InitialNeuritesMask.shape)))
+    ClosedNeuriteMask: np.ndarray = cv2.morphologyEx(InitialNeuritesMask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(KernelSize, KernelSize)))
+    Utils.DisplayImage(f"Closed Neurite Mask", Utils.ConvertTo8Bit(ClosedNeuriteMask), 5, True, True)
+
+    InitialFluorescentMask: np.ndarray = InitialNeuritesMask & ClosedNeuriteMask
+    Utils.DisplayImage(f"Initial Fluorescent Signal Mask", Utils.ConvertTo8Bit(InitialFluorescentMask), 5, True, True)
+
+    #   Apply some contour analysis to ensure there are no holes left in the mask components?
+    #   ...
+
+    return InitialFluorescentMask
+
+def ExtractSignalMask(Stack: ZStack.ZStack, *, ApplyThreshold: bool = True, BrightSignal: bool = True) -> np.ndarray:
+    """
+    ExtractBasicBrightFieldMask
+
+    This function...
+
+    Return (np.ndarray):
+        ...
+    """
+
+    if ( Stack is None ):
+        return None
+
+    Mask: np.ndarray | None = None
+
+    for Index, Layer in enumerate(Stack.Layers(), start=1):
+        if ( Mask is None ):
+            Mask = np.zeros_like(Layer)
+
+        #   Normalize the brightness and contrast of the bright field layer
+        NormalizedLayer: np.ndarray = Utils.NormalizeImage(Layer)
+        # Utils.DisplayImage(f"Normalized Layer {Index}/{Stack.LayerCount()}", NormalizedLayer, 1, True, True)
+        LogWriter.Println(f"Layer {Index} - Mean: {np.mean(NormalizedLayer):.2f} - StDev: {np.std(NormalizedLayer):.2f} - Median: {np.median(NormalizedLayer):.2f} - Non-Zero Fraction: {len(NormalizedLayer[NormalizedLayer != 0].flatten()) / len(NormalizedLayer.flatten()):.2f}")
+
+        ### +++ DEBUG +++
+        # plt.hist(NormalizedLayer.flatten(), bins=256, density=True, log=True)
+        ### -- DEBUG ---
+
+        if ( ApplyThreshold ):
+            ThresholdStyle: int = cv2.THRESH_BINARY_INV
+            if ( BrightSignal ):
+                ThresholdStyle = cv2.THRESH_BINARY
+
+            #   Segment out the signal, assigning signal to high brightness values in the output image.
+            OtsuValue, SegmentedLayer = cv2.threshold(NormalizedLayer, 0, 255, ThresholdStyle | cv2.THRESH_OTSU)
+            LogWriter.Println(f"Otsu Value: {OtsuValue:.0f}")
+            # Utils.DisplayImage(f"Otsu Segmented Layer {Index}/{Stack.LayerCount()} - {OtsuValue}", SegmentedLayer, 1, True, True)
+
+            #   Add in these segmented pixels to the acceptable mask
+            Mask[SegmentedLayer != 0] = 1
+        else:
+            if ( BrightSignal ):
+                Mask[NormalizedLayer >= np.mean(NormalizedLayer)] = 1
+            else:
+                Mask[NormalizedLayer < np.mean(NormalizedLayer)] = 1
+
+        # Utils.DisplayImage(f"Current Valid Mask - Layer {Index}/{Stack.LayerCount()}", Utils.ConvertTo8Bit(Mask), 1, True, True)
+
+    #   Finally, with all of the signal pixels identified, apply a large blur to the image and a final thresholding to select only the areas where
+    #   a "significant" amount of signal was detected
+    BlurSize: int = Utils.RoundUpKernelToOdd(int(np.min(Mask.shape)) * 0.05)
+    BlurredMask: np.ndarray = cv2.GaussianBlur(Utils.ConvertTo8Bit(Mask), ksize=(BlurSize, BlurSize), sigmaX=5)
+    # Utils.DisplayImage("Blurred Signal Mask", BlurredMask, 1, True, True)
+
+    _, SegmentedMask = cv2.threshold(BlurredMask, 0, 1, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    # Utils.DisplayImage("Final Signal Mask", Utils.ConvertTo8Bit(SegmentedMask), 2, True, True)
+
+    return SegmentedMask
+
+def ExtractBrightFieldMask(Stack: ZStack.ZStack, FluorescentSignalMask: np.ndarray) -> np.ndarray:
+    """
+    ExtractBrightFieldMask
+
+    This function...
+
+    Stack:
+        ...
+    FluorescentSignalMask:
+        ...
+
+    Return (np.ndarray):
+        ...
+    """
+
+    if ( Stack is None ) or ( Stack.Pixels is None ):
+        LogWriter.Warnln(f"No Bright Field stack provided to extract the well-interior mask from!")
+        return None
+
+    Mask: np.ndarray | None = None
+
+    for Index, Layer in enumerate(Stack.Layers(), start=1):
+        if ( Mask is None ):
+            Mask = np.ones_like(Layer)
+
+        NormalizedLayer: np.ndarray = Utils.NormalizeImage(Layer)
+
+        ThresholdValue, BinarizedLayer = cv2.threshold(NormalizedLayer, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+        Mask[BinarizedLayer == 0] = 0
+
+        # Utils.DisplayImage(f"Current Bright Field Mask - {Index}/{Stack.LayerCount()}", Utils.ConvertTo8Bit(Mask), 1, True, True)
+
+    BlurSize: int = Utils.RoundUpKernelToOdd(int(np.min(Mask.shape)) * 0.05)
+    BlurredMask: np.ndarray = cv2.GaussianBlur(Utils.ConvertTo8Bit(Mask), ksize=(BlurSize, BlurSize), sigmaX=5)
+    # Utils.DisplayImage("Blurred Mask", BlurredMask, 0, True, True)
+
+    _, ThresholdedMask = cv2.threshold(BlurredMask, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+    # Utils.DisplayImage("Thresholded Blurred Mask", ThresholdedMask, 0, True, True)
+
+    #   With a partial mask now generated, we need to identify only the parts of this mask which also
+    #   show strong neurite signal, and which are a useful size and/or shape to be part of either the
+    #   well edge, or the explant core.
+    ComponentCount, Labels, Stats, Centroids = cv2.connectedComponentsWithStats(ThresholdedMask, connectivity=8)
+
+    MinimumComponentAreaThreshold: int = 0.01 * np.prod(ThresholdedMask.shape)
+    MinimumContourAreaThreshold: int = 0.0005 * np.prod(ThresholdedMask.shape)
+
+    #   Next, sort the components by size, with the largest components at the beginning. We know
+    #   that the main regions of the image we are interested in will be large, so this avoids us
+    #   wasting time on little speckle regions
+    SortedComponents: typing.List[typing.Tuple[int, int]] = sorted([
+        (x, Stats[x, cv2.CC_STAT_AREA]) for x in range(1, ComponentCount) if Stats[x, cv2.CC_STAT_AREA] >= MinimumComponentAreaThreshold
+    ], key=lambda x: x[1], reverse=True)
+
+    ###  +++ DEBUG +++
+    WellInteriorMask: np.ndarray = np.zeros_like(FluorescentSignalMask)
+    Centroid = np.argwhere(FluorescentSignalMask != 0).sum(0) / np.count_nonzero(FluorescentSignalMask)
+    LogWriter.Println(f"Total of {len(SortedComponents)} accepted")
+    for CurrentLabel, Area in SortedComponents:
+        ComponentMask: np.ndarray = np.zeros_like(ThresholdedMask)
+        ComponentMask[Labels == CurrentLabel] = 1
+        Description: str = f"Component {CurrentLabel} - Area={Area:.2f}"
+        LogWriter.Println(Description)
+
+        Contours, _ = cv2.findContours(ComponentMask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for Contour in Contours:
+            if ( cv2.contourArea(Contour) <= MinimumContourAreaThreshold ):
+                continue
+            if ( cv2.pointPolygonTest(Contour, Centroid, measureDist=False) <= 0 ):
+                continue
+            ContourMask: np.ndarray = Utils.GreyscaleToBGR(np.zeros_like(ComponentMask))
+            ContourMask = cv2.drawContours(ContourMask, [Contour], 0, (0, 127, 0), -1)
+            ContourMask = cv2.drawContours(ContourMask, [Contour], 0, (255, 0, 0), 2)
+            Utils.DisplayImage("Contour", ContourMask, 5, True, True)
+
+            ContourInterior: np.ndarray = (ContourMask[:,:,1] != 0).astype(np.uint8)
+
+            Utils.DisplayImage(f"Combined Mask", Utils.ConvertTo8Bit(FluorescentSignalMask * ContourInterior), 5, True, True)
+
+            WellInteriorMask[FluorescentSignalMask * ContourInterior != 0] = 1
+    ###  --- DEBUG ---
+
+    #   ...
+
+    return WellInteriorMask
+
+def SegmentNeurites(GrowthRegionMask: np.ndarray) -> None:
+    """
+    SegmentNeurites
+
+    This function...
+
+    Return ():
+        ...
+    """
+
+    #   Now, with the regions known not to correspond to neurites identified, work throughe each layer of the neurite Z-stack
+    #   and extract out the set of neurite pixels from each layer.
+    if ( Config.NeuriteStainedImage is not None ):
+        Results.NeuriteStainStack = Config.NeuriteStainedImage.Copy().SetName(f"Neurite Stained Stack")
+        LogWriter.Println(f"Working with neurite-stained image to identify neurites.")
+        for LayerIndex, NeuriteLayer in enumerate(Config.NeuriteStainedImage.Layers()):
+
+            LogWriter.Println(f"Identifying neurites in layer [ {LayerIndex+1}/{Config.NeuriteStainedImage.LayerCount()} ]...")
+            ProcessNeuriteStain(NeuriteLayer, GrowthRegionMask, Results)
+
+    return
+
+def SegmentRods(GrowthRegionMask: np.ndarray) -> None:
+    """
+    SegmentRods
+
+    This function...
+
+    Return ():
+        ...
+    """
+
+    if ( Config.RodsStainedImage is not None ):
+        LogWriter.Println(f"Working with rod-stained image to identify rod orientations.")
+        Results.RodStainStack = Config.RodsStainedImage.Copy().SetName(f"Rod Stained Stack")
+        for LayerIndex, RodLayer in enumerate(Config.RodsStainedImage.Layers()):
+            LogWriter.Println(f"Identifying rods in layer [ {LayerIndex+1}/{Config.RodsStainedImage.LayerCount()} ]...")
+            ProcessRodStain(RodLayer, GrowthRegionMask, Results)
+
+    return
+
+def QuantifyNeurites() -> None:
+    """
+    QuantifyNeurites
+
+    This function...
+
+    Return ():
+        ...
+    """
+
+    return
+
+def QuantifyRods() -> None:
+    """
+    QuantifyRods
+
+    This function...
+
+    Return ():
+        ...
+    """
+
+    return
+
 def DisplayAndSaveImage(Image: np.ndarray, Description: str, DryRun: bool, Headless: bool) -> None:
+
     """
     DisplayAndSaveImage
 
