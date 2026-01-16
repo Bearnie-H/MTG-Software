@@ -10,6 +10,7 @@ import typing
 
 import hashlib
 import os
+import sys
 #   ...
 
 #   Import third-party libraries as required
@@ -31,6 +32,21 @@ DefaultHoldTime: int = 3
 #       By default, force it to write to /dev/null (or equivalent) so it does nothing.
 LogWriter: Logger = Discarder
 
+class RecursionLimiter():
+
+    def __init__(self: RecursionLimiter, Limit: int) -> None:
+        self._RecursionLimit = Limit
+        return
+
+    def __enter__(self: RecursionLimiter) -> None:
+        self._PreviousLimit = sys.getrecursionlimit()
+        sys.setrecursionlimit(self._RecursionLimit)
+        return
+
+    def __exit__(self: RecursionLimiter, ExceptionType: typing.Any, ExceptionValue: typing.Any, ExceptionTraceback: typing.Any) -> None:
+        sys.setrecursionlimit(self._PreviousLimit)
+        return
+
 def Default_SIGINT_Handler(signal, frame) -> None:
     """
     SigINT_Handler
@@ -40,7 +56,7 @@ def Default_SIGINT_Handler(signal, frame) -> None:
     """
     raise KeyboardInterrupt(f"SIGINT ({signal}) received by script, raising exception and failing out now!\n{frame}")
 
-def DisplayImage(Description: str = "", Image: np.ndarray = None, HoldTime: int = DefaultHoldTime, Topmost: bool = False, ShowOverride: bool = True) -> int:
+def DisplayImage(Description: str = "", Image: np.ndarray = None, HoldTime: int = DefaultHoldTime, Topmost: bool = False, ShowOverride: bool = True, *, UpdateWindows: bool = False) -> int:
     """
     DisplayImage
 
@@ -62,9 +78,9 @@ def DisplayImage(Description: str = "", Image: np.ndarray = None, HoldTime: int 
 
         The key-code which was pressed during display of the image, if any.
     """
-    return DisplayImages(Images=[(Description, Image)], HoldTime=HoldTime, Topmost=Topmost, ShowOverride=ShowOverride)
+    return DisplayImages(Images=[(Description, Image)], HoldTime=HoldTime, Topmost=Topmost, ShowOverride=ShowOverride, UpdateWindows=UpdateWindows)
 
-def DisplayImages(Images: typing.List[typing.Tuple[str, np.ndarray]] = ["", None], HoldTime: int = DefaultHoldTime, Topmost: bool = False, ShowOverride: bool = True) -> int:
+def DisplayImages(Images: typing.List[typing.Tuple[str, np.ndarray]] = ["", None], HoldTime: int = DefaultHoldTime, Topmost: bool = False, ShowOverride: bool = True, *, UpdateWindows: bool = False) -> int:
     """
     DisplayImages
 
@@ -136,7 +152,9 @@ def DisplayImages(Images: typing.List[typing.Tuple[str, np.ndarray]] = ["", None
 
     Key: int = 0
     if ( ImagesActive ):
-        Key = cv2.waitKeyEx(round(HoldTime * 1000))
+
+        if ( UpdateWindows and HoldTime > 0 ) or ( not UpdateWindows ):
+            Key = cv2.waitKeyEx(round(HoldTime * 1000))
 
         #   Allow pressing the "P" key to pause, overriding the HoldTime setting until another key is pressed.
         while ( Key in [ord(x) for x in 'pP']):
@@ -147,13 +165,14 @@ def DisplayImages(Images: typing.List[typing.Tuple[str, np.ndarray]] = ["", None
         if ( Key in [ord(x) for x in 'sS' ]):
             [cv2.imwrite(os.path.join(os.getcwd(), os.path.splitext(Description)[0] + '.png'), Image) for (Description, Image) in Images]
 
-        [cv2.destroyWindow(Description) for (Description, _) in Images]
-        [cv2.destroyWindow(Description) for Description in UnmanagedDescriptions]
-        _ = cv2.waitKeyEx(1)
+        if ( not UpdateWindows ):
+            [cv2.destroyWindow(Description) for (Description, _) in Images]
+            [cv2.destroyWindow(Description) for Description in UnmanagedDescriptions]
 
+    _ = cv2.waitKeyEx(1)
     return Key
 
-def DisplayFigure(Description: str = "", Fig: Figure = None, HoldTime: int = DefaultHoldTime, Topmost: bool = False, ShowOverride: bool = True) -> int:
+def DisplayFigure(Description: str = "", Fig: Figure = None, HoldTime: int = DefaultHoldTime, Topmost: bool = False, ShowOverride: bool = True, *, UpdateWindows: bool = False) -> int:
     """
     DisplayFigure
 
@@ -178,9 +197,9 @@ def DisplayFigure(Description: str = "", Fig: Figure = None, HoldTime: int = Def
         The key-code which was pressed during display of the image, if any.
     """
 
-    return DisplayFigures(Figures=[(Description, Fig)], HoldTime=HoldTime, Topmost=Topmost, ShowOverride=ShowOverride)
+    return DisplayFigures(Figures=[(Description, Fig)], HoldTime=HoldTime, Topmost=Topmost, ShowOverride=ShowOverride, UpdateWindows=UpdateWindows)
 
-def DisplayFigures(Figures: typing.List[typing.Tuple[str, Figure]], HoldTime: int = DefaultHoldTime, Topmost: bool = False, ShowOverride: bool = True) -> int:
+def DisplayFigures(Figures: typing.List[typing.Tuple[str, Figure]], HoldTime: int = DefaultHoldTime, Topmost: bool = False, ShowOverride: bool = True, *, UpdateWindows: bool = False) -> int:
     """
     DisplayFigures
 
@@ -204,7 +223,7 @@ def DisplayFigures(Figures: typing.List[typing.Tuple[str, Figure]], HoldTime: in
         The key-code which was pressed during display of the image, if any.
     """
 
-    return DisplayImages(Images=[(Description, CanvasToImage(FigureCanvasAgg(Fig))) for (Description, Fig) in Figures], HoldTime=HoldTime, Topmost=Topmost, ShowOverride=ShowOverride)
+    return DisplayImages(Images=[(Description, CanvasToImage(FigureCanvasAgg(Fig))) for (Description, Fig) in Figures], HoldTime=HoldTime, Topmost=Topmost, ShowOverride=ShowOverride, UpdateWindows=UpdateWindows)
 
 def GammaCorrection(Image: np.ndarray = None, Gamma: float = 1.0, Minimum: int = None, Maximum: int = None) -> np.ndarray:
     """
@@ -253,7 +272,10 @@ def GammaCorrection(Image: np.ndarray = None, Gamma: float = 1.0, Minimum: int =
         if ( Maximum is None ):
             Maximum = 1.0
     else:
-        raise TypeError(f"Numpy NDArray has non-integral and non-floating point dtype!")
+        #   Must be a boolean array...
+        Minimum = 0
+        Maximum = 255
+        OriginalDtype = np.uint8
 
     if ( np.min(Image) == np.max(Image) ):
         if ( np.min(Image) == 0 ):
@@ -534,7 +556,7 @@ def GreyscaleToBGR(Image: np.ndarray = None) -> np.ndarray:
 
     return cv2.cvtColor(Image, cv2.COLOR_GRAY2BGR)
 
-def UniformRescaleImage(Image: np.ndarray = None, ScalingFactor: float = 1.0, Interpolation: int = cv2.INTER_AREA) -> np.ndarray:
+def UniformRescaleImage(Image: np.ndarray = None, ScalingFactor: float = 1.0, Interpolation: int = cv2.INTER_CUBIC) -> np.ndarray:
     """
     UniformRescaleImage
 
@@ -562,6 +584,29 @@ def UniformRescaleImage(Image: np.ndarray = None, ScalingFactor: float = 1.0, In
         return Image
 
     NewShape: typing.Tuple[int, int] = (int(round(ScalingFactor * Image.shape[1])), int(round(ScalingFactor * Image.shape[0])))
+
+    return cv2.resize(Image, NewShape, interpolation=Interpolation)
+
+def ResizeImage(Image: np.ndarray, NewShape: typing.Tuple[int, int], Interpolation: int = cv2.INTER_CUBIC) -> np.ndarray:
+    """
+    ResizeImage
+
+    This function performs a rescaling of a given image to the desired new size,
+    using the given interpolation method.
+
+    Image:
+        The original image to rescale.
+    NewShape:
+        The final image size/shape to resize to, (W x H)
+    Interpolation:
+        The pixel-value interpolation method to use. See OpenCV interpolation methods for details.
+
+    Return (np.ndarray):
+        The new, rescaled pixel bitmap array.
+    """
+
+    if ( Image is None ):
+        raise ValueError(f"Image must be provided")
 
     return cv2.resize(Image, NewShape, interpolation=Interpolation)
 
@@ -829,3 +874,20 @@ def Sha256Sum(Filename: str) -> str:
             Hasher.update(View[:n])
 
     return Hasher.hexdigest()
+
+def PointSequenceToContour(Points: np.ndarray, *, Closed: bool = False) -> np.ndarray:
+    """
+    ConvertPointsToContour
+
+    This function...
+
+    Points:
+        ...
+
+    Return (np.ndarray):
+        ...
+    """
+
+    Epsilon: float = 5 * (0.01) * cv2.arcLength(Points, Closed)
+
+    return cv2.approxPolyDP(Points, Epsilon, Closed)

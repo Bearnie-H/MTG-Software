@@ -34,34 +34,27 @@ def main() -> None:
     Description: str = ""
     Projection: np.ndarray = None
 
-    if ( len(sys.argv) == 3 ):
+    if ( len(sys.argv) >= 3 ):
+        Direction: str = "z"
+        if ( len(sys.argv) == 4 ):
+            Direction = sys.argv[3]
         LogWriter.Println(f"Attempting to work with file [ {sys.argv[1]} ]...")
         Stack: ZStack.ZStack = ZStack.ZStack.FromFile(sys.argv[1])
-        LayerNormalized: ZStack.ZStack = Stack.NormalizeLayers()
-        GlobalNormalized: ZStack.ZStack = Stack.NormalizeLayers(Global=True)
         if ( sys.argv[2].lower() == "--min" ):
             LogWriter.Println(f"Preparing Minimum Intensity Projection Image...")
-            Projection = Stack.MinimumIntensityProjection()
-            LocalNormProjection = LayerNormalized.MinimumIntensityProjection()
-            GlobalNormProjection = GlobalNormalized.MinimumIntensityProjection()
+            Projection = Stack.MinimumIntensityProjection(Axis=Direction)
             Description = "Minimum Intensity Projection"
         elif ( sys.argv[2].lower() == "--max" ):
             LogWriter.Println(f"Preparing Maximum Intensity Projection Image...")
-            Projection = Stack.MaximumIntensityProjection()
-            LocalNormProjection = LayerNormalized.MaximumIntensityProjection()
-            GlobalNormProjection = GlobalNormalized.MaximumIntensityProjection()
+            Projection = Stack.MaximumIntensityProjection(Axis=Direction)
             Description = "Maximum Intensity Projection"
         elif ( sys.argv[2].lower() == "--avg" ):
             LogWriter.Println(f"Preparing Average Intensity Projection Image...")
-            Projection = Stack.AverageIntensityProjection()
-            LocalNormProjection = LayerNormalized.AverageIntensityProjection()
-            GlobalNormProjection = GlobalNormalized.AverageIntensityProjection()
+            Projection = Stack.AverageIntensityProjection(Axis=Direction)
             Description = "Average Intensity Projection"
         elif ( sys.argv[2].lower() == "--display" ):
             LogWriter.Println(f"Preparing to display Z-Stack...")
             Stack.Display()
-            LayerNormalized.Display()
-            GlobalNormalized.Display()
             return
 
 
@@ -74,8 +67,6 @@ def main() -> None:
     #     )
 
         Utils.WriteImage(Utils.ConvertTo8Bit(Projection), os.path.join(os.path.dirname(sys.argv[1]), f"{os.path.splitext(os.path.basename(sys.argv[1]))[0]} - {Description}.tif"))
-        Utils.WriteImage(Utils.ConvertTo8Bit(LocalNormProjection), os.path.join(os.path.dirname(sys.argv[1]), f"{os.path.splitext(os.path.basename(sys.argv[1]))[0]} - {Description} - Layer Normalized.tif"))
-        Utils.WriteImage(Utils.ConvertTo8Bit(GlobalNormProjection), os.path.join(os.path.dirname(sys.argv[1]), f"{os.path.splitext(os.path.basename(sys.argv[1]))[0]} - {Description} - Global Normalized.tif"))
 
     return
 

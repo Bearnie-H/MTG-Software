@@ -559,7 +559,7 @@ class ZStack():
             raise ValueError(f"File [ {Filename} ] cannot be opened as the file does not exist")
 
         try:
-            Success, ImageStack = cv2.imreadmulti(Filename, [], cv2.IMREAD_ANYDEPTH)
+            Success, ImageStack = cv2.imreadmulti(Filename, [], cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR)
             if not ( Success ):
                 raise ValueError(f"Image file [ {Filename} ] cannot be parsed by cv2.imreadmulti().")
 
@@ -768,7 +768,7 @@ class ZStack():
         SeriesName: str = SeriesName.replace("\\", "-")
 
         self._LogWriter.Println(f"Writing out Z-Stack as file [ {Folder}/{SeriesName}.tif ]...")
-        return cv2.imwritemulti(os.path.join(Folder, f"{SeriesName}.tif"), [Utils.ConvertTo8Bit(x) for x in self.Pixels])
+        return cv2.imwritemulti(os.path.join(Folder, f"{SeriesName}.tif"), [x for x in self.Pixels])
 
     #   ...
 
