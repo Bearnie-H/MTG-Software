@@ -83,8 +83,6 @@ class Neurite():
     _Connectivity8Kernel: np.ndarray
     _Connectivity4Kernel: np.ndarray
 
-    ##  TESTING NEW PATH TRACKING
-
     #   This contains a list of piece-wise linear end-points, where the neurite tracing neither turns nor branches.
     #   Connecting each segment in series will faithfully reconstruct the path of the neurite through the image.
     _Segments: np.ndarray
@@ -113,11 +111,27 @@ class Neurite():
         self._Connectivity8Kernel = Connectivity8Kernel.copy()
         self._Connectivity4Kernel = Connectivity4Kernel.copy()
 
-        DefaultLogWriter.Println(f"{self._UID}: Neurite originating at [ {self._Points[0]} ].")
+        # DefaultLogWriter.Println(f"{self._UID}: Neurite originating at [ {self._Points[0]} ].")
 
         return
 
     #   ...
+
+    ### Static Class Methods
+    @staticmethod
+    def FromVertices(Vertices: typing.Sequence[typing.Tuple[int, int]]) -> Neurite:
+        """
+        """
+
+        Points: np.ndarray = np.array([CoordinateTupleToNumpyArray(x) for x in Vertices])
+        N: Neurite = Neurite(Points[0])
+        N._Points = Points.copy()
+
+        N._Segments = np.empty((0, 2, 2), dtype=np.int64)
+        for (Start, End) in zip(Points, Points[1:]):
+            N._Segments = np.append(N._Segments, np.array([[Start, End]]), axis=0)
+
+        return N
 
     ##  Public Methods
     def TreeSize(self: Neurite) -> int:
@@ -217,14 +231,15 @@ class Neurite():
             Neighbours = Neighbours[np.argsort(-NeighbourDirections)[:np.count_nonzero(np.isfinite(NeighbourDirections))]]
 
             if ( len(Neighbours) == 0 ):
-                DefaultLogWriter.Println(f"{CurrentNeurite._UID}: Neurite started at [ {CurrentNeurite._Points[0]} ] terminating at [ {Here} ]. Tree Size={CurrentNeurite.TreeSize()}")
+                # DefaultLogWriter.Println(f"{CurrentNeurite._UID}: Neurite started at [ {CurrentNeurite._Points[0]} ] terminating at [ {Here} ]. Tree Size={CurrentNeurite.TreeSize()}")
+                pass
             else:
                 for (Index, Neighbour) in enumerate(Neighbours):
                     if ( Index == 0 ):
                         CurrentNeurite._Points = np.append(CurrentNeurite._Points, [Neighbour], axis=0)
                         NeuritesToExtend.appendleft(CurrentNeurite)
                     else:
-                        DefaultLogWriter.Println(f"{CurrentNeurite._UID}: Neurite branching at [ {Here} ]. Tree Size={CurrentNeurite.TreeSize()}")
+                        # DefaultLogWriter.Println(f"{CurrentNeurite._UID}: Neurite branching at [ {Here} ]. Tree Size={CurrentNeurite.TreeSize()}")
                         Child: Neurite = Neurite(Origin=Here)
                         Child._Points = np.append(Child._Points, [Neighbour], axis=0)
                         CurrentNeurite._Children.append(Child)
@@ -234,10 +249,58 @@ class Neurite():
 
             CurrentNeurite = None
 
+            if ( random.randint(0, 99) == 0 ):
+                TotalPixels: int = np.count_nonzero(CandidatePixels)
+                VisitedPixels: int = np.count_nonzero(History)
+                DefaultLogWriter.Write(f"Neurite Tracing [ {VisitedPixels / TotalPixels * 100:3.3f}% ]...\r")
+
         # self.Draw(Utils.GreyscaleToBGR(Utils.GammaCorrection(CandidatePixels.copy(), Minimum=0, Maximum=127)), IncludeChildren=True)
 
         self._PrunePath()
         return self
+
+    def Orientation(self: Neurite, EndToEnd: bool = False) -> float | np.ndarray:
+
+        #   This function returns one of two representations of the orientation
+        #   of a given Neurite.
+        #
+        #   If EndToEnd is true, this simply constructs the end-to-end vector
+        #   for the Neurite, and returns the four-quadrant arctangent of the
+        #   resulting vector, measured in radians.
+        #
+        #   If EndToEnd is false, this returns a richer distribution
+        #   representing how the orientation varies over the contour length of
+        #   the neurite. This returns an Nx2 array containing the following
+        #   information:
+        #
+        #   [0] - The four-quadrant arctangent of the piecewise linear segment of the neurite, measured in radians
+        #   [1] - A weighting factor, representing how much of the neurite points in this direction.
+        #
+        #   This weighting is necessary in order to distinguish between two
+        #   neurites, pointing largely in directions A and B respectively, but
+        #   where they "kink" near the end to point in B and A for a short
+        #   segment. The weighting factors allow easy distinguishing of these
+        #   two neurites, whereas just reporting the raw angles would not
+        #   accurately reflect the physical arrangement.
+
+        if ( EndToEnd ):
+            return float(np.arctan2(*self.EndToEndVector(Normalized=True)))
+
+        #   Prepare the mapping between orientation angle and the associated weighting
+        OrientationMap: typing.Dict[float, float] = {}
+
+        for (From, To) in zip(self._Points, self._Points[1:]):
+
+            Angle: float = np.arctan2(*(To - From))
+            Weight: float = np.linalg.norm(To - From)
+
+            if ( OrientationMap.get(Angle) is None ):
+                OrientationMap[Angle] = Weight
+            else:
+                OrientationMap[Angle] += Weight
+
+        Stats: np.ndarray = np.array([(k, OrientationMap[k]) for k in OrientationMap.keys()])
+        return Stats
 
     def ContourLength(self: Neurite) -> float:
         return cv2.arcLength(self._Points, closed=False)
@@ -299,7 +362,8 @@ class Neurite():
             if ( np.all(Segment[0] == Segment[1]) ):
                 continue
             Image = cv2.circle(Image.view(), NumpyCoordinateToTuple(Segment[1]), 3, Colour, -1)
-            Image = cv2.line(Image.view(), NumpyCoordinateToTuple(Segment[1]), NumpyCoordinateToTuple(Segment[0]), Colour, 1, lineType=cv2.LINE_4)
+            SegmentLength: float = np.linalg.norm(Segment[1] - Segment[0])
+            Image = cv2.arrowedLine(Image.view(), NumpyCoordinateToTuple(Segment[1]), NumpyCoordinateToTuple(Segment[0]), Colour, 1, line_type=cv2.LINE_4, tipLength=5.0 / SegmentLength)
 
         OutputVideo.WriteFrame(Image)
 
@@ -368,6 +432,8 @@ class NeuriteGraph():
 
     Edges: typing.Set[typing.Tuple[GraphNode, GraphNode]]
 
+    _BackgroundImage: np.ndarray
+
     def __init__(self: NeuriteGraph) -> None:
         """
         Constructor
@@ -380,33 +446,51 @@ class NeuriteGraph():
 
         self.Edges = set()
 
+        self._BackgroundImage = None
+
         return
 
     def __len__(self: NeuriteGraph) -> int:
         return len(self.Edges)
 
     ### Public Methods
-    def Draw(self: NeuriteGraph) -> np.ndarray:
+    def SetBackgroundImage(self: NeuriteGraph, BackgroundImage: np.ndarray) -> NeuriteGraph:
+        self._BackgroundImage = BackgroundImage.copy()
+        return self
 
+    def Draw(self: NeuriteGraph, *, Background: np.ndarray = None) -> np.ndarray:
+
+        Canvas: np.ndarray = None
         MaximumX, MaximumY = 0, 0
-        for (From, To) in self.Edges:
-            MaximumX, MaximumY = max(MaximumX, From.Coordinates[0], To.Coordinates[0]), max(MaximumY, From.Coordinates[1], To.Coordinates[1])
-            MaximumX = math.ceil(MaximumX / 100) * 100
-            MaximumY = math.ceil(MaximumY / 100) * 100
+
+        if ( Background is not None ):
+            MaximumX, MaximumY = Background.shape[::-1][:2]
+        elif ( self._BackgroundImage is not None ):
+            MaximumX, MaximumY = self._BackgroundImage.shape[::-1][:2]
+        else:
+            for (From, To) in self.Edges:
+                MaximumX, MaximumY = max(MaximumX, From.Coordinates[0], To.Coordinates[0]), max(MaximumY, From.Coordinates[1], To.Coordinates[1])
+                MaximumX = math.ceil(MaximumX / 100) * 100
+                MaximumY = math.ceil(MaximumY / 100) * 100
 
         Extent: int = max(MaximumX, MaximumY)
 
         if ( Extent == 0 ):
             Extent = 500
 
-        Canvas: np.ndarray = np.zeros((Extent, Extent, 3), dtype=np.uint8)
+        if ( Background is not None ):
+            Canvas = Background.copy()
+        elif ( self._BackgroundImage is not None ):
+            Canvas = self._BackgroundImage.copy()
+        else:
+            Canvas = np.zeros((Extent, Extent, 3), dtype=np.uint8)
 
         for (From, To) in self.Edges:
             self._DrawConnection(Canvas, From, To)
 
         return Canvas
 
-    def AddNeurites(self: NeuriteGraph, Neurites: typing.Sequence[Neurite]) -> NeuriteGraph:
+    def AddNeurites(self: NeuriteGraph, Neurites: typing.Sequence[Neurite], *, Simplify: bool = False, LatticeSize: float, NeighbourhoodSize: float, Origins: np.ndarray, Theta: float) -> NeuriteGraph:
         """
         AddNeurites
 
@@ -420,11 +504,11 @@ class NeuriteGraph():
         """
 
         for Neurite in Neurites:
-            self.AddNeurite(Neurite)
+            self.AddNeurite(Neurite, Simplify=Simplify, LatticeSize=LatticeSize, NeighbourhoodSize=NeighbourhoodSize, Origins=Origins, Theta=Theta)
 
         return self
 
-    def AddNeurite(self: NeuriteGraph, Neurite: Neurite) -> NeuriteGraph:
+    def AddNeurite(self: NeuriteGraph, Neurite: Neurite, *, Simplify: bool = False, LatticeSize: float, NeighbourhoodSize: float, Origins: np.ndarray, Theta: float) -> NeuriteGraph:
         """
         AddNeurite
 
@@ -448,12 +532,36 @@ class NeuriteGraph():
 
             Previous = Now
 
+        if ( Simplify ):
+            self.Simplify(LatticeSize=LatticeSize, NeighbourhoodSize=NeighbourhoodSize, Origins=Origins, Theta=Theta)
+
         for Child in Neurite._Children:
-            self.AddNeurite(Child)
+            self.AddNeurite(Child, Simplify=Simplify, LatticeSize=LatticeSize, NeighbourhoodSize=NeighbourhoodSize, Origins=Origins, Theta=Theta)
 
         return self
 
-    def CollapseConnections(self: NeuriteGraph, Size: float = 3) -> NeuriteGraph:
+    def Simplify(self: NeuriteGraph, LatticeSize: float, NeighbourhoodSize: float, Origins: np.ndarray, Theta: float) -> NeuriteGraph:
+
+        DefaultLogWriter.Println(f"Neurite Graph has [ {len(self)} ] connections prior to simplification...")
+
+        #   Collapse "nearby" nodes into the same node, losing a small amount of spatial resolution in order
+        #   to have a simpler graph
+        self.CollapseConnections(LatticeSize=LatticeSize, NeighbourhoodSize=NeighbourhoodSize)
+        DefaultLogWriter.Println(f"Neurite Graph has [ {len(self)} ] connections after collapsing spatially nearby nodes...")
+
+        #   Re-orient the graph connections to be "outward" from the centroid(s)
+        self.OrientConnections(Origins=Origins)
+        DefaultLogWriter.Println(f"Neurite Graph has [ {len(self)} ] connections after orienting connections...")
+
+        #   Prune any intermediate connections of the graph which neither branch, nor lead to a large enough directional change.
+        self.PruneConnections(Epsilon=Theta)
+        DefaultLogWriter.Println(f"Neurite Graph has [ {len(self)} ] connections after simplification.")
+
+        Utils.DisplayImage(f"Simplified Neurite Graph...", self.Draw(), 0.1, True, True, UpdateWindows=True)
+
+        return self
+
+    def CollapseConnections(self: NeuriteGraph, LatticeSize: float = 3, NeighbourhoodSize: float = 12) -> NeuriteGraph:
         """
         CollapseConnections
 
@@ -466,34 +574,14 @@ class NeuriteGraph():
             ...
         """
 
-        DefaultLogWriter.Println(f"Collapsing nodes of the adjacency graph which are within [ {Size:.2f} ] units of each other...")
+        self._SnapToLattice(LatticeSize)
 
-        while ( True ):
-            CurrentSize: int = len(self)
-            PrunedSize: int = len(self._CollapseConnections(Size))
-            # Utils.DisplayImage(f"Collapsing Nearby Nodes...", self.Draw(), 0.1, True, True, UpdateWindows=True)
+        self._CollapseNeighbourhoods(NeighbourhoodSize)
 
-            if ( PrunedSize == CurrentSize ):
-                break
-
-        # Utils.DisplayImage(f"Collapsing Nearby Nodes...", self.Draw(), 0, True, True)
+        Utils.DisplayImage(f"Collapsing connections...", self.Draw(), 0.1, True, True)
         return self
 
-    def RemoveCycles(self: NeuriteGraph) -> NeuriteGraph:
-        """
-        RemoveCycles
-
-        This function...
-
-        Return (self):
-            ...
-        """
-
-        #   ...
-
-        return self
-
-    def OrientConnections(self: NeuriteGraph, Origins: np.ndarray) -> NeuriteGraph:
+    def OrientConnections(self: NeuriteGraph, Origins: np.ndarray = None) -> NeuriteGraph:
         """
         OrientConnections
 
@@ -506,16 +594,21 @@ class NeuriteGraph():
             ...
         """
 
+        if ( Origins is None ):
+            Origins = np.array([[-1000000, -1000000]])
+
         #   We want to assert that connections are preferentially directed outward, away from
         #   the cortical explant cores. TODO: describe this more...
 
         OrientedConnections: typing.Set[typing.Tuple[GraphNode, GraphNode]] = set()
 
         #   Look at all of the connections in the graph...
-        for (From, To) in self.Edges:
+        for Index, (From, To) in enumerate(self.Edges):
+
+            DefaultLogWriter.Write(f"Orienting Connections [ {(Index / len(self.Edges)) * 100:03.3f}% ]...\r")
 
             #   Convert this connection into a vector representation...
-            ConnectionVector: np.ndarray = ConnectionToVector(From, To)
+            ConnectionVector: np.ndarray = ConnectionToVector(From, To, UnitVector=True)
 
             #   Identify which centroid origin is closest to the base of this vector
             ClosestCentroid: int = np.argmin(
@@ -523,18 +616,25 @@ class NeuriteGraph():
             )
 
             #   Compute the vector from this centroid to the end of this connection vector
-            RadialExplantVector: np.ndarray = CoordinateTupleToNumpyArray(To.Coordinates) - Origins[ClosestCentroid]
+            # RadialExplantVector: np.ndarray = CoordinateTupleToNumpyArray(To.Coordinates) - Origins[ClosestCentroid]
+            RadialExplantVector: np.ndarray = ConnectionToVector(GraphNode().SetOrigin(Origins[ClosestCentroid]), To, UnitVector=True)
 
             #   Is the connection pointing outward?
-            if ( np.dot(ConnectionVector, RadialExplantVector) < 0 ):
+            if ( np.dot(ConnectionVector, RadialExplantVector) <= 0 ):
                 #   No, it's backwards
                 OrientedConnections.add((To, From))
             else:
                 #   Yes, it's correct
                 OrientedConnections.add((From, To))
 
+            # if ( random.randint(0, 500) == 0 ):
+            #     IntermediateGraph: NeuriteGraph = NeuriteGraph()
+            #     IntermediateGraph.Edges = OrientedConnections.copy()
+            #     IntermediateGraph.SetBackgroundImage(self._BackgroundImage)
+            #     Utils.DisplayImage(f"Orienting Connections...", IntermediateGraph.Draw(), 0.001, True, True, UpdateWindows=True)
+
         self.Edges = OrientedConnections
-        Utils.DisplayImage(f"Oriented Connections", self.Draw(), 1, True, True)
+        Utils.DisplayImage(f"Orienting Connections...", self.Draw(), 2, True, True)
         return self
 
     def PruneConnections(self: NeuriteGraph, Epsilon: float) -> NeuriteGraph:
@@ -550,81 +650,105 @@ class NeuriteGraph():
             ...
         """
 
-        #   TODO: This isn't quite working correctly yet.
-        #           If it identifies the two ends of a segment before checking the middle nodes, then it
-        #           will add these single-ended connections first, which keeps the "middle" node(s) alive as zombie
-        #           nodes.
-
-        #   The point of this function is to identify any nodes which have a
-        #   single incoming and outgoing connection, and where these are
-        #   "co-linear enough". We could do this by examining the set of
-        #   connections directly, but as there's no convenient way to "follow" a
-        #   given path through the tree, we need a better way of searching.
-        #
-        #   We can transform the graph into its dual representation, into nodes
-        #   which track their connections, and follow the paths these define as
-        #   an alternative.
-
-        #   Get all of the nodes within the graph...
         Nodes: typing.Set[GraphNode] = set()
-        for (From, To) in self.Edges:
-            Nodes.update([From, To])
+        for Edge in self.Edges:
+            Nodes.update(Edge)
 
-        #   Get a copy of the set of connections in the graph we need to examine.
-        ConnectionsToCheck: typing.Set[typing.Tuple[GraphNode, GraphNode]] = self.Edges.copy()
-
-        #   The set of pruned connections to use in constructing the final pruned graph
-        CheckedConnections: typing.Set[typing.Tuple[GraphNode, GraphNode]] = set()
-
-        #   For each node in the graph, find all of the incoming and outgoing connections for it
+        NodeCount: int = len(Nodes)
         while ( len(Nodes) > 0 ):
 
-            Node = Nodes.pop()
+            DefaultLogWriter.Write(f"Pruning Colinear Nodes [ {(len(Nodes) / NodeCount) * 100:03.3f}% remaining ]...\r")
 
-            IncomingConnections: typing.Set[typing.Tuple[GraphNode, GraphNode]] = set()
-            OutgoingConnections: typing.Set[typing.Tuple[GraphNode, GraphNode]] = set()
+            TestNode: GraphNode = Nodes.pop()
 
-            for (From, To) in ConnectionsToCheck:
-                DefaultLogWriter.Println(f"Checking if connection [ {From.Coordinates}->{To.Coordinates} ] includes test node [ {Node.Coordinates} ]...")
-                if ( Node == From ):
-                    DefaultLogWriter.Println(f"Connection [ {From.Coordinates}->{To.Coordinates} ] is an outgoing connection")
-                    OutgoingConnections.add((From, To))
-                elif ( Node == To ):
-                    DefaultLogWriter.Println(f"Connection [ {From.Coordinates}->{To.Coordinates} ] is an incoming connection.")
-                    IncomingConnections.add((From, To))
+            Sources: typing.Set[GraphNode] = set([Edge[0] for Edge in self.Edges])
+            Destinations: typing.Set[GraphNode] = set([Edge[1] for Edge in self.Edges])
 
-            #   We can only prune this node if it has a single incoming and outgoing connection
-            if not (( len(IncomingConnections) == 1 ) and ( len(OutgoingConnections) == 1 )):
-                DefaultLogWriter.Println(f"The node at [ {Node.Coordinates} ] has [ {len(IncomingConnections)} ] incoming and [ {len(OutgoingConnections)} ] outgoing connections, and cannot be pruned.")
-                CheckedConnections.update(IncomingConnections)
-                CheckedConnections.update(OutgoingConnections)
-            else:
+            OutgoingConnections: int = sum([1 if TestNode == x else 0 for x in Sources])
+            IncomingConnections: int = sum([1 if TestNode == x else 0 for x in Destinations])
 
-                #   Transform these two connections into vectors so we can do vector math on them.
-                #   Convert them to unit vectors since we only care about the direction they are pointing in
-                (From, _) = IncomingConnections.pop()
-                (_, To) = OutgoingConnections.pop()
-                IncomingVector: np.ndarray = ConnectionToVector(From, Node, UnitVector=True)
-                OutgoingVector: np.ndarray = ConnectionToVector(Node, To, UnitVector=True)
+            #   If the node has exactly one incoming and outgoing connection, we may be able to prune it
+            if ( OutgoingConnections == 1 ) and ( IncomingConnections == 1 ):
+
+                #   Find the specific nodes "on either side" of the test node
+                From: GraphNode = [Edge[0] for Edge in self.Edges if Edge[1] == TestNode][0]
+                To: GraphNode = [Edge[1] for Edge in self.Edges if Edge[0] == TestNode][0]
+
+                #   Now, check what the angle between the vectors:
+                #       From->TestNode
+                #       TestNode->To
+                #   is, and if it's within the acceptable threshold, then we can remove this middle node and update the corresponding connections!
+                IncomingVector: np.ndarray = ConnectionToVector(From, TestNode, UnitVector=True)
+                OutgoingVector: np.ndarray = ConnectionToVector(TestNode, To, UnitVector=True)
 
                 #   If the angle between them is sufficiently small, they are "co-linear" enough
                 if ( np.arccos(np.dot(IncomingVector, OutgoingVector)) <= Epsilon ):
-                    DefaultLogWriter.Println(f"Pruning node at [ {Node.Coordinates} ] and forming connection [ {From.Coordinates}->{To.Coordinates} ]...")
-                    CheckedConnections.add((From, To))
+                    self.Edges.discard((From, TestNode))
+                    self.Edges.discard((TestNode, To))
+                    self.Edges.add((From, To))
                 else:
-                    DefaultLogWriter.Println(f"Unable to prune node at [ {Node.Coordinates} ].")
-                    CheckedConnections.add((From, Node))
-                    CheckedConnections.add((Node, To))
+                    # DefaultLogWriter.Println(f"")
+                    pass
+            else:
+                # DefaultLogWriter.Println(f"")
+                pass
+
+            Utils.DisplayImage(f"Pruning Colinear Connections...", self.Draw(), 0.001, True, True, UpdateWindows=True)
+
+        Utils.DisplayImage(f"Pruning Colinear Connections...", self.Draw(), 2, True, True)
+        return self
+
+    def PruneConnections_2(self: NeuriteGraph, Epsilon: float) -> NeuriteGraph:
+        """
+        """
+
+
+
+    def ReconstructNeurites(self: NeuriteGraph, ExplantCoreCentroids: np.ndarray = None) -> typing.Sequence[Neurite]:
+        """
+        ReconstructNeurites
+
+        This function...
+
+        ExplantCoreCentroids:
+            ...
+
+        Return (Sequence[Neurite]):
+            ...
+        """
+
+        if ( ExplantCoreCentroids is None ):
+            ExplantCoreCentroids = np.array([[0, 0]])
+
+        Neurites: typing.List = list()
+        Connections: typing.Set[typing.Tuple[GraphNode, GraphNode]] = self.Edges.copy()
+
+        #   Starting with the full set of connections within the graph, we want
+        #   to select the source node (i.e. one with no incoming connections)
+        #   which is closest to one of the centroids. With this node, follow an
+        #   outbound path along the connections and subsequent nodes it forms,
+        #   constructing a Neurite as the graph is traversed. Continue
+        #   traversing until a sink node is reached (i.e. one with no further
+        #   outgoing connections). Once a sink is reached and a full Neurite is
+        #   constructed, re-examine the Nodes used and prune away any nested
+        #   sub-graphs which do not leave orphan nodes. Then repeat the process
+        #   until all Nodes of the graph are assigned to at least one Neurite.
+        while (( SourceNode := self._FindNearestSourceNode(ExplantCoreCentroids) ) is not None ):
+
+            Vertices: typing.Sequence[GraphNode] = self._TraceFilament(SourceNode)
+
+            self._RemoveFilament(Vertices)
 
             #   +++ DEBUGGING +++
-            IntermediateGraph: NeuriteGraph = NeuriteGraph()
-            IntermediateGraph.Edges = CheckedConnections.copy()
-            Utils.DisplayImage("Pruning co-linear connections...", IntermediateGraph.Draw(), 0.5, True, True, UpdateWindows=True)
+            Utils.DisplayImage(f"Extracting Neurites...", self.Draw(), 0.1, True, True, UpdateWindows=True)
             #   --- DEBUGGING ---
 
-        self.Edges = CheckedConnections
-        Utils.DisplayImage("Pruning co-linear connections...", self.Draw(), 0.5, True, True)
-        return self
+            Filament: Neurite = Neurite.FromVertices([Vertex.Coordinates for Vertex in Vertices])
+            Neurites.append(Filament)
+
+        self.Edges = Connections.copy()
+        Utils.DisplayImage(f"Extracting Neurites...", self.Draw(), 10, True, True)
+        return Neurites
 
     ### Private Methods
     def _AddEdge(self: NeuriteGraph, From: GraphNode, To: GraphNode) -> NeuriteGraph:
@@ -670,160 +794,195 @@ class NeuriteGraph():
 
         Distance: float = DistanceBetween(From, To)
         if ( Distance >= Epsilon ):
-            cv2.arrowedLine(Canvas, From.Coordinates, To.Coordinates, color=(255, 255, 255), thickness=1, tipLength=15.0 / Distance)
+            cv2.arrowedLine(Canvas, From.Coordinates, To.Coordinates, color=(255, 255, 255), thickness=1, tipLength=5.0 / Distance)
 
         return Canvas
 
-    def _CollapseConnections(self: NeuriteGraph, Size: float) -> NeuriteGraph:
+    def _CollapseNeighbourhoods(self: NeuriteGraph, Size: float) -> NeuriteGraph:
         """
-        _CollapseConnections
-
-        This function...
-
-        Size:
-            ...
-
-        Return (NeuriteGraph):
-            ...
         """
 
-        #   Get the set of current connections we need to check
-        ConnectionsToCheck: typing.Set[typing.Tuple[GraphNode, GraphNode]] = self.Edges.copy()
+        #   Walk through the graph once, constructing the locations of the neighbourhoods we will collapse down to
+        Neighbourhoods: typing.Set[GraphNode] = set()
+        OrderedEdges: typing.List[typing.Tuple[GraphNode, GraphNode]] = list(sorted(self.Edges, key=lambda x: DistanceBetween(x[0], x[1]), reverse=True))
+        for Index, Nodes in enumerate(OrderedEdges):
+            DefaultLogWriter.Write(f"[ {((Index+1) / len(OrderedEdges))*100:.3f}% ] Creating neighbourhoods around existing nodes - [ {len(Neighbourhoods) } ]...\r")
+            for Node in Nodes:
+                AddNode: bool = True
+                #   Check if there's a neighbourhood "close" to the source node
+                for Neighbourhood in Neighbourhoods:
+                    if ( DistanceBetween(Node, Neighbourhood) < Size ):
+                        AddNode = False
+                        break
 
-        #   Prepare a set of connections which have had the neighbourhood around both endpoints collapsed down
-        CheckedConnections: typing.Set[typing.Tuple[GraphNode, GraphNode]] = set()
+                if ( AddNode ):
+                    Neighbourhoods.add(GraphNode().SetOrigin(CoordinateTupleToNumpyArray(Node.Coordinates)))
 
-        #   Iterate over this set, getting both end-points of the connection
-        for (From, To) in list(ConnectionsToCheck):
+                    #   DEBUGGING
+                    I: np.ndarray = self._BackgroundImage.copy()
+                    for n in Neighbourhoods:
+                        I = cv2.circle(I, n.Coordinates, 3, (255, 255, 255), -1)
+                    Utils.DisplayImage(f"Creating Neighbourhoods", I, 0.001, True, True, UpdateWindows=True)
+                    #   DEBUGGING
 
-            #   If the two ends of this connection are close enough to collapse to the same point, skip this connection
-            if ( DistanceBetween(From, To) <= Size ):
-                continue
-
-            SourceNeighbourhood: typing.Set[GraphNode] = set([From])
-            DestinationNeighbourhood: typing.Set[GraphNode] = set([To])
-
-            UpdateToSourceCoordinates: typing.Set[GraphNode] = set()
-            UpdateToDestinationCoordinates: typing.Set[GraphNode] = set()
-
-            for (TestFrom, TestTo) in ConnectionsToCheck:
-
-                #   We need to do several things when examining the other
-                #   connections in relation to the test connection under
-                #   consideration. First:
-                #
-                #   1)  We need to identify all of the nodes within the
-                #   neighbourhood of the Source.
-                #   2)  We need to identify all of the nodes within the
-                #   neighbourhood of the Destination.
-                #
-                #   This allows us to define the location of the collapsed
-                #   connection entirely. Beyond this, we also need to make sure
-                #   that any connections where *either* of their ends will be
-                #   affected by this move are also tracked. This gives us a
-                #   total of 9 classes of connections we need to track and
-                #   update.
-                #
-                #   1) From the Source Neighbourhood to the Source Neighbourhood
-                #   2) From the Source Neighbourhood to the Destination Neighbourhood
-                #   3) From the Source Neighbourhood to anywhere else
-                #   4) From the Destination Neighbourhood to the Source Neighbourhood
-                #   5) From the Destination Neighbourhood to the Destination Neighbourhood
-                #   6) From the Destination Neighbourhood to anywhere else
-                #   7) From anywhere else to the Source Neighbourhood
-                #   8) From anywhere else to the Destination Neighbourhood
-                #   9) From anywhere else to anywhere else
-                #
-                #   Of these cases, we can handle them as follows:
-                #
-                #   1) Prune
-                #   2) Collapse
-                #   3) Outgoing: Update Source Coordinates
-                #   4) Reversed - Update Source and Destination Coordinates
-                #   5) Prune
-                #   6) Secondary Outgoing: Update Source Coordinates
-                #   7) Incoming: Update Destination Coordinates
-                #   8) Secondary Incoming: Update Destination Coordinates
-                #   9) Ignore
-
-                #   Prepare flags for defining the orientation and location of this test connection
-                StartsInSourceNeighbourhood: bool = ( DistanceBetween(From, TestFrom) <= Size )
-                StartsInDestinationNeighbourhood: bool = ( DistanceBetween(To, TestFrom) <= Size )
-                StartsElsewhere: bool = not ( StartsInSourceNeighbourhood or StartsInDestinationNeighbourhood )
-
-                EndsInSourceNeighbourhood: bool = ( DistanceBetween(From, TestTo) <= Size )
-                EndsInDestinationNeighbourhood: bool = ( DistanceBetween(To, TestTo) <= Size )
-                EndsElsewhere: bool = not ( EndsInSourceNeighbourhood or EndsInDestinationNeighbourhood )
-
-                #   First, identify whether either end of this connection lies in the Source neighbourhood
-                if ( StartsInSourceNeighbourhood ):
-                    SourceNeighbourhood.add(TestFrom)
-                if ( EndsInSourceNeighbourhood ):
-                    SourceNeighbourhood.add(TestTo)
-
-                #   Second, identify whether either end of this connection lies in the Destination neighbourhood
-                if ( StartsInDestinationNeighbourhood ):
-                    DestinationNeighbourhood.add(TestFrom)
-                if ( EndsInDestinationNeighbourhood ):
-                    DestinationNeighbourhood.add(TestTo)
-
-                #   Now, use the flags from above, and the connection type definitions
-                #   to determine how to classify the test connection.
-                if ( StartsInSourceNeighbourhood ) and ( EndsInSourceNeighbourhood ):
-                    #   Class 1: Prune
-                    pass
-                elif ( StartsInSourceNeighbourhood ) and ( EndsInDestinationNeighbourhood ):
-                    #   Class 2: Collapse
-                    UpdateToSourceCoordinates.add(TestFrom)
-                    UpdateToDestinationCoordinates.add(TestTo)
-                    pass
-                elif ( StartsInSourceNeighbourhood ) and ( EndsElsewhere ):
-                    #   Class 3: Primary Outgoing
-                    UpdateToSourceCoordinates.add(TestFrom)
-                elif ( StartsInDestinationNeighbourhood ) and ( EndsInSourceNeighbourhood ):
-                    #   Class 4: Reversed
-                    UpdateToDestinationCoordinates.add(TestFrom)
-                    UpdateToSourceCoordinates.add(TestTo)
-                elif ( StartsInDestinationNeighbourhood ) and ( EndsInDestinationNeighbourhood ):
-                    #   Class 5: Prune
-                    pass
-                elif ( StartsInDestinationNeighbourhood ) and ( EndsElsewhere ):
-                    #   Class 6: Secondary Outgoing
-                    UpdateToDestinationCoordinates.add(TestFrom)
-                elif ( StartsElsewhere ) and ( EndsInSourceNeighbourhood ):
-                    #   Class 7: Primary Incoming
-                    UpdateToSourceCoordinates.add(TestTo)
-                elif ( StartsElsewhere ) and ( EndsInDestinationNeighbourhood ):
-                    #   Class 8: Secondary Incoming
-                    UpdateToDestinationCoordinates.add(TestTo)
-                elif ( StartsElsewhere ) and ( EndsElsewhere ):
-                    #   Class 9: Ignore
-                    pass
-
-            #   From the set of nodes identified as being near either end of our test connection,
-            #   compute the centroids of these neighbourhoods to place the collapsed end-endpoints at
-            SourceCentroid: np.ndarray = np.mean(np.array([CoordinateTupleToNumpyArray(x.Coordinates) for x in SourceNeighbourhood]), axis=0)
-            DestinationCentroid: np.ndarray = np.mean(np.array([CoordinateTupleToNumpyArray(x.Coordinates) for x in DestinationNeighbourhood]), axis=0)
-
-            NewSource: GraphNode = GraphNode().SetOrigin(SourceCentroid)
-            NewDestination: GraphNode = GraphNode().SetOrigin(DestinationCentroid)
-
-            #   Update the coordinates of the nodes which are affected by collapsing these neighbourhoods
-            for Node in UpdateToSourceCoordinates:
-                Node.Coordinates = NewSource.Coordinates
-
-            for Node in UpdateToDestinationCoordinates:
-                Node.Coordinates = NewDestination.Coordinates
-
-            CheckedConnections.add((NewSource, NewDestination))
+        # DefaultLogWriter.Println(f"Finished ")
+        I: np.ndarray = self._BackgroundImage.copy()
+        for n in Neighbourhoods:
+            I = cv2.circle(I, n.Coordinates, 3, (255, 255, 255), -1)
+        Utils.DisplayImage(f"Creating Neighbourhoods", I, 2, True, True)
 
             #   DEBUGGING
-            # IntermediateGraph: NeuriteGraph = NeuriteGraph()
-            # IntermediateGraph.Edges = CheckedConnections.copy()
-            # Utils.DisplayImage(f"Collapsing Nearby Nodes...", IntermediateGraph.Draw(), 0.1, True, True, UpdateWindows=True)
+            # if ( np.any([DistanceBetween(n1, n2) < Size for (n1, n2) in itertools.product(Neighbourhoods, repeat=2) if n1 != n2]) ):
+            #     DefaultLogWriter.Errorln(f"At least two distinct neighbourhoods are too close!")
+            #   DEBUGGING
 
-        self.Edges = CheckedConnections
+        #   Now, with the set of neighbourhoods identified, we just need to map each connection to the nearest one.
+        #   Iterate over the set of connections we are working with, and search for the nearest neighbourhood to each
+        #   end of the connection. We replace the original connection with one linking these two neighbourhoods,
+        #   so long as they are distinct.
+        CollapsedConnections: typing.Set[typing.Tuple[GraphNode, GraphNode]] = set()
+        for Index, (From, To) in enumerate(OrderedEdges):
+
+            SourceNeighbourhoodStats = np.array([(DistanceBetween(From, x), x) for x in Neighbourhoods if DistanceBetween(From, x) <= Size])
+            SourceNeighbourhood = SourceNeighbourhoodStats[
+                np.argmin(SourceNeighbourhoodStats[:,0]),
+                1
+            ]
+
+            DestinationNeighbourhoodStats = np.array([(DistanceBetween(To, x), x) for x in Neighbourhoods if DistanceBetween(To, x) <= Size])
+            DestinationNeighbourhood = DestinationNeighbourhoodStats[
+                np.argmin(DestinationNeighbourhoodStats[:,0]),
+                1
+            ]
+
+            #   Replace this connection with one linking the two neighbourhoods, so long as they're distinct
+            if ( SourceNeighbourhood != DestinationNeighbourhood ):
+                CollapsedConnections.add((SourceNeighbourhood, DestinationNeighbourhood))
+
+                #   DEBUGGING
+                Temp: NeuriteGraph = NeuriteGraph()
+                Temp.SetBackgroundImage(self._BackgroundImage)
+                Temp.Edges = CollapsedConnections
+                Utils.DisplayImage(f"Collapsing connections...", Temp.Draw(), 0.001, True, True, UpdateWindows=True)
+                #   DEBUGGING
+
+            DefaultLogWriter.Write(f"Collapsing Edges [ {((Index+1) / len(self.Edges)) * 100:3.3f}% ] - [ {len(CollapsedConnections)} ] remaining...\r")
+
+        DefaultLogWriter.Println(f"Finished collapsing edges of the graph - [ {len(CollapsedConnections)} ] remaining.")
+        self.Edges = CollapsedConnections.copy()
+        Utils.DisplayImage(f"Collapsing connections...", self.Draw(), 0.001, True, True)
         return self
+
+    def _SnapToLattice(self: NeuriteGraph, Size: float) -> NeuriteGraph:
+        """
+        """
+
+        CollapsedConnections: typing.Set[typing.Tuple[GraphNode, GraphNode]] = set()
+        EdgeCount: int = len(self.Edges)
+        for Index, (From, To) in enumerate(self.Edges):
+            DefaultLogWriter.Write(f"Snapping connections to lattice [ {(( Index + 1) / EdgeCount ) * 100:.3f}% ] - [ {len(CollapsedConnections)} ]...\r")
+            LatticeFrom, LatticeTo = From.SnapToLattice(int(Size)), To.SnapToLattice(int(Size))
+            if ( LatticeFrom != LatticeTo ):
+                CollapsedConnections.add((LatticeFrom, LatticeTo))
+
+            #   DEBUGGING
+            # if ( random.randint(0, len(CollapsedConnections)) == 0 ):
+            #     Temp: NeuriteGraph = NeuriteGraph().SetBackgroundImage(self._BackgroundImage)
+            #     Temp.Edges = CollapsedConnections
+            #     Utils.DisplayImage(f"Collapsing connections...", Temp.Draw(), 0.001, True, True, UpdateWindows=True)
+            #   DEBUGGING
+
+        DefaultLogWriter.Println(f"[ {len(CollapsedConnections)} ] connections remaining after snapping to lattice.")
+        self.Edges = CollapsedConnections.copy()
+        Utils.DisplayImage(f"Collapsing connections...", self.Draw(), 1, True, True)
+        return self
+
+    def _FindNearestSourceNode(self: NeuriteGraph, Origins: np.ndarray) -> GraphNode:
+
+        DefaultLogWriter.Println(f"Searching for the closest source node to one of the provided centroids: {[f'{x}, ' for x in Origins]} ")
+
+        Sources: typing.Set[GraphNode] = set([x[0] for x in self.Edges])
+        Destinations: typing.Set[GraphNode] = set([x[1] for x in self.Edges])
+
+        Sources -= Destinations
+
+        #   Identify which centroid origin is closest to this node
+        SourceNode: GraphNode = None
+        MinimumDistance: float = float('inf')
+        for Node in Sources:
+            Distance: float = np.min(
+                [np.linalg.norm(Origin - CoordinateTupleToNumpyArray(Node.Coordinates)) for Origin in Origins]
+            )
+            if ( Distance < MinimumDistance ):
+                MinimumDistance = Distance
+                SourceNode = Node
+
+        if ( SourceNode is not None ):
+            DefaultLogWriter.Println(f"The closest node to a centroid is located at [ {SourceNode.Coordinates} ]...")
+
+        return SourceNode
+
+    def _TraceFilament(self: NeuriteGraph, Origin: GraphNode) -> typing.Sequence[GraphNode]:
+
+        #   Start the filament at the given Origin node
+        Nodes: typing.Sequence[GraphNode] = list()
+        CurrentNode: GraphNode = Origin
+        Terminated: bool = False
+
+        while ( not Terminated ):
+            ConnectionFound: bool = False
+            #   Find any outgoing connection from this node...
+            for Edge in self.Edges:
+                #   If one is found...
+                if ( Edge[0] == CurrentNode ):
+
+                    DefaultLogWriter.Println(f"Outgoing connection found: [ {CurrentNode.Coordinates}->{Edge[1].Coordinates} ]")
+
+                    if ( Edge[1] in Nodes ):
+                        DefaultLogWriter.Println(f"Potential cycle detected! [ {Edge[1]} ] has already been visited!")
+                        continue
+
+                    #   Add the current node to the filament and update which node we're looking for connections from
+                    Nodes.append(CurrentNode)
+                    CurrentNode = Edge[1]
+                    ConnectionFound = True
+                    break
+
+            if ( not ConnectionFound ):
+                DefaultLogWriter.Println(f"Filament terminates at [ {CurrentNode.Coordinates} ]")
+                Nodes.append(CurrentNode)
+                Terminated = True
+
+        return Nodes
+
+    def _RemoveFilament(self: NeuriteGraph, Filament: typing.Sequence[GraphNode]) -> None:
+
+        #   Convert the filament from a set of nodes into a set of connections...
+        #   Also, reverse this list so that we look at the connections starting
+        #   from the known end-point
+        FilamentConnections: typing.Sequence[typing.Tuple[GraphNode, GraphNode]] = list(reversed([(x, y) for (x, y) in zip(Filament, Filament[1:])]))
+
+        Source, Destination = FilamentConnections[0]
+        DefaultLogWriter.Println(f"Removing terminating connection [ {Source.Coordinates}->{Destination.Coordinates} ]...")
+        self.Edges.remove(FilamentConnections[0])
+
+        #   Iterate over the set of connections forming the filament...
+        for (Source, Destination) in FilamentConnections[1:]:
+
+            #   If the destination for this segment of the filament appears with
+            #   other outgoing connections, we cannot yet prune it and thus we
+            #   can immediately return from this function as we can't prune
+            #   earlier segments of the filament without potentially leaving
+            #   these later nodes orphaned
+            Sources: typing.Set[GraphNode] = set([Edge[0] for Edge in self.Edges])
+
+            if ( Destination in Sources ):
+                return
+
+            DefaultLogWriter.Println(f"Removing intermediate connection [ {Source.Coordinates}->{Destination.Coordinates} ]...")
+            self.Edges.remove((Source, Destination))
+
+        return
 
 class GraphNode():
     """
@@ -846,13 +1005,19 @@ class GraphNode():
         """
 
         self.Coordinates = ()
-
         return
 
     def __eq__(self: GraphNode, Other: GraphNode) -> bool:
-        return np.all(self.Coordinates == Other.Coordinates)
+        if ( self is None ) and ( Other is not None ):
+            return False
+        elif ( self is not None ) and ( Other is None ):
+            return False
+        else:
+            return np.all(self.Coordinates == Other.Coordinates)
 
     def __hash__(self: GraphNode) -> int:
+        if ( self is None ):
+            return hash(None)
         return hash(self.Coordinates)
 
     ### Public Methods
@@ -872,6 +1037,12 @@ class GraphNode():
         self.Coordinates = NumpyCoordinateToTuple(Origin)
 
         return self
+
+    def SnapToLattice(self: GraphNode, LatticeSpacing: int) -> GraphNode:
+
+        LatticeNode: GraphNode = GraphNode()
+        LatticeNode.Coordinates = tuple([round(x / LatticeSpacing) * LatticeSpacing for x in self.Coordinates])
+        return LatticeNode
 
 def ConnectionToVector(From: GraphNode, To: GraphNode, *, UnitVector: bool = False) -> np.ndarray:
     """
@@ -909,3 +1080,36 @@ def DistanceBetween(A: GraphNode, B: GraphNode) -> float:
 
     Distance: float = np.linalg.norm(ConnectionToVector(B, A))
     return Distance
+
+def CombineNeuriteOrientationStats(OrientationStats: typing.List[np.ndarray]) -> np.ndarray:
+    """
+    """
+
+    Epsilon: float = 1e-5
+
+    Angles: np.ndarray = np.array([])
+    Weights: np.ndarray = np.array([])
+
+    for Stat in OrientationStats:
+        Angles = np.append(Angles, Stat[:,0])
+        Weights = np.append(Weights, Stat[:,1])
+
+    #   Sort these based on the Angles array
+    SortedIndices: np.ndarray = np.argsort(Angles)
+
+    Angles = Angles[SortedIndices]
+    Weights = Weights[SortedIndices]
+
+    #   Now, combine values which are "close enough" together into the same group
+    FinalAngles: np.ndarray = np.array([])
+    FinalWeights: np.ndarray = np.array([])
+
+    while ( len(Angles) > 0 ):
+        Mask: np.ndarray = np.abs(Angles - Angles[0]) < Epsilon
+        FinalAngles = np.append(FinalAngles, np.mean(Angles[Mask]))
+        FinalWeights = np.append(FinalWeights, np.sum(Weights[Mask]))
+
+        Angles = Angles[~Mask]
+        Weights = Weights[~Mask]
+
+    return np.array([FinalAngles, FinalWeights])

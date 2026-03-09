@@ -37,9 +37,8 @@ from MTG_Common.DRG_Quantification import *
 from Alignment_Analysis import PrepareEllipticalKernel, ApplyEllipticalConvolution, CreateOrientationVisualization, ComputeAlignmentMetric, AngleTracker
 from MTG_Common.DRG_Quantification import DRGQuantificationResults
 
-DEBUG_DISPLAY_ENABLED: bool = False
-DEBUG_DISPLAY_TIMEOUT: float = 0.25
-# DEBUG_DISPLAY_TIMEOUT: float = 0
+DEBUG_DISPLAY_ENABLED: bool = True
+DEBUG_DISPLAY_TIMEOUT: float = 0.5
 
 #   Add a sequence number to the images as generated and exported from this script.
 ImageSequenceNumber: int = 1
@@ -516,6 +515,9 @@ def main() -> DRGAnalysis_StatusCode:
     #   Compute an effective value for the "radius" of the DRG body, to use as part of the
     #   heuristic for where neurites are expected to start from.
     DRGBodyRadius: float = ComputeDRGBodyRadius(DRGBodyMask, CentroidLocation)
+
+    #   Expand the masks, to remove issues associated with the "edges" of the DRG body and/or well
+
 
     LogWriter.Println(f"Starting to process fluorescent image...")
     for Index, Layer in enumerate(Config.FluorescentImage.Layers()):
@@ -1303,7 +1305,7 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
     #   TODO: Make these configuration settings
     AdaptiveKernelSize: int = 45
     AdaptiveOffset: int = -5
-    MaskExpansionSize: int = int(AdaptiveKernelSize / 4)
+    MaskExpansionSize: int = AdaptiveKernelSize
     SpeckleComponentAreaThreshold: int = (0.0025 / 100.0) * np.prod(FluorescentImage.shape)
     NeuriteAspectRatioThreshold: float = 1.5
     NeuriteInfillFractionThreshold: float = 0.75 * (np.pi / 4)
@@ -1358,6 +1360,10 @@ def BinarizeFluorescent(Image: np.ndarray, KernelSize: int, ThresholdValue: int)
         ...
     """
 
+    #   Global Threshold
+    # _, ThresholdedImage = cv2.threshold(Image, 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY)
+
+    #   Adaptive Threshold...
     ThresholdedImage: np.ndarray = cv2.adaptiveThreshold(Image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, KernelSize, ThresholdValue)
 
     return ThresholdedImage

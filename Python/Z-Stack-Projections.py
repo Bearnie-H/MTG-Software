@@ -56,15 +56,20 @@ def main() -> None:
             LogWriter.Println(f"Preparing to display Z-Stack...")
             Stack.Display()
             return
+        elif ( sys.argv[2].lower() == "--norm" ):
+            LogWriter.Println(f"Normalizing Layer Intensities...")
+            Normalized: ZStack.ZStack = Stack.NormalizeLayers()
+            Normalized.SaveTIFF(os.path.dirname(sys.argv[1]))
+            return
 
 
-    # if ( Projection is not None ):
-    #     Utils.DisplayImage(
-    #         Description,
-    #         Utils.ConvertTo8Bit(Projection),
-    #         5,
-    #         True
-    #     )
+    if ( Projection is not None ):
+        Utils.DisplayImage(
+            Description,
+            Utils.ConvertTo8Bit(Projection),
+            5,
+            True
+        )
 
         Utils.WriteImage(Utils.ConvertTo8Bit(Projection), os.path.join(os.path.dirname(sys.argv[1]), f"{os.path.splitext(os.path.basename(sys.argv[1]))[0]} - {Description}.tif"))
 

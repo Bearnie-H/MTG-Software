@@ -163,6 +163,7 @@ class ZStack():
 
         Success: bool = Stack.OpenTIFFile(Filename)
         if ( Success ):
+            Stack.Name = os.path.basename(os.path.splitext(Filename)[0])
             return Stack
 
         return None
@@ -264,9 +265,13 @@ class ZStack():
             Normalized.Pixels = (Normalized.Pixels - Mean) / StandardDeviation
             return Normalized
 
-        for LayerIndex, Layer in enumerate(Normalized.Layers()):
+        for LayerIndex, Layer in enumerate(self.Layers()):
             Mean, StandardDeviation = np.mean(Layer), np.std(Layer)
-            Normalized.Pixels[LayerIndex, :, :] = (Layer - Mean) / StandardDeviation
+            if ( StandardDeviation == 0 ):
+                StandardDeviation = 1
+            NormalizedLayer: np.ndarray = (Layer.astype(np.float32) - Mean) / StandardDeviation
+            NormalizedLayer: np.ndarray = Utils.GammaCorrection(NormalizedLayer, Minimum=0, Maximum=2**16).astype(np.uint16)
+            Normalized.InsertLayer(NormalizedLayer, LayerIndex)
 
         return Normalized
 
@@ -559,14 +564,17 @@ class ZStack():
             raise ValueError(f"File [ {Filename} ] cannot be opened as the file does not exist")
 
         try:
+            self._LogWriter.Println(f"Attempting to read file [ {Filename} ]...")
             Success, ImageStack = cv2.imreadmulti(Filename, [], cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR)
             if not ( Success ):
                 raise ValueError(f"Image file [ {Filename} ] cannot be parsed by cv2.imreadmulti().")
 
             self.Pixels = np.array(ImageStack)
-        except:
+        except Exception as e:
+            self._LogWriter.Errorln(f"Failed to read file [ {Filename} ] - {e}")
             return False
 
+        self._LogWriter.Println(f"Successfully read file [ {Filename} ].")
         return True
 
     def OpenCZIFile(self: ZStack, Filename: str) -> bool:
@@ -754,7 +762,7 @@ class ZStack():
             raise ValueError(f"Z Stack Name must be set!")
 
         if ( Folder is None ) or ( Folder == "" ):
-            raise ValueError(f"Output Folder must be set!")
+            Folder = os.getcwd()
 
         if ( not os.path.exists(Folder) ):
             self._LogWriter.Println(f"Folder [ {Folder} ] does not exist. Creating it now...")

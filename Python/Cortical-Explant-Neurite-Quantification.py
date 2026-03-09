@@ -25,7 +25,7 @@ from matplotlib.figure import Figure
 from matplotlib.widgets import PolygonSelector
 import numpy as np
 import cv2
-from scipy.stats import circmean, circstd
+from scipy.stats import circmean, circstd, entropy
 
 #   Import the desired locally written modules
 from MTG_Common import Logger
@@ -1107,7 +1107,7 @@ def SegmentNeurites(GrowthRegionMask: np.ndarray, ExplantCoreMask: np.ndarray, E
     #   using a recursive breadth-first search type algorithm.
     LogWriter.Println(f"Attempting to connect initally-detected neurite pixels into filaments...")
     FlattenedNeuritePixels: np.ndarray = IdentifiedNeurites.MaximumIntensityProjection()
-    Neurites: typing.Sequence[Neurite] = SegmentNeurites_ConnectFilaments(FlattenedNeuritePixels)
+    # Neurites: typing.Sequence[Neurite] = SegmentNeurites_ConnectFilaments(FlattenedNeuritePixels)
 
     return
 
@@ -1168,7 +1168,7 @@ def SegmentNeurites_ConnectFilaments(NeuritePixelMask: np.ndarray) -> typing.Seq
         #   new filament. Process the possible set of pixels as a recursive
         #   search algorithm, either extending an existing Neurite or
         #   branching and creating additional instance(s).
-        Filament.Extend_Iterative(NeuritePixelMask, History=HistoryMatrix.view())
+        Filament.Extend(NeuritePixelMask, History=HistoryMatrix.view())
 
         #   Append this to the set of identified filaments
         Filaments.append(Filament)
@@ -1274,15 +1274,15 @@ def CrossStackQuantification() -> None:
         ...
     """
 
-    NeuriteAlignmentScoring: ZStack.ZStack = CrossCorrelateNeuritesAndRods(Results.NeuriteOrientations, Results.RodOrientations)
+    NeuriteAlignmentScoring: ZStack.ZStack = ComputeAlignmentField(Results.NeuriteOrientations, Results.RodOrientations)
 
     #   ...
 
     return
 
-def CrossCorrelateNeuritesAndRods(Neurites: ZStack.ZStack, Rods: ZStack.ZStack) -> ZStack.ZStack:
+def ComputeAlignmentField(Neurites: ZStack.ZStack, Rods: ZStack.ZStack) -> ZStack.ZStack:
     """
-    CrossCorrelationNeuritesAndRods
+    ComputeAlignmentField
 
     This function...
 
@@ -1334,7 +1334,7 @@ def CrossCorrelateNeuritesAndRods(Neurites: ZStack.ZStack, Rods: ZStack.ZStack) 
                 NeuritePDF, _ = np.histogram(NeuriteWindow, bins=180, range=(0, 179), density=True)
                 RodsPDF, _ = np.histogram(RodsWindow, bins=180, range=(0, 179), density=True)
 
-                Score = np.correlate(NeuritePDF, RodsPDF, mode='valid')[0]
+                Score: float = entropy(NeuritePDF, RodsPDF)
 
             LayerScores[Top, Left] = Score
 
@@ -1880,9 +1880,9 @@ def ProcessRodStain(Image: np.ndarray, ExclusionMask: np.ndarray, Results: Quant
     Binarized: np.ndarray = cv2.threshold(Foreground, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
 
     #   Finally, apply a Close transform to try to convert the rods from dense speckles into coherent objects.
-    Morph: np.ndarray = cv2.morphologyEx(Binarized, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, ksize=(ClosingKernelSize, ClosingKernelSize)))
+    Closed: np.ndarray = cv2.morphologyEx(Binarized, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, ksize=(ClosingKernelSize, ClosingKernelSize)))
 
-    Results.FilteredIdentifiedRods.Append(Morph)
+    Results.FilteredIdentifiedRods.Append(Closed)
 
     return None
 
