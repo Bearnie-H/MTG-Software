@@ -28,6 +28,7 @@ import numpy as np
 import cv2
 from scipy.signal import correlate
 import scipy.stats
+import skimage.morphology
 
 #   Import the desired locally written modules
 from MTG_Common import Logger
@@ -65,6 +66,7 @@ class Configuration():
     WellInteriorMask: np.ndarray
 
     ApplyManualROISelection: bool
+    SkeletonizeNeurites: bool
 
     ExperimentalDetails: DRGExperimentalCondition
 
@@ -113,6 +115,7 @@ class Configuration():
         ### ---
 
         self.ApplyManualROISelection = False
+        self.SkeletonizeNeurites = False
         self.EnableOrientationQuantification = False
 
         self.LogFile = ""
@@ -151,8 +154,9 @@ class Configuration():
             f"---------- Estimated Result Values ----------",
             f"",
             f"---------- Behaviour Enable Parameters ----------",
-            f"Manual Preview Enabled:                {self.ManualPreview}",
+            f"Manual Preview Enabled:               {self.ManualPreview}",
             f"Manual ROI Selection Enabled:         {self.ApplyManualROISelection}",
+            f"Skeletonize Segmented Neurites:       {self.SkeletonizeNeurites}",
             f"Orientation Analysis Enabled:         {self.EnableOrientationQuantification}",
             f"Headless Mode:                        {self.HeadlessMode}",
             f"Dry-Run Mode:                         {self.DryRun}",
@@ -241,6 +245,8 @@ class Configuration():
         self.JSONDirectory = Arguments.JSONDirectory
 
         self.EnableOrientationQuantification = Arguments.EnableOrientation
+
+        self.SkeletonizeNeurites = Arguments.EnableSkeletonization
 
         #   ...
 
@@ -1335,6 +1341,11 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
     #   satisfy the expectations of neurites
     FilteredNeuriteComponents = FilterNeuriteComponents(BinarizedImage, SpeckleComponentAreaThreshold, NeuriteAspectRatioThreshold, NeuriteInfillFractionThreshold)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(FilteredNeuriteComponents), "Filtered Connected Components after Local Thresholding", not Config.SaveIntermediates, Config.HeadlessMode)
+
+    #   If the user has requested to skeletonize the neurites following segmentation, apply this here now.
+    if ( Config.SkeletonizeNeurites ):
+        FilteredNeuriteComponents = skimage.morphology.skeletonize(Utils.ConvertTo8Bit(FilteredNeuriteComponents))
+        DisplayAndSaveImage(Utils.ConvertTo8Bit(FilteredNeuriteComponents), "Skeletonized Neurite Components", not Config.SaveIntermediates, Config.HeadlessMode)
     QuantificationStacks.FilteredFluorescent.Append(Utils.ConvertTo8Bit(FilteredNeuriteComponents))
 
     #   Finally, examine the set of remaining pixels, and assert that what is considered "Neurites"
@@ -1877,6 +1888,8 @@ def HandleArguments() -> bool:
     Flags.add_argument("--mip-image", dest="MIPImage",    metavar="file-path", type=str, required=True, help="The file path to the maximum intensity image computed from the fluorescent Z-stack to work with.")
     Flags.add_argument("--manual-roi", dest="ManualROI", action="store_true", required=False, default=False, help="...")
     Flags.add_argument("--enable-orientation", dest="EnableOrientation", action="store_true", required=False, default=False, help="Enable the orientation quantification logic. NOTE: Significantly increases execution time required.")
+
+    Flags.add_argument("--enable-skeletonization", dest="EnableSkeletonization", action="store_true", required=False, default=False, help="Skeletonize the segmented neurites prior to quantification.")
 
     Flags.add_argument("--qualitative-pre-check", dest="PreCheck", action="store_true", required=False, default=False, help="Preview the images before processing, to check whether or not they are worth processing.")
     Flags.add_argument("--drg-mask", dest="DRGBodyMask", metavar="file-path", type=str, required=False, default="", help="The file path to a pre-defined image mask to remove the DRG Body.")
