@@ -1353,7 +1353,7 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
     #   so actual neurites must start at the DRG body and extend continuously outwards with no breaks.
     SatelliteRemoved = RemoveUnconnectedSatellites(FilteredNeuriteComponents, DRGCentroid, DRGBodyRadius)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(SatelliteRemoved), "Disconnected Satellite Components Removed", not Config.SaveIntermediates, Config.HeadlessMode)
-    QuantificationStacks.SatelliteRemovedFluorescent.Append(SatelliteRemoved)
+    QuantificationStacks.SatelliteRemovedFluorescent.Append(Utils.ConvertTo8Bit(SatelliteRemoved))
 
     return SatelliteRemoved
 
