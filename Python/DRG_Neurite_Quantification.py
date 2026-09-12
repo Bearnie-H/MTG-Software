@@ -37,12 +37,15 @@ from MTG_Common import ZStack
 from MTG_Common.DRG_Quantification import *
 from Alignment_Analysis import PrepareEllipticalKernel, ApplyEllipticalConvolution, CreateOrientationVisualization, ComputeAlignmentMetric, AngleTracker
 from MTG_Common.DRG_Quantification import DRGQuantificationResults
+from MTG_Common import NeuriteUtils
 
 DEBUG_DISPLAY_ENABLED: bool = True
 DEBUG_DISPLAY_TIMEOUT: float = 0.5
 
 #   Add a sequence number to the images as generated and exported from this script.
 ImageSequenceNumber: int = 1
+
+SkeletonizationFunction = skimage.morphology.medial_axis
 
 class Configuration():
     """
@@ -362,6 +365,7 @@ class QuantificationIntermediates():
     BrightFieldBinarized: np.ndarray
     BrightFieldExclusionMask: np.ndarray
     BodyCentroidLocation: typing.Tuple[int, int]
+    ExplantContoursFile: str
 
     OriginalFluorescent: ZStack.ZStack
     BinarizedFluorescent: ZStack.ZStack
@@ -375,6 +379,9 @@ class QuantificationIntermediates():
     NeuriteDistances: typing.Sequence[np.ndarray]
     MaximumNeuriteDistance: int
     ColourAnnotatedNeuriteLengths: ZStack.ZStack
+
+    NeuriteFilamentLengths: np.ndarray
+    NeuriteOrientationStats: np.ndarray
 
     NeuriteOrientations: typing.Sequence[np.ndarray]
     ColourAnnotatedNeuriteOrientations: ZStack.ZStack
@@ -397,6 +404,7 @@ class QuantificationIntermediates():
         self.BrightFieldBinarized = np.array([])
         self.BrightFieldExclusionMask = np.array([])
         self.BodyCentroidLocation = ()
+        self.ExplantContoursFile = ""
 
         self.OriginalFluorescent = ZStack.ZStack(Name="Original Fluorescent")
         self.BinarizedFluorescent = ZStack.ZStack(Name="Binarized Fluorescent")
@@ -410,6 +418,9 @@ class QuantificationIntermediates():
         self.NeuriteDistances = []
         self.MaximumNeuriteDistance = 0
         self.ColourAnnotatedNeuriteLengths = ZStack.ZStack(Name="Colour-Annotated Neurite Lengths")
+
+        self.NeuriteFilamentLengths = None
+        self.NeuriteOrientationStats = None
 
         self.NeuriteOrientations = []
         self.ColourAnnotatedNeuriteOrientations = ZStack.ZStack(Name="Colour-Annotated Neurite Orientations")
@@ -438,7 +449,6 @@ class QuantificationIntermediates():
             if ( not os.path.exists(Folder) ):
                 os.makedirs(Folder, 0o755, exist_ok=True)
 
-
             self.OriginalBrightField.SetName("Bright Field").SaveTIFF(Folder)
             Utils.WriteImage(self.BrightFieldMinProjection, os.path.join(Folder, "Bright Field Minimum Intensity.tif"))
             Utils.WriteImage(self.BrightFieldBinarized, os.path.join(Folder, "Bright Field Binarized.tif"))
@@ -450,7 +460,7 @@ class QuantificationIntermediates():
             self.SatelliteRemovedFluorescent.SaveTIFF(Folder)
             if ( Config.ApplyManualROISelection ):
                 Utils.WriteImage(self.ManuallySelectedFluorescent, os.path.join(Folder, "Manually Selected Neurited.tif"))
-            Utils.WriteImage(self.FlattenedSegmentedNeurites, os.path.join(Folder, "Flattened Identified Neurites.tif"))
+            Utils.WriteImage(Utils.ConvertTo8Bit(self.FlattenedSegmentedNeurites), os.path.join(Folder, "Flattened Identified Neurites.tif"))
             Utils.WriteImage(self.OverCountingMap, os.path.join(Folder, "Neurite Pixel Over-Counting Map.tif"))
             self.ColourAnnotatedNeuriteLengths.SaveTIFF(Folder)
             self.ColourAnnotatedNeuriteOrientations.SaveTIFF(Folder)
@@ -534,6 +544,11 @@ def main() -> DRGAnalysis_StatusCode:
 
     QuantificationStacks.OverCountingMap = Utils.ConvertTo8Bit(QuantificationStacks.SatelliteRemovedFluorescent.AverageIntensityProjection())
     QuantificationStacks.FlattenedSegmentedNeurites = Utils.ConvertTo8Bit(RemoveUnconnectedSatellites(QuantificationStacks.SatelliteRemovedFluorescent.MaximumIntensityProjection(), CentroidLocation, DRGBodyRadius))
+    if ( Config.SkeletonizeNeurites ):
+        #   If we're skeletonizing the neurites, we need to be smarter with how and when we apply the skeletonization, so that it's preserved
+        #   over the layers
+        QuantificationStacks.FlattenedSegmentedNeurites = cv2.morphologyEx(QuantificationStacks.FlattenedSegmentedNeurites, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (5,5)))
+        QuantificationStacks.FlattenedSegmentedNeurites = SkeletonizationFunction(QuantificationStacks.FlattenedSegmentedNeurites)
 
     #   If the user has selected they would like to apply manual ROI selection to exclude specific noise regions,
     #   perform this now.
@@ -542,8 +557,17 @@ def main() -> DRGAnalysis_StatusCode:
         DisplayAndSaveImage(Utils.ConvertTo8Bit(ManualExclusionMask), "Polygon Exclusion Mask", not Config.SaveIntermediates, Config.HeadlessMode)
         DisplayAndSaveImage(Utils.ConvertTo8Bit(QuantificationStacks.ManuallySelectedFluorescent), "Polygon Exclusion Masked Image", not Config.SaveIntermediates, Config.HeadlessMode)
 
+    #   Now, apply the neurite path reconstruction logic
+    LogWriter.Println(f"Attempting to reconstruct Neurite filaments via graph transformation...")
+    NeuriteFilaments: typing.Sequence[NeuriteUtils.Neurite] = NeuriteUtils.IdentifyNeurites(QuantificationStacks.ManuallySelectedFluorescent, LatticeSize=1, NeighbourhoodRadius=5, ExplantContours=np.load(QuantificationStacks.ExplantContoursFile))
+    NeuriteUtils.SaveNeurites(os.path.join(Config.OutputDirectory, "Neurites.npy"), NeuriteFilaments)
+
+    #   Quantify the neurite filaments...
+    QuantifyNeuriteFilaments(NeuriteFilaments)
+
+    #   Apply Sholl Analysis to the Neurites
     #   With the centroid location and neurite pixels now identified, quantify the distribution of lengths of neurites
-    LogWriter.Println(f"Quantifying neurite lengths...")
+    LogWriter.Println(f"Quantifying neurite lengths via Sholl Analysis...")
     QuantificationStacks.NeuriteDistances.append(QuantifyNeuriteLengths(QuantificationStacks.ManuallySelectedFluorescent, CentroidLocation))
 
     FeatureSizePx: float = 50
@@ -761,6 +785,9 @@ def ProcessBrightField(BrightFieldImage: np.ndarray, AlternativeMaskGeneration: 
     DisplayAndSaveImage(Utils.ConvertTo8Bit(WellEdgeMask), "Well Edge Mask", not Config.SaveIntermediates, Config.HeadlessMode)
 
     QuantificationStacks.BrightFieldExclusionMask = Utils.ConvertTo8Bit(DRGBodyMask * WellEdgeMask)
+
+    #   Write out the DRG contour to a data-file for later use
+    SaveDRGMaskContours(DRGBodyMask)
 
     LogWriter.Println(f"Finished processing Bright-Field Image.")
     return (Centroid, DRGBodyMask, WellEdgeMask)
@@ -1283,6 +1310,15 @@ def ComputeDRGBodyRadius(Mask: np.ndarray, Centroid: typing.Tuple[int, int]) -> 
     LogWriter.Println(f"DRG Body has an effective radius estimated to be [ {EffectiveRadius}µm ]...")
     return EffectiveRadius
 
+def SaveDRGMaskContours(DRGBodyMask: np.ndarray) -> None:
+    """
+    """
+
+    Contours, _ = cv2.findContours(~Utils.ConvertTo8Bit(DRGBodyMask), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    QuantificationStacks.ExplantContoursFile = os.path.join(Config.OutputDirectory, f"DRG-Contours.npy")
+    return np.save(QuantificationStacks.ExplantContoursFile, Contours)
+
 def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, WellEdgeMask: np.ndarray, DRGCentroid: typing.Tuple[int, int], DRGBodyRadius: float) -> np.ndarray:
     """
     ProcessFluorescent
@@ -1329,6 +1365,7 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
     #   Expand the original DRG Body mask again slightly, to not include artefacts from the "edge" introduced
     #   by applying the mask
     BinarizedImage = ApplyExclusionMask(BinarizedImage, cv2.erode(DRGBodyMask, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(MaskExpansionSize, MaskExpansionSize))))
+    SaveDRGMaskContours(cv2.erode(DRGBodyMask, kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(MaskExpansionSize, MaskExpansionSize))))
     DisplayAndSaveImage(BinarizedImage, f"DRG Body Mask Edge Removed", not Config.SaveIntermediates, Config.HeadlessMode)
 
     #   Expand the original Well Edge mask again slightly, to not include artefacts from the "edge" introduced
@@ -1341,17 +1378,15 @@ def ProcessFluorescent(FluorescentImage: np.ndarray, DRGBodyMask: np.ndarray, We
     #   satisfy the expectations of neurites
     FilteredNeuriteComponents = FilterNeuriteComponents(BinarizedImage, SpeckleComponentAreaThreshold, NeuriteAspectRatioThreshold, NeuriteInfillFractionThreshold)
     DisplayAndSaveImage(Utils.ConvertTo8Bit(FilteredNeuriteComponents), "Filtered Connected Components after Local Thresholding", not Config.SaveIntermediates, Config.HeadlessMode)
-
-    #   If the user has requested to skeletonize the neurites following segmentation, apply this here now.
-    if ( Config.SkeletonizeNeurites ):
-        FilteredNeuriteComponents = skimage.morphology.skeletonize(Utils.ConvertTo8Bit(FilteredNeuriteComponents))
-        DisplayAndSaveImage(Utils.ConvertTo8Bit(FilteredNeuriteComponents), "Skeletonized Neurite Components", not Config.SaveIntermediates, Config.HeadlessMode)
     QuantificationStacks.FilteredFluorescent.Append(Utils.ConvertTo8Bit(FilteredNeuriteComponents))
 
     #   Finally, examine the set of remaining pixels, and assert that what is considered "Neurites"
     #   is a single cluster of distance values. We know that neurites cannot spring out of nowhere,
     #   so actual neurites must start at the DRG body and extend continuously outwards with no breaks.
     SatelliteRemoved = RemoveUnconnectedSatellites(FilteredNeuriteComponents, DRGCentroid, DRGBodyRadius)
+    #   If the user has requested to skeletonize the neurites following segmentation, apply this here now.
+    if ( Config.SkeletonizeNeurites ):
+        SatelliteRemoved = SkeletonizationFunction(Utils.ConvertTo8Bit(SatelliteRemoved))
     DisplayAndSaveImage(Utils.ConvertTo8Bit(SatelliteRemoved), "Disconnected Satellite Components Removed", not Config.SaveIntermediates, Config.HeadlessMode)
     QuantificationStacks.SatelliteRemovedFluorescent.Append(Utils.ConvertTo8Bit(SatelliteRemoved))
 
@@ -1658,6 +1693,72 @@ def ApplyManualROI(ImageToFilter: np.ndarray, Background: np.ndarray) -> typing.
     PolygonMaskedImage: np.ndarray = Utils.BGRToGreyscale(ImageToFilter) * PolygonExclusionMask
     return PolygonMaskedImage, PolygonExclusionMask
 
+def QuantifyNeuriteFilaments(Filaments: typing.Sequence[NeuriteUtils.Neurite]) -> None:
+    """
+    QuantifyNeuriteFilaments
+
+    This function...
+
+    Filaments:
+        ...
+
+    Return (None):
+        ...
+    """
+
+    QuantificationStacks.NeuriteFilamentLengths = np.array([x.ContourLength() for x in Filaments])
+    QuantificationStacks.NeuriteOrientationStats = NeuriteUtils.CombineNeuriteOrientationStats([x.Orientation(EndToEnd=True) for x in Filaments])
+
+    PrepareFilamentLengthFigure(QuantificationStacks.NeuriteFilamentLengths)
+    PrepareFilamentOrientationFigure(QuantificationStacks.NeuriteOrientationStats)
+
+    return
+
+def PrepareFilamentLengthFigure(FilamentLengths: np.ndarray) -> None:
+    """
+    """
+
+    LengthUnits: str = "px"
+    if ( Config.ExperimentalDetails is not None ) and ( Config.ExperimentalDetails.ImageResolution != 0 ):
+        FilamentLengths *= Config.ExperimentalDetails.ImageResolution
+        LengthUnits = "µm"
+
+    F: Figure = Utils.PrepareFigure(Interactive=(not Config.HeadlessMode))
+    A: Axes = F.add_subplot(111)
+
+    F.suptitle(f"<Experimental Identification Here>")
+    A.set_title(f"Neurite Filament Length Quantification ({len(FilamentLengths)} Filaments)")
+    A.set_xlabel(f"Neurite Length ({LengthUnits})")
+    A.set_ylabel(f"PDF")
+
+    A.hist(FilamentLengths, bins=math.ceil(np.max(FilamentLengths) / 10), density=True, range=(0, np.max(FilamentLengths)))
+    DisplayAndSaveImage(Utils.FigureToImage(F), f"Neurite Filament Length Distribution", DryRun=Config.DryRun, Headless=Config.HeadlessMode)
+
+    plt.close(F)
+
+    return
+
+def PrepareFilamentOrientationFigure(FilamentOrientations: np.ndarray) -> None:
+    """
+    """
+
+    F: Figure = Utils.PrepareFigure(Interactive=(not Config.HeadlessMode))
+    A: Axes = F.add_subplot(111)
+
+    F.suptitle(f"<Experimental Identification Here>")
+    A.set_title(f"Neurite Filament Orientation Quantification ({len(FilamentOrientations)} Filaments)")
+    A.set_xlabel(f"Neurite Orientation (Radians)")
+    A.set_ylabel(f"PDF")
+
+    Orientations, Weights = FilamentOrientations[0,:], FilamentOrientations[1,:]
+
+    A.hist(Orientations, bins=72, density=True, range=(-np.pi, np.pi), weights=Weights)
+    DisplayAndSaveImage(Utils.FigureToImage(F), f"Neurite Filament Orientation Distribution", DryRun=Config.DryRun, Headless=Config.HeadlessMode)
+
+    plt.close(F)
+
+    return
+
 def QuantifyNeuriteLengths(NeuritePixels: np.ndarray, Origin: typing.Tuple[int, int]) -> np.ndarray:
     """
     QuantifyNeuriteLengths
@@ -1828,6 +1929,9 @@ def PrepareResults(Results: DRGQuantificationResults) -> DRGQuantificationResult
     #   Compute the fraction of the image area in which growth is considered possible.
     GrowthRegionSize: int = np.count_nonzero(QuantificationStacks.BrightFieldExclusionMask) #   The total number of pixels within the image in which growth is considered possible.
     Results.InclusionMaskFraction = float(GrowthRegionSize / np.prod(QuantificationStacks.BrightFieldExclusionMask.shape))
+
+    Results.NeuriteFilamentLengths = QuantificationStacks.NeuriteFilamentLengths.tolist()
+    Results.NeuriteFilamentOrientations = [tuple([float(y) for y in x]) for x in QuantificationStacks.NeuriteOrientationStats.T]
 
     #   For each layer of the fluorescent stack, compute the count of neurite pixels at each integer distance from the DRG centroid.
     Results.NeuriteDistancesByLayer = {

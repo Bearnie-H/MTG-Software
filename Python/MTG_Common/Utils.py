@@ -361,6 +361,9 @@ def WriteImage(Image: np.ndarray, Filepath: str) -> bool:
     if ( Filepath is None ) or ( Filepath == "" ):
         raise ValueError(f"Filepath is not provided!")
 
+    if ( Image.dtype is np.bool_ ):
+        Image = ConvertTo8Bit(Image)
+
     if ( os.path.dirname(Filepath) == "" ):
         Filepath = os.path.join(os.getcwd(), Filepath)
 
@@ -891,3 +894,40 @@ def PointSequenceToContour(Points: np.ndarray, *, Closed: bool = False) -> np.nd
     Epsilon: float = 5 * (0.01) * cv2.arcLength(Points, Closed)
 
     return cv2.approxPolyDP(Points, Epsilon, Closed)
+
+def FilterConnectedComponentsBySize(Image: np.ndarray, MinimumSize: int = 0, MaximumSize: float = float('inf'), *, Connectivity: int = 4) -> np.ndarray:
+    """
+    FilterConnectedComponentsBySize
+
+    This function...
+
+    Image:
+        ...
+    MinimumSize:
+        ...
+    MaximumSize:
+        ...
+
+    Return - (np.ndarray):
+        ...
+    """
+
+    FilteredImage: np.ndarray = np.zeros_like(Image)
+
+    Colour: int | typing.Tuple[int, int, int] = 255
+    if ( len(FilteredImage.shape) == 3 ):
+        Colour = (255, 255, 255)
+
+    NumberOfComponents, Labels, Stats, Centroids = cv2.connectedComponentsWithStats(Image, connectivity=Connectivity)
+
+    if ( NumberOfComponents == 0 ):
+        return FilteredImage
+
+    FilteredComponentIDs: typing.List[int] = [
+        x for x in range(1, NumberOfComponents) if MinimumSize <= Stats[x, cv2.CC_STAT_AREA] <= MaximumSize
+    ]
+
+    for FilteredComponentID in FilteredComponentIDs:
+        FilteredImage[Labels == FilteredComponentID] = Colour
+
+    return FilteredImage

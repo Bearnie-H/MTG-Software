@@ -31,7 +31,7 @@ from scipy.stats import circmean, circstd, entropy
 from MTG_Common import Logger
 from MTG_Common import Utils
 from MTG_Common import ZStack
-from MTG_Common.Neurites import Neurite, NeuriteGraph
+from Scripting.Python.MTG_Common.NeuriteUtils import Neurite, NeuriteGraph
 from Alignment_Analysis import PrepareEllipticalKernel, ApplyEllipticalConvolution
 
 DEBUG_DISPLAY_ENABLED: bool = True
@@ -688,26 +688,42 @@ def main() -> int:
 
 def main_alt() -> int:
 
+    LayerShape: typing.Tuple[int, int] = None
+    if ( Config.BrightFieldImage is not None ):
+        LayerShape = Config.BrightFieldImage.Pixels.shape[1:]
+    elif ( Config.NeuriteStainedImage is not None ):
+        LayerShape = Config.NeuriteStainedImage.Pixels.shape[1:]
+    elif ( Config.NuclearStainedImage is not None ):
+        LayerShape = Config.NuclearStainedImage.Pixels.shape[1:]
+    elif ( Config.RodsStainedImage is not None ):
+        LayerShape = Config.RodsStainedImage.Pixels.shape[1:]
+
+    GrowthRegionMask: np.ndarray = np.ones(LayerShape, dtype=np.uint8)
+    ExplantCoreMask, ExplantCoreLocations = np.zeros(LayerShape, dtype=np.uint8), np.array([[]])
+
     #   Generate the image mask used to remove the region of the Z-Stack which
     #   does not correspond to the region in which growth is possible.
-    GrowthRegionMask: np.ndarray = GenerateGrowthRegionMask()
+    if ( Config.BrightFieldImage is not None ) and ( Config.NeuriteStainedImage is not None ):
+        GrowthRegionMask: np.ndarray = GenerateGrowthRegionMask()
 
-    #   Next, attempt to extract a mask associated with the core(s) of the cortical explants
-    #   We'd prefer to be able to mask away the core(s) from the image of neurites (and rods),
-    #   so that we can eliminate this contribution of signal to the neurite lengths or orientations
-    #   as the cores really shouldn't be counted here.
-    ExplantCoreMask, ExplantCoreLocations = IdentifyExplantCores(GrowthRegionMask)
+        #   Next, attempt to extract a mask associated with the core(s) of the cortical explants
+        #   We'd prefer to be able to mask away the core(s) from the image of neurites (and rods),
+        #   so that we can eliminate this contribution of signal to the neurite lengths or orientations
+        #   as the cores really shouldn't be counted here.
+        ExplantCoreMask, ExplantCoreLocations = None, None
+        if ( Config.NuclearStainedImage is not None ):
+            ExplantCoreMask, ExplantCoreLocations = IdentifyExplantCores(GrowthRegionMask)
 
-    Z: np.ndarray = Utils.GreyscaleToBGR(np.zeros_like(GrowthRegionMask))
-    Z[:,:,2] = Utils.ConvertTo8Bit(GrowthRegionMask)
-    for Centroid in ExplantCoreLocations:
-        Z[:,:,1] += cv2.circle(np.zeros(Z.shape[:-1], dtype=np.uint8), tuple([int(x) for x in Centroid]), 10, 255, -1)
-    Z[:,:,0] = Utils.ConvertTo8Bit(ExplantCoreMask)
-    Utils.DisplayImage(f"Combined Growth Region and Explant Core Masks", Z, 5, True, not Config.HeadlessMode)
+        # Z: np.ndarray = Utils.GreyscaleToBGR(np.zeros_like(GrowthRegionMask))
+        # Z[:,:,2] = Utils.ConvertTo8Bit(GrowthRegionMask)
+        # for Centroid in ExplantCoreLocations:
+        #     Z[:,:,1] += cv2.circle(np.zeros(Z.shape[:-1], dtype=np.uint8), tuple([int(x) for x in Centroid]), 10, 255, -1)
+        # Z[:,:,0] = Utils.ConvertTo8Bit(ExplantCoreMask)
+        # Utils.DisplayImage(f"Combined Growth Region and Explant Core Masks", Z, 5, True, not Config.HeadlessMode)
 
-    #   Segment the neurites, if present, extracting out a 3D set of labels for
-    #   all pixels of the stack.
-    SegmentNeurites(GrowthRegionMask & ~ExplantCoreMask, ExplantCoreMask, ExplantCoreLocations)
+        #   Segment the neurites, if present, extracting out a 3D set of labels for
+        #   all pixels of the stack.
+        SegmentNeurites(GrowthRegionMask & ~ExplantCoreMask, ExplantCoreMask, ExplantCoreLocations)
 
     #   Segment the rods, if present, extracting out a 3D set of labels for all
     #   pixels of the stack.
@@ -1102,6 +1118,8 @@ def SegmentNeurites(GrowthRegionMask: np.ndarray, ExplantCoreMask: np.ndarray, E
 
             IdentifiedNeurites = IdentifiedNeurites.InsertLayer(NeuritePixels, LayerIndex)
 
+
+    Results.FilteredIdentifiedNeurites = IdentifiedNeurites
 
     #   From the set of initially detected neurite labelled pixels, attempt to connect these together into filaments,
     #   using a recursive breadth-first search type algorithm.
@@ -1868,19 +1886,39 @@ def ProcessRodStain(Image: np.ndarray, ExclusionMask: np.ndarray, Results: Quant
 
 
     BlurringKernelSize: int = 201
-    ClosingKernelSize: int = 5
+    ClosingKernelSize: int = 4
+    MinimumComponentSize: int = 25
 
     NormalizedImage: np.ndarray = ApplyImageMask(Utils.ConvertTo8Bit(Utils.BGRToGreyscale(Image)), ErodeImageMask(ExclusionMask))
+    Utils.DisplayImage(f"Normalized Image", NormalizedImage, 1, True, True)
 
-    Background: np.ndarray = cv2.GaussianBlur(NormalizedImage, (BlurringKernelSize, BlurringKernelSize), 0)
-    Foreground: np.ndarray = NormalizedImage.astype(np.int16) - Background.astype(np.int16)
+    CentileThreshold: float = .5
+    Clipped: np.ndarray = NormalizedImage.copy()
+    Clipped[NormalizedImage <= np.percentile(NormalizedImage, CentileThreshold)]  = 0
+    Clipped[NormalizedImage >= np.percentile(NormalizedImage, 100 - CentileThreshold)] = 0
+    Clipped = Utils.GammaCorrection(Clipped)
+    Utils.DisplayImage(f"Clipped Image", Clipped, 1, True, True)
+
+    Background: np.ndarray = cv2.GaussianBlur(Clipped, (BlurringKernelSize, BlurringKernelSize), 5)
+    Foreground: np.ndarray = Clipped.astype(np.int16) - Background.astype(np.int16)
     Foreground[Foreground < 0] = 0
     Foreground = Utils.ConvertTo8Bit(Foreground)
+    Utils.DisplayImage(f"Foreground Image", Foreground, 1, True, True)
 
-    Binarized: np.ndarray = cv2.threshold(Foreground, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+    Blurred: np.ndarray = cv2.GaussianBlur(Foreground, (BlurringKernelSize, BlurringKernelSize), 5)
+    Utils.DisplayImage(f"Blurred Image", Blurred, 1, True, True)
 
-    #   Finally, apply a Close transform to try to convert the rods from dense speckles into coherent objects.
+    Binarized: np.ndarray = cv2.adaptiveThreshold(Blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 0)
+    # Binarized: np.ndarray = cv2.threshold(Foreground, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+    Utils.DisplayImage(f"Binarized Image", Binarized, 1, True, True)
+
+    #   Next, attempt to condense the point-clouds we get for rods into solid objects for further processing.
     Closed: np.ndarray = cv2.morphologyEx(Binarized, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, ksize=(ClosingKernelSize, ClosingKernelSize)))
+    Utils.DisplayImage(f"Morphologically Closed Image", Closed, 1, True, True)
+
+    #   Finally, remove components which are "too small"
+    ComponentFiltered: np.ndarray = Utils.FilterConnectedComponentsBySize(Closed, MinimumSize=MinimumComponentSize)
+    Utils.DisplayImage(f"Component Size Filtered Image", ComponentFiltered, 1, True, True, UpdateWindows=True)
 
     Results.FilteredIdentifiedRods.Append(Closed)
 

@@ -584,6 +584,8 @@ class DRGQuantificationResults():
     ##  Results and Quantification Metrics
     DRGCentroidLocation: typing.List[int, int]              #   Where in the image is the centroid of the DRG Body? (X, Y) Pixel coordinates
     InclusionMaskFraction:  float                           #   What fraction of the image is included in the final inclusion mask, i.e. what fraction of the image can neurites grow within?
+    NeuriteFilamentLengths: typing.List[float]              #   The raw contour lengths of the neurites as identified from the image
+    NeuriteFilamentOrientations: typing.List[typing.Tuple[float, float]] #  The orientation and corresponding "weight" values for the end-to-end neurite filaments as identified from the image
     NeuriteDistancesByLayer: typing.Dict[int, typing.List[float]]    #   Keys = Layer Index, Values = Count of Neurite Pixels at each integer distance from the centroid
     MedianNeuriteDistancesByLayer: typing.Dict[int, float]            #   Keys = LayerIndex, Values = Median Distance Neurites Grew To
     MedianNeuriteDistance: float  #   Median distance of all neurite pixels from the DRG centroid
@@ -652,6 +654,8 @@ class DRGQuantificationResults():
 
         self.DRGCentroidLocation            = [-1, -1]
         self.InclusionMaskFraction          = 0
+        self.NeuriteFilamentLengths         = []
+        self.NeuriteFilamentOrientations    = []
         self.NeuriteDistancesByLayer        = {}
         self.MedianNeuriteDistancesByLayer  = {}
         self.MedianNeuriteDistance          = 0
